@@ -138,7 +138,7 @@ function TreeBuffer:create_buffer(on_deleted)
         return self._bufnr, false
     end
 
-    self._bufnr = ui_util.create_sratch_buffer(false, {
+    self._bufnr = ui_util.create_scratch_buffer(false, {
         buftype      = "nofile",
         bufhidden    = "wipe",
         filetype     = self._filetype,

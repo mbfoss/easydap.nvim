@@ -125,7 +125,7 @@ end
 ---@private
 function DisassemblyView:_ensure_autocmds()
     if self._aug then return end
-    self._aug = vim.api.nvim_create_augroup("easydap_disasm_sync", { clear = true })
+    self._aug = vim.api.nvim_create_augroup(("easydap_disasm_sync_%d"):format(self._ns), { clear = true })
 
     -- source -> asm: a global CursorMoved that only fires while focused in the
     -- bound source window and the pane is open.
@@ -458,8 +458,11 @@ function DisassemblyView:_page(dir)
         self._paging = false; return
     end
 
+    local gen = self._gen
     sess:disassemble(ref, _PAGE, offset, function(new, err)
+        if gen ~= self._gen then return end
         vim.schedule(function()
+            if gen ~= self._gen then return end
             self._paging = false
             local cur = self._instrs
             if err or not new or #new == 0 or not cur or not self:_is_open() then return end
@@ -587,6 +590,12 @@ function DisassemblyView:close()
     end
 
     self._closing = false
+end
+
+---Toggle an instruction breakpoint on the instruction under the cursor.
+
+function DisassemblyView:toggle_bp_at_cursor()
+    self:_toggle_bp_at_cursor()
 end
 
 return DisassemblyView

@@ -157,7 +157,7 @@ end
 ---@return integer
 local function _cursor_location()
     local bufnr = vim.api.nvim_get_current_buf()
-    if (vim.bo.buftype[bufnr] or "") ~= "" then
+    if vim.bo[bufnr].buftype ~= "" then
         vim.notify("[dap] current buffer is not a regular buffer", vim.log.levels.WARN)
         return nil, 0
     end

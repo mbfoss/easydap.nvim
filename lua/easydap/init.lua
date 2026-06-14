@@ -47,7 +47,11 @@ local function _register_user_commands()
     usercmd.register_subcommand("breakpoint", function(_, args, _)
         local sub = args[1]
         if sub == nil or sub == "" or sub == "toggle" then
-            cmd.breakpoint.toggle()
+            if vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()) == "easydap://disassembly" and _disassembly_view then
+                _disassembly_view:toggle_bp_at_cursor()
+            else
+                cmd.breakpoint.toggle()
+            end
         elseif sub == "add" then
             cmd.breakpoint.add(args[2])
         elseif sub == "remove" then
