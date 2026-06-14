@@ -1,6 +1,6 @@
 local ordered = require("easydap.util.table_util").ordered
 
----@type easytasks.TaskTemplate[]
+---@type easydap.TaskTemplate[]
 return {
     -- ── LLDB ──────────────────────────────────────────────────────────────────
     {

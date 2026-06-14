@@ -1,4 +1,24 @@
----@class easytasks.debug.Def : easytasks.TaskTypeDef
+---@class easydap.TaskTemplate
+---@field label string  shown in vim.ui.select
+---@field task  table   the template data to encode and insert
+
+---@class easydap.RunCtx
+---@field tasks      table<string,table>
+---@field add_bufnr  fun(bufnr: integer, label?: string, priority?: integer)
+---@field report     fun(message: string)
+
+---@class easydap.BufEntry
+---@field bufnr    integer
+---@field label    string
+---@field priority integer  higher = shown preferentially when added (default 0)
+
+---@class easydap.TaskTypeDef
+---@field start     fun(task: table, ctx: easydap.RunCtx, on_done: fun(ok: boolean)): fun()
+---@field dispose   (fun(bufnrs: easydap.BufEntry[]))?  optional cleanup called when the run is disposed
+---@field schema    table?
+---@field templates (easydap.TaskTemplate[]|(fun(): easydap.TaskTemplate[]))?
+
+---@class easydap.TaskTypeDef
 local M            = {}
 
 local _run_counter = 0
@@ -17,7 +37,7 @@ local function _unique_buf_name(base)
 end
 
 ---@param task    table
----@param ctx     easytasks.RunCtx
+---@param ctx     easydap.RunCtx
 ---@param on_done fun(ok: boolean)
 ---@return fun()
 M.start     = function(task, ctx, on_done)

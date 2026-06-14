@@ -48,7 +48,7 @@ local Signal = require("easydap.util.Signal")
 local M = {}
 
 ---Fires whenever any breakpoint is added, removed, or its state changes.
-M.on_change = Signal.new() ---@type easytasks.util.Signal<fun(kind: easydap.dap.BreakpointChangeKind)>
+M.on_change = Signal.new() ---@type easydap.util.Signal<fun(kind: easydap.dap.BreakpointChangeKind)>
 
 ---@type easydap.dap.SourceBreakpoint[]
 local _source_bps = {}

@@ -2,12 +2,12 @@ local M = {}
 
 local ui = require("easydap.util.ui_util")
 
----@class easytasks.SpawnHandle
+---@class easydap.SpawnHandle
 ---@field bufnr number
 ---@field pid   integer
 ---@field stop  fun()  stop the spawned command
 
----@class easytasks.SpawnOpts
+---@class easydap.SpawnOpts
 ---@field cwd?       string
 ---@field env?       table<string,string>
 ---@field on_stdout?      fun(id: integer, data: string[], name: string)
@@ -43,7 +43,7 @@ end
 --- Returns immediately with a handle, or nil if jobstart failed.
 --- termopen handles all output rendering including ANSI colours.
 ---@param cmd   string|string[]
----@param opts  easytasks.SpawnOpts
+---@param opts  easydap.SpawnOpts
 ---@return number?,string?
 local function _start_job(cmd, opts)
     local job_id
@@ -83,9 +83,9 @@ end
 --- Returns immediately with a handle, or nil if jobstart failed.
 --- termopen handles all output rendering including ANSI colours.
 ---@param cmd   string|string[]
----@param opts  easytasks.SpawnOpts
+---@param opts  easydap.SpawnOpts
 ---@param bufnr? integer buffer to own the terminal (auto created if nil)
----@return easytasks.SpawnHandle?,string?
+---@return easydap.SpawnHandle?,string?
 function M.spawn(cmd, opts, bufnr)
     -- A terminal buffer must be in a window for jobstart {term=true}.
     local own_buf
@@ -136,7 +136,7 @@ function M.spawn(cmd, opts, bufnr)
         end,
     })
 
-    return { ---@type easytasks.SpawnHandle
+    return { ---@type easydap.SpawnHandle
         bufnr = bufnr,
         pid   = vim.fn.jobpid(job_id),
         stop  = function()

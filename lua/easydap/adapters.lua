@@ -67,13 +67,6 @@ local function _resolve_env(task)
     return task.clear_env and task.env or vim.tbl_extend("force", vim.fn.environ(), task.env or {})
 end
 
----Return the executable name from a string|string[] command field.
----@param command string|string[]
----@return string
-local function _cmd_exe(command)
-    return type(command) == "table" and command[1] or command --[[@as string]]
-end
-
 -- ── Utilities ─────────────────────────────────────────────────────────────
 
 ---@return integer

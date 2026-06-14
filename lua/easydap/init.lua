@@ -24,8 +24,6 @@ local function _register_user_commands()
     local cmd     = require("easydap.manager")
     local usercmd = require("easydap.util.usercmd")
 
-    usercmd.register_subcommand("view", cmd.panel.toggle)
-
     local _bp_subs = {
         "toggle", "add", "remove",
         "clear_file", "clear_all", "clear_fn",
@@ -73,6 +71,7 @@ local function _register_user_commands()
     })
 
     local _debug_subs = {
+        "breakpoint",
         "view", "continue", "continue_all",
         "step_over", "next", "step_in", "step_out", "step_back",
         "pause", "restart",
@@ -81,7 +80,7 @@ local function _register_user_commands()
         "inspect",
     }
 
-    usercmd.register_subcommand("debug", function(_, args, _)
+    usercmd.register_user_cmd("Debug", function(_, args, _)
         local sub = args[1]
         if     sub == "view"                        then cmd.panel.toggle()
         elseif sub == "continue"                    then cmd.debug.continue()
@@ -98,28 +97,19 @@ local function _register_user_commands()
         elseif sub == "session"                     then cmd.debug.session()
         elseif sub == "thread"                      then cmd.debug.thread()
         elseif sub == "frame"                       then cmd.debug.frame()
-        else vim.notify("[dap] unknown subcommand: " .. tostring(sub), vim.log.levels.WARN) end
-    end, {
-        complete_fn = function(rest, _)
-            if #rest == 0 then return _debug_subs end
-            return {}
-        end,
-    })
-
-    usercmd.register_user_cmd("Debug", function(_, args, _)
-        local sub = args[1]
-        local def = usercmd.get_subcommand(sub)
-        if def then
-            def.run(sub, { unpack(args, 2) }, {})
-        else
-            vim.notify("[easydap] unknown command: " .. tostring(sub), vim.log.levels.WARN)
-        end
+        elseif sub == "breakpoint" then
+            local def = usercmd.get_subcommand("breakpoint")
+            if def then def.run("breakpoint", { unpack(args, 2) }, {}) end
+        else vim.notify("[easydap] unknown command: " .. tostring(sub), vim.log.levels.WARN) end
     end, {
         desc = "easydap commands",
         subcommand_fn = function(_, rest, arg_lead)
-            if #rest == 0 then return usercmd.subcommand_names() end
-            local def = usercmd.get_subcommand(rest[1])
-            return def and def.complete({ unpack(rest, 2) }, arg_lead) or {}
+            if #rest == 0 then return _debug_subs end
+            if rest[1] == "breakpoint" then
+                local def = usercmd.get_subcommand("breakpoint")
+                return def and def.complete({ unpack(rest, 2) }, arg_lead) or {}
+            end
+            return {}
         end,
     })
 end
@@ -159,7 +149,7 @@ end
 
 ---Run a debug task. This is the public backend entry point used by task runners.
 ---@param task    table
----@param ctx     easytasks.RunCtx
+---@param ctx     easydap.RunCtx
 ---@param on_done fun(ok: boolean)
 ---@return fun()
 function M.run(task, ctx, on_done)

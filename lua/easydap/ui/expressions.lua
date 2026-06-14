@@ -10,7 +10,7 @@ local Signal = require("easydap.util.Signal")
 local M = {}
 
 ---Fires whenever the expression list changes.
-M.on_change = Signal.new() ---@type easytasks.util.Signal<fun()>
+M.on_change = Signal.new() ---@type easydap.util.Signal<fun()>
 
 ---@type easydap.Expression[]
 local _expressions = {}

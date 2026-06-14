@@ -17,12 +17,12 @@ local M = {}
 -- ── Re-exported client signals ─────────────────────────────────────────────
 -- Consumers import only manager; client is an implementation detail.
 
-M.on_session_added    = client.on_session_added    ---@type easytasks.util.Signal<fun(id:number, sess:easydap.dap.Session, info:easydap.client.SessionInfo)>
-M.on_session_removed  = client.on_session_removed  ---@type easytasks.util.Signal<fun(id:number)>
-M.on_session_updated  = client.on_session_updated  ---@type easytasks.util.Signal<fun(id:number, info:easydap.client.SessionInfo)>
-M.on_session_stopped  = client.on_session_stopped  ---@type easytasks.util.Signal<fun(id:number, info:easydap.client.SessionInfo)>
-M.on_raw_message      = client.on_raw_message      ---@type easytasks.util.Signal<fun(id:number, direction:"in"|"out", msg:table)>
-M.on_variable_changed = client.on_variable_changed ---@type easytasks.util.Signal<fun(id:number, sess:easydap.dap.Session)>
+M.on_session_added    = client.on_session_added    ---@type easydap.util.Signal<fun(id:number, sess:easydap.dap.Session, info:easydap.client.SessionInfo)>
+M.on_session_removed  = client.on_session_removed  ---@type easydap.util.Signal<fun(id:number)>
+M.on_session_updated  = client.on_session_updated  ---@type easydap.util.Signal<fun(id:number, info:easydap.client.SessionInfo)>
+M.on_session_stopped  = client.on_session_stopped  ---@type easydap.util.Signal<fun(id:number, info:easydap.client.SessionInfo)>
+M.on_raw_message      = client.on_raw_message      ---@type easydap.util.Signal<fun(id:number, direction:"in"|"out", msg:table)>
+M.on_variable_changed = client.on_variable_changed ---@type easydap.util.Signal<fun(id:number, sess:easydap.dap.Session)>
 
 ---@param id number
 ---@return easydap.dap.Session?
@@ -38,9 +38,9 @@ function M.start(config, opts) return client.start(config, opts) end
 -- ── Active session ─────────────────────────────────────────────────────────
 
 ---Fires when the active (stepping) session changes: (id?, sess?)
-M.on_active_changed    = Signal.new() ---@type easytasks.util.Signal<fun(id:number?, sess:easydap.dap.Session?)>
+M.on_active_changed    = Signal.new() ---@type easydap.util.Signal<fun(id:number?, sess:easydap.dap.Session?)>
 ---Fires when thread or frame selection changes in the active session: (id, sess)
-M.on_selection_changed = Signal.new() ---@type easytasks.util.Signal<fun(id:number, sess:easydap.dap.Session)>
+M.on_selection_changed = Signal.new() ---@type easydap.util.Signal<fun(id:number, sess:easydap.dap.Session)>
 
 ---@type number?
 local _active_id = nil

@@ -41,10 +41,10 @@ local _ns_id = vim.api.nvim_create_namespace('nvtoolkitTreeBuffer')
 ---@field private _indent_string string
 ---@field private _expand_padding string
 ---@field private _indent_cache table<integer, string>
----@field private _on_selection easytasks.util.Signal<fun(id:any,data:any)>
----@field private _on_toggle easytasks.util.Signal<fun(id:any,data:any,expanded:boolean)>
+---@field private _on_selection easydap.util.Signal<fun(id:any,data:any)>
+---@field private _on_toggle easydap.util.Signal<fun(id:any,data:any,expanded:boolean)>
 ---@field private _bufnr integer
----@field private _tree easytasks.util.Tree
+---@field private _tree easydap.util.Tree
 ---@field private _flat_ids any[]
 ---@field private _id_to_idx table<any, integer>
 ---@field private _collapsible boolean
@@ -69,8 +69,8 @@ function TreeBuffer.new(opts)
         _indent_string  = indent_str,
         _expand_padding = string.rep(" ", vim.fn.strdisplaywidth(expand_char)) .. " ",
         _indent_cache   = indent_cache,
-        _on_selection   = Signal.new(), ---@type easytasks.util.Signal<fun(id:any,data:any)>
-        _on_toggle      = Signal.new(), ---@type easytasks.util.Signal<fun(id:any,data:any,expanded:boolean)>
+        _on_selection   = Signal.new(), ---@type easydap.util.Signal<fun(id:any,data:any)>
+        _on_toggle      = Signal.new(), ---@type easydap.util.Signal<fun(id:any,data:any,expanded:boolean)>
         _bufnr          = -1,
         _tree           = Tree.new(),
         _flat_ids       = {}, ---@type any[]
@@ -92,9 +92,9 @@ local function _to_item(id, data)
     return { id = id, data = data.userdata, expandable = data.expandable, expanded = data.expanded }
 end
 
----@param tree easytasks.util.Tree
+---@param tree easydap.util.Tree
 ---@param starting_id any?  -- nil = whole tree
----@return easytasks.util.Tree.FlatNode[]
+---@return easydap.util.Tree.FlatNode[]
 local function _flatten(tree, starting_id)
     local out = {}
     local function visit(id, data, depth)
@@ -109,7 +109,7 @@ local function _flatten(tree, starting_id)
     return out
 end
 
----@param tree easytasks.util.Tree
+---@param tree easydap.util.Tree
 ---@param starting_id any?  -- nil = whole tree
 ---@return integer
 local function _tree_size(tree, starting_id)
@@ -215,7 +215,7 @@ function TreeBuffer:subscribe(callbacks)
 end
 
 ---@private
----@param flatnode easytasks.util.Tree.FlatNode
+---@param flatnode easydap.util.Tree.FlatNode
 ---@param row integer
 ---@return string line, table hl_calls, table extmarks
 function TreeBuffer:_render_node(flatnode, row)
@@ -285,7 +285,7 @@ end
 ---@private
 ---@param start_idx integer
 ---@param old_size integer
----@param new_flat easytasks.util.Tree.FlatNode[]
+---@param new_flat easydap.util.Tree.FlatNode[]
 function TreeBuffer:_render_range(start_idx, old_size, new_flat)
     local buf = self._bufnr
     if buf <= 0 or not vim.api.nvim_buf_is_loaded(buf) then return end
