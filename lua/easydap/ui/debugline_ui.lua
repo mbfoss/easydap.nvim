@@ -30,7 +30,7 @@ local function _show_stopped(sess)
     if not src or not src.path or src.path == "" then return end
     local lnum = frame.line or 1
     _sign_group.set_file_sign(_sign_id, src.path, lnum, _sign_name, nil)
-    _line_group.set_file_extmark(_sign_id, src.path, lnum, 0, { line_hl_group = _LINE_HL }, nil)
+    _line_group.set_file_extmark(_sign_id, src.path, lnum, 0, { line_hl_group = _LINE_HL, priority = 40 }, nil)
     if sess.state_reason == "function call" then
         return -- spurious stop triggered by gdp
     end
