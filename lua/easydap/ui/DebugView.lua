@@ -1,0 +1,1144 @@
+local TreeBuffer  = require("easydap.ui.TreeBuffer")
+local manager     = require("easydap.manager")
+local config      = require("easydap.config")
+local expressions = require("easydap.ui.expressions")
+local breakpoints = require("easydap.dap.breakpoints")
+local str_util    = require("easydap.util.str_util")
+local inputwin    = require("easydap.util.inputwin")
+local select      = require("easydap.util.select").select
+
+---@alias easydap.DebugView.ItemKind
+---| "root"
+---| "session"
+---| "stackframe"
+---| "scope"
+---| "variable"
+---| "expression"
+---| "breakpoint"
+
+---@class easydap.DebugView.ItemData
+---@field kind     easydap.DebugView.ItemKind
+---@field path     string
+---@field name     string
+---@field value    string?
+---@field variablesReference number?
+---@field evaluateName string?
+---@field is_na    boolean?
+---@field error    string?
+---@field greyout  boolean?
+---@field session_id number?
+---@field session_info easydap.manager.SessionInfo?
+---@field is_current boolean?
+---@field frame_id   integer?
+---@field bp_kind       ("source"|"function"|"exception_filter"|"exception_type")?
+---@field bp_id         integer?
+---@field bp_source     string?
+---@field bp_line       integer?
+---@field bp_filter     string?
+---@field bp_ex_name    string?
+---@field break_mode    string?
+---@field unsupported   boolean?
+---@field disabled      boolean?
+---@field verified      boolean?
+---@field condition     string?
+---@field hit_condition string?
+---@field log_message   string?
+
+---@alias easydap.DebugView.Chunk { [1]: string, [2]: string? }
+
+---@param t any  uv timer or nil
+---@return nil
+local function _cancel_timer(t)
+    if t then
+        t:stop(); t:close()
+    end
+    return nil
+end
+
+---@param delay integer  milliseconds
+---@param fn    fun()
+---@return any  uv timer
+local function _start_timer(delay, fn)
+    local t = vim.uv.new_timer()
+    if t then t:start(delay, 0, vim.schedule_wrap(fn)) end
+    return t
+end
+
+---@type { sessions: string, stack: string, variables: string, expressions: string, breakpoints: string }
+local _roots = {
+    sessions    = "sess",
+    stack       = "stack",
+    variables   = "vars",
+    expressions = "xpr",
+    breakpoints = "bps",
+}
+
+-- ── Formatters ────────────────────────────────────────────────────────────
+
+---@param data easydap.DebugView.ItemData
+---@param chunks easydap.DebugView.Chunk[]
+local function _fmt_root(data, chunks)
+    chunks[#chunks + 1] = { data.name, "Title" }
+end
+
+---@param data easydap.DebugView.ItemData
+---@param chunks easydap.DebugView.Chunk[]
+local function _fmt_session(data, chunks)
+    local info = data.session_info
+    if not info then return end
+    local paused = info.is_paused
+    chunks[#chunks + 1] = { paused and "■" or "▶", paused and "DiagnosticWarn" or "DiagnosticOk" }
+    chunks[#chunks + 1] = { " ", nil }
+    chunks[#chunks + 1] = { data.name, data.is_current and "Special" or nil }
+    if info.state and info.state ~= "running" then
+        chunks[#chunks + 1] = { " [" .. info.state .. "]", "Tag" }
+    end
+end
+
+---@param data easydap.DebugView.ItemData
+---@param chunks easydap.DebugView.Chunk[]
+local function _fmt_stackframe(data, chunks)
+    local hl = data.greyout and "NonText" or (data.is_current and "Special" or nil)
+    chunks[#chunks + 1] = { data.name, hl }
+end
+
+---@param data easydap.DebugView.ItemData
+---@param chunks easydap.DebugView.Chunk[]
+local function _fmt_scope(data, chunks)
+    chunks[#chunks + 1] = { data.name, "@module" }
+end
+
+---@param data easydap.DebugView.ItemData
+---@param chunks easydap.DebugView.Chunk[]
+local function _fmt_variable(data, chunks)
+    local base_hl = data.greyout and "NonText" or nil
+    chunks[#chunks + 1] = { data.name, base_hl or "@variable" }
+    chunks[#chunks + 1] = { ": ", base_hl or "NonText" }
+    local val = str_util.crop_string_for_ui(tostring(data.value or ""):gsub("\n", "⏎"), config.debug_value_max_len)
+    chunks[#chunks + 1] = { val, base_hl or "@string" }
+end
+
+---@param data easydap.DebugView.ItemData
+---@param chunks easydap.DebugView.Chunk[]
+local function _fmt_expression(data, chunks)
+    chunks[#chunks + 1] = { data.name, "@function" }
+    chunks[#chunks + 1] = { " = ", "NonText" }
+    local val = str_util.crop_string_for_ui(tostring(data.value or ""):gsub("\n", "⏎"), config.debug_value_max_len)
+    chunks[#chunks + 1] = { val, (data.is_na or data.greyout) and "NonText" or "@string" }
+end
+
+---@param data easydap.DebugView.ItemData
+---@param chunks easydap.DebugView.Chunk[]
+local function _fmt_breakpoint(data, chunks)
+    local icon, hl
+    if data.disabled then
+        icon, hl = "○", "NonText"
+    elseif data.bp_kind == "exception_type" and data.unsupported then
+        icon, hl = "✗", "DiagnosticError"
+    elseif data.bp_kind == "exception_filter" or data.bp_kind == "exception_type" then
+        icon, hl = "⚡", "DiagnosticInfo"
+    elseif data.log_message then
+        icon, hl = "◆", "DiagnosticHint"
+    elseif data.condition or data.hit_condition then
+        icon, hl = "■", "DiagnosticWarn"
+    elseif data.verified == false then
+        icon, hl = "◌", "DiagnosticWarn"
+    else
+        icon, hl = "●", "DiagnosticOk"
+    end
+    chunks[#chunks + 1] = { icon .. " ", hl }
+    chunks[#chunks + 1] = { data.name, data.disabled and "NonText" or nil }
+    if data.bp_kind == "exception_type" and data.unsupported then
+        chunks[#chunks + 1] = { "  [unsupported]", "DiagnosticWarn" }
+    elseif data.bp_kind == "exception_type" and data.break_mode then
+        chunks[#chunks + 1] = { " [" .. data.break_mode .. "]", "Comment" }
+    else
+        if data.condition then
+            chunks[#chunks + 1] = { " • if: " .. data.condition, "Comment" }
+        end
+        if data.hit_condition then
+            chunks[#chunks + 1] = { " • hit: " .. data.hit_condition, "Comment" }
+        end        
+        if data.log_message then
+            chunks[#chunks + 1] = { " • log: " .. data.log_message, "Comment" }
+        end
+    end
+end
+
+---@type table<easydap.DebugView.ItemKind, fun(data: easydap.DebugView.ItemData, chunks: easydap.DebugView.Chunk[])>
+local _formatters = {
+    root       = _fmt_root,
+    session    = _fmt_session,
+    stackframe = _fmt_stackframe,
+    scope      = _fmt_scope,
+    variable   = _fmt_variable,
+    expression = _fmt_expression,
+    breakpoint = _fmt_breakpoint,
+}
+
+---@param data easydap.DebugView.ItemData?
+---@return easydap.DebugView.Chunk[], table
+local function _node_formatter(_, data, _)
+    if not data then return {}, {} end
+    local chunks = {}
+    local fmt = _formatters[data.kind]
+    if fmt then fmt(data, chunks) end
+    return chunks, {}
+end
+
+-- ── DebugView class ───────────────────────────────────────────────────────
+
+---@class easydap.DebugView
+---@field private _tree             easydap.ui.TreeBuffer
+---@field private _active_id        number?
+---@field private _active_sess      easydap.dap.Session?
+---@field private _query_ctx        number
+---@field private _subs             fun()[]
+---@field private _expanded         table<string,boolean>
+---@field private _greyout_timer    any
+---@field private _session_timer    any
+---@field private _removal_timers   table<number,any>
+local DebugView = {}
+DebugView.__index = DebugView
+
+---@return easydap.DebugView
+function DebugView.new()
+    local self = setmetatable({
+        _active_id      = nil,
+        _active_sess    = nil,
+        _query_ctx      = 0,
+        _subs           = {},
+        _expanded       = {},
+        _removal_timers = {},
+    }, DebugView)
+    self:_init_tree()
+    self:_setup_subs()
+    self:_load_breakpoints()
+    return self
+end
+
+-- ── Tree init ─────────────────────────────────────────────────────────────
+
+---@private
+function DebugView:_init_tree()
+    self._tree = TreeBuffer.new({
+        filetype  = "easydap-view",
+        formatter = _node_formatter,
+    })
+
+    ---@param id string
+    ---@param name string
+    local function root(id, name)
+        self._tree:add_item(nil, {
+            id         = id,
+            expandable = true,
+            expanded   = true,
+            data       = { kind = "root", path = id, name = name },
+        })
+    end
+
+    root(_roots.sessions, "Sessions")
+    root(_roots.stack, "Call Stack")
+    root(_roots.variables, "Variables")
+    root(_roots.expressions, "Expressions")
+    root(_roots.breakpoints, "Breakpoints")
+
+    self._tree:subscribe({
+        on_toggle = function(id, data, expanded)
+            if data and data.path then
+                self._expanded[data.path] = expanded
+            end
+            if not expanded then return end
+            local ctx = self._query_ctx
+            if id == _roots.stack then
+                if self._active_sess then self:_load_stack(ctx) end
+            elseif id == _roots.variables then
+                if self._active_sess then self:_load_vars(ctx) end
+            elseif id == _roots.expressions then
+                self:_load_expressions(ctx)
+            elseif id == _roots.breakpoints then
+                self:_load_breakpoints()
+            elseif data and (data.kind == "scope" or data.kind == "variable" or data.kind == "expression") then
+                local ref = data.variablesReference
+                if ref and ref > 0 and self._active_sess then
+                    self:_load_children(ctx, self._active_sess, ref, id, data.path)
+                end
+            elseif data and data.kind == "session" and data.session_id then
+                manager.select_session(data.session_id)
+            end
+        end,
+        on_selection = function(_, data)
+            if not data then return end
+            if data.kind == "session" and data.session_id then
+                manager.select_session(data.session_id)
+            elseif data.kind == "stackframe" and data.frame_id then
+                manager.select_frame(data.frame_id)
+            elseif data.kind == "breakpoint" and data.bp_kind == "source"
+                and data.bp_source and data.bp_line then
+                local view_win = self._tree:get_winid()
+                local target = -1
+                for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+                    if win ~= view_win then
+                        target = win; break
+                    end
+                end
+                if target == -1 then
+                    vim.cmd("vsplit"); target = vim.api.nvim_get_current_win()
+                end
+                vim.api.nvim_set_current_win(target)
+                local ok = pcall(vim.cmd.edit, data.bp_source)
+                if ok then pcall(vim.api.nvim_win_set_cursor, target, { data.bp_line, 0 }) end
+            end
+        end,
+    })
+end
+
+-- ── Signal subscriptions ──────────────────────────────────────────────────
+
+---@private
+function DebugView:_setup_subs()
+    self._subs[#self._subs + 1] = manager.on_session_added:subscribe(function(id, _, info)
+        self._removal_timers[id] = _cancel_timer(self._removal_timers[id])
+        self:_upsert_session_row(id, info)
+    end)
+
+    self._subs[#self._subs + 1] = manager.on_session_removed:subscribe(function(id)
+        local item_id = _roots.sessions .. "/" .. id
+        local item = self._tree:get_item(item_id)
+        if item and item.data and item.data.session_info then
+            item.data.session_info.state     = "terminated"
+            item.data.session_info.is_paused = false
+            self._tree:set_item_data(item_id, item.data)
+        end
+        if self._active_id == id then
+            self:_set_active(nil, nil)
+        end
+        self._removal_timers[id] = _cancel_timer(self._removal_timers[id])
+        self._removal_timers[id] = _start_timer(3000, function()
+            self._removal_timers[id] = nil
+            self._tree:remove_item(item_id)
+        end)
+    end)
+
+    self._subs[#self._subs + 1] = manager.on_session_updated:subscribe(function(id, info)
+        if info.is_paused then
+            self._session_timer = _cancel_timer(self._session_timer)
+            self:_upsert_session_row(id, info)
+        else
+            self._session_timer = _cancel_timer(self._session_timer)
+            self._session_timer = _start_timer(config.antiflicker_delay, function()
+                self._session_timer = nil
+                self:_upsert_session_row(id, info)
+            end)
+        end
+        if id == self._active_id and not info.is_paused then
+            self._greyout_timer = _cancel_timer(self._greyout_timer)
+            self._greyout_timer = _start_timer(config.antiflicker_delay, function()
+                self._greyout_timer = nil
+                self:_greyout_items()
+            end)
+        end
+    end)
+
+    self._subs[#self._subs + 1] = manager.on_session_stopped:subscribe(function(id, _)
+        if id ~= self._active_id then return end
+        self._greyout_timer = _cancel_timer(self._greyout_timer)
+        -- GDB inferior function call: the stop is transient, undo any greyout from the
+        -- preceding continued event and skip re-evaluation of stack/vars/expressions.
+        if self._active_sess and self._active_sess.state_reason == "function call" then
+            self:_ungreyout_items()
+            return
+        end
+        self._query_ctx = self._query_ctx + 1
+        local ctx = self._query_ctx
+        self:_load_stack(ctx)
+        self:_load_vars(ctx)
+        self:_load_expressions(ctx)
+    end)
+
+    self._subs[#self._subs + 1] = manager.on_active_changed:subscribe(function(id, sess)
+        self:_set_active(id, sess)
+    end)
+
+    self._subs[#self._subs + 1] = manager.on_selection_changed:subscribe(function(id, _)
+        if id ~= self._active_id then return end
+        self._query_ctx = self._query_ctx + 1
+        local ctx = self._query_ctx
+        self:_load_stack(ctx)
+        self:_load_vars(ctx)
+        self:_load_expressions(ctx)
+    end)
+
+    self._subs[#self._subs + 1] = expressions.on_change:subscribe(function()
+        self:_load_expressions(self._query_ctx)
+    end)
+
+    self._subs[#self._subs + 1] = breakpoints.on_change:subscribe(function()
+        self:_load_breakpoints()
+    end)
+end
+
+function DebugView:teardown()
+    for _, unsub in ipairs(self._subs) do unsub() end
+    self._subs = {}
+    self._greyout_timer = _cancel_timer(self._greyout_timer)
+    self._session_timer = _cancel_timer(self._session_timer)
+    for id, t in pairs(self._removal_timers) do
+        _cancel_timer(t)
+        self._removal_timers[id] = nil
+    end
+end
+
+---@private
+function DebugView:_greyout_items()
+    for _, item in ipairs(self._tree:get_items()) do
+        local k = item.data and item.data.kind
+        if k == "variable" or k == "stackframe" or k == "scope" or k == "expression" then
+            item.data.greyout = true
+            self._tree:set_item_data(item.id, item.data)
+        end
+    end
+end
+
+---@private
+function DebugView:_ungreyout_items()
+    for _, item in ipairs(self._tree:get_items()) do
+        local k = item.data and item.data.kind
+        if k == "variable" or k == "stackframe" or k == "scope" or k == "expression" then
+            if item.data.greyout then
+                item.data.greyout = false
+                self._tree:set_item_data(item.id, item.data)
+            end
+        end
+    end
+end
+
+---@param data easydap.DebugView.ItemData
+function DebugView:_show_hover(data)
+    local kind = data and data.kind
+    if not kind then return end
+    local sess = self._active_sess
+
+    ---@param lines string[]
+    ---@param title string
+    local function _float(lines, title)
+        vim.lsp.util.open_floating_preview(lines, "plaintext", {
+            border = "rounded",
+            title = title,
+            focus_id = "easydap_view",
+
+        })
+    end
+
+    if kind == "stackframe" then
+        local frame
+        if sess then
+            local thread = sess:current_thread()
+            for _, f in ipairs(thread and thread.stack_frames or {}) do
+                if f.id == data.frame_id then
+                    frame = f; break
+                end
+            end
+        end
+        if not frame then return end
+        local lines = { frame.name or data.name }
+        local src = frame.source
+        if src then
+            if src.path and src.path ~= "" then
+                lines[#lines + 1] = vim.fn.fnamemodify(src.path, ":~:.")
+            elseif src.name then
+                lines[#lines + 1] = src.name
+            end
+        end
+        if frame.line then lines[#lines + 1] = "line " .. frame.line end
+        if frame.instructionPointerReference then
+            lines[#lines + 1] = frame.instructionPointerReference
+        end
+        _float(lines, "Stack Frame")
+        return
+    end
+
+    if kind == "session" then
+        if sess and sess.exception_description then
+            _float(vim.split(sess.exception_description, "\n", { plain = true }), "Exception")
+        end
+        return
+    end
+
+    if (kind == "variable" or kind == "expression") and data.is_na then
+        _float(vim.split(data.error or "not available", "\n", { plain = true }), data.name)
+        return
+    end
+
+    if kind == "variable" or kind == "expression" then
+        if not sess or not sess:current_stack_frame() then return end
+        local expr = (kind == "variable") and (data.evaluateName or data.name) or data.name
+        sess:evaluate(expr, "hover", function(body, err)
+            if err or not body then
+                _float({ err or "not available" }, data.name)
+                return
+            end
+            local lines = {}
+            if body.type and body.type ~= "" then
+                lines[#lines + 1] = body.type
+                lines[#lines + 1] = ""
+            end
+            vim.list_extend(lines, vim.split(body.result or "", "\n", { plain = true }))
+            _float(lines, data.name)
+        end)
+        return
+    end
+
+    if kind == "breakpoint" then
+        local lines = {}
+        if data.bp_kind == "source" then
+            if data.bp_source and data.bp_source ~= "" then
+                lines[#lines + 1] = vim.fn.fnamemodify(data.bp_source, ":~:.")
+            end
+            if data.bp_line then lines[#lines + 1] = "line " .. data.bp_line end
+        elseif data.bp_kind == "function" then
+            lines[#lines + 1] = "function: " .. (data.name or "?")
+        elseif data.bp_kind == "exception_filter" then
+            lines[#lines + 1] = "filter: " .. (data.bp_filter or data.name or "?")
+        elseif data.bp_kind == "exception_type" then
+            lines[#lines + 1] = "exception: " .. (data.bp_ex_name or data.name or "?")
+            if data.break_mode then lines[#lines + 1] = "break mode: " .. data.break_mode end
+            if data.unsupported then lines[#lines + 1] = "(not supported by adapter)" end
+        end
+        if data.condition and data.condition ~= "" then
+            lines[#lines + 1] = "condition: " .. data.condition
+        end
+        if data.hit_condition and data.hit_condition ~= "" then
+            lines[#lines + 1] = "hit: " .. data.hit_condition
+        end
+        if data.log_message and data.log_message ~= "" then
+            lines[#lines + 1] = "log: " .. data.log_message
+        end
+        local st = data.bp_id and sess and sess:bp_status(data.bp_id)
+        if st then
+            if st.message and st.message ~= "" then
+                lines[#lines + 1] = ""
+                lines[#lines + 1] = st.message
+            end
+            if st.hits and st.hits > 0 then
+                lines[#lines + 1] = "hit count: " .. st.hits
+            end
+        end
+        if data.disabled then
+            lines[#lines + 1] = "disabled"
+        elseif data.verified == false then
+            lines[#lines + 1] = "not verified"
+        elseif data.verified then
+            lines[#lines + 1] = "verified"
+        end
+        if #lines > 0 then _float(lines, "Breakpoint") end
+        return
+    end
+end
+
+-- ── Session rows ──────────────────────────────────────────────────────────
+
+---@param id number
+---@param info easydap.manager.SessionInfo
+function DebugView:_upsert_session_row(id, info)
+    local item_id = _roots.sessions .. "/" .. id
+    ---@type easydap.DebugView.ItemData
+    local data = {
+        kind         = "session",
+        path         = item_id,
+        name         = info.name,
+        session_id   = id,
+        session_info = info,
+        is_current   = (self._active_id == id),
+    }
+    if self._tree:have_item(item_id) then
+        self._tree:set_item_data(item_id, data)
+    else
+        self._tree:add_item(_roots.sessions, {
+            id         = item_id,
+            expandable = false,
+            expanded   = false,
+            data       = data,
+        })
+    end
+end
+
+---@param id number?
+---@param sess easydap.dap.Session?
+function DebugView:_set_active(id, sess)
+    local old_id      = self._active_id
+    self._active_id   = id
+    self._active_sess = sess
+
+    -- refresh is_current flag on old and new session rows
+    if old_id then
+        local item = self._tree:get_item(_roots.sessions .. "/" .. old_id)
+        if item and item.data then
+            item.data.is_current = false
+            self._tree:set_item_data(_roots.sessions .. "/" .. old_id, item.data)
+        end
+    end
+    if id then
+        local item = self._tree:get_item(_roots.sessions .. "/" .. id)
+        if item and item.data then
+            item.data.is_current = true
+            self._tree:set_item_data(_roots.sessions .. "/" .. id, item.data)
+        end
+    end
+
+    self._query_ctx = self._query_ctx + 1
+
+    self._greyout_timer = _cancel_timer(self._greyout_timer)
+
+    if not id then
+        -- session ended with no replacement: keep data visible but greyed out
+        self:_greyout_items()
+        return
+    end
+
+    local ctx = self._query_ctx
+    self._greyout_timer = _start_timer(config.antiflicker_delay, function()
+        self._greyout_timer = nil
+        if ctx ~= self._query_ctx then return end
+        self:_greyout_items()
+    end)
+
+    self:_load_stack(ctx)
+    self:_load_vars(ctx)
+    self:_load_expressions(ctx)
+    self:_load_breakpoints()
+end
+
+-- ── Data loading ──────────────────────────────────────────────────────────
+
+---@private
+---@param ctx number
+function DebugView:_load_stack(ctx)
+    local sess = self._active_sess
+    if not sess then
+        self._tree:set_children(_roots.stack, {})
+        return
+    end
+    local thread = sess:current_thread()
+    if not thread then
+        self._tree:set_children(_roots.stack, {})
+        return
+    end
+    sess:fetch_stack_trace(thread, 50, function()
+        if ctx ~= self._query_ctx then return end
+        self._greyout_timer = _cancel_timer(self._greyout_timer)
+        local frames = thread.stack_frames or {}
+        local current_frame = sess:current_stack_frame()
+        local items = {}
+        for i, frame in ipairs(frames) do
+            local path = _roots.stack .. "/" .. i
+            items[#items + 1] = {
+                id         = path,
+                expandable = false,
+                expanded   = false,
+                data       = {
+                    kind       = "stackframe",
+                    path       = path,
+                    name       = frame.name or "<frame>",
+                    frame_id   = frame.id,
+                    is_current = current_frame and frame.id == current_frame.id or false,
+                    greyout    = false,
+                },
+            }
+        end
+        self._tree:set_children(_roots.stack, items)
+    end)
+end
+
+---@param parent_id any
+---@param new_children easydap.ui.TreeBuffer.ItemDef[]
+function DebugView:_merge_children(parent_id, new_children)
+    local existing = self._tree:get_children(parent_id)
+    local existing_map = {}
+    for _, child in ipairs(existing) do
+        existing_map[child.id] = true
+    end
+
+    local new_ids = {}
+    for _, item in ipairs(new_children) do
+        new_ids[item.id] = true
+        if existing_map[item.id] then
+            self._tree:set_item_data(item.id, item.data)
+            self._tree:set_item_expandable(item.id, item.expandable or false)
+        else
+            self._tree:add_item(parent_id, item)
+        end
+    end
+
+    for _, child in ipairs(existing) do
+        if not new_ids[child.id] then
+            self._tree:remove_item(child.id)
+        end
+    end
+end
+
+---@private
+---@param ctx number
+function DebugView:_load_vars(ctx)
+    local sess = self._active_sess
+    local root_item = self._tree:get_item(_roots.variables)
+    if not sess or not root_item or not root_item.expanded then
+        self._tree:set_children(_roots.variables, {})
+        return
+    end
+    local frame = sess:current_stack_frame()
+    if not frame then
+        self._tree:set_children(_roots.variables, {})
+        return
+    end
+    sess:fetch_scopes(frame, function()
+        if ctx ~= self._query_ctx then return end
+        self._greyout_timer = _cancel_timer(self._greyout_timer)
+        local scopes = frame.scopes or {}
+        local scope_items = {}
+        for i, scope in ipairs(scopes) do
+            local path = _roots.variables .. "/" .. (scope.name or i)
+            local expanded = self._expanded[path]
+            if expanded == nil then
+                expanded = not (scope.expensive
+                    or scope.presentationHint == "globals"
+                    or scope.name == "Globals" or scope.name == "Global"
+                    or scope.name == "Registers" or scope.name == "Static")
+            end
+            scope_items[#scope_items + 1] = {
+                id         = path,
+                expandable = true,
+                expanded   = expanded,
+                data       = {
+                    kind               = "scope",
+                    path               = path,
+                    name               = (scope.expensive and "⏱ " or "") .. (scope.name or "scope"),
+                    variablesReference = scope.variablesReference,
+                    greyout            = false,
+                },
+            }
+        end
+        self:_merge_children(_roots.variables, scope_items)
+        -- load variables for expanded scopes
+        for _, si in ipairs(scope_items) do
+            if si.expanded and si.data.variablesReference and si.data.variablesReference > 0 then
+                self:_load_children(ctx, sess, si.data.variablesReference, si.id, si.data.path)
+            end
+        end
+    end)
+end
+
+---@param ctx number
+---@param sess easydap.dap.Session
+---@param ref number
+---@param parent_id any
+---@param parent_path string
+function DebugView:_load_children(ctx, sess, ref, parent_id, parent_path)
+    local tmp = { variablesReference = ref }
+    sess:fetch_variables(tmp, function()
+        if ctx ~= self._query_ctx then return end
+        local vars = tmp.variables or {}
+        local children = {}
+        for i, var in ipairs(vars) do
+            local path              = parent_path .. "/" .. (var.name or i)
+            local expandable        = var.variablesReference and var.variablesReference > 0
+            local expanded          = expandable and (self._expanded[path] == true) or false
+            local item_id           = parent_id .. "::" .. (var.name or i) .. "#" .. i
+            children[#children + 1] = {
+                id         = item_id,
+                expandable = expandable,
+                expanded   = expanded,
+                data       = {
+                    kind               = "variable",
+                    path               = path,
+                    name               = var.name or "?",
+                    value              = var.value,
+                    variablesReference = var.variablesReference,
+                    evaluateName       = var.evaluateName,
+                    greyout            = false,
+                },
+            }
+        end
+        self:_merge_children(parent_id, children)
+        for _, child in ipairs(children) do
+            if child.expanded and child.data.variablesReference and child.data.variablesReference > 0 then
+                self:_load_children(ctx, sess, child.data.variablesReference, child.id, child.data.path)
+            end
+        end
+    end)
+end
+
+---@private
+---@param ctx number
+function DebugView:_load_expressions(ctx)
+    local root_item = self._tree:get_item(_roots.expressions)
+    if not root_item or not root_item.expanded then return end
+
+    local all = expressions.all()
+
+    -- remove tree nodes for expressions that no longer exist
+    local live = {}
+    for _, e in ipairs(all) do live[_roots.expressions .. "/" .. e.internal_id] = true end
+    for _, child in ipairs(self._tree:get_children(_roots.expressions)) do
+        if not live[child.id] then self._tree:remove_item(child.id) end
+    end
+
+    -- ensure a tree node exists for every expression
+    local existing = {}
+    for _, child in ipairs(self._tree:get_children(_roots.expressions)) do
+        existing[child.id] = true
+    end
+    for _, expr_obj in ipairs(all) do
+        local item_id = _roots.expressions .. "/" .. expr_obj.internal_id
+        if not existing[item_id] then
+            self._tree:add_item(_roots.expressions, {
+                id         = item_id,
+                expandable = false,
+                expanded   = false,
+                data       = {
+                    kind    = "expression",
+                    path    = item_id,
+                    name    = expr_obj.expr,
+                    expr_id = expr_obj.internal_id,
+                    is_na   = true,
+                    value   = "not available",
+                    greyout = false,
+                },
+            })
+        else
+            local item = self._tree:get_item(item_id)
+            if item and item.data and item.data.name ~= expr_obj.expr then
+                item.data.name = expr_obj.expr
+                self._tree:set_item_data(item_id, item.data)
+            end
+        end
+        self:_eval_expression(ctx, expr_obj)
+    end
+end
+
+---@param ctx number
+---@param expr_obj easydap.Expression
+function DebugView:_eval_expression(ctx, expr_obj)
+    local item_id = _roots.expressions .. "/" .. expr_obj.internal_id
+    local sess = self._active_sess
+    if not sess or not sess:current_stack_frame() then return end
+
+    sess:evaluate(expr_obj.expr, "watch", function(body, err)
+        if ctx ~= self._query_ctx then return end
+        if not self._tree:have_item(item_id) then return end
+        local item = self._tree:get_item(item_id)
+        if not item then return end
+        local data = item.data
+        if err or not body then
+            data.value              = "not available"
+            data.is_na              = true
+            data.error              = err
+            data.greyout            = false
+            data.variablesReference = nil
+        else
+            data.value              = body.result
+            data.is_na              = false
+            data.greyout            = false
+            data.variablesReference = body.variablesReference
+        end
+        self._tree:set_item_data(item_id, data)
+        local has_ref = data.variablesReference and data.variablesReference > 0
+        self._tree:set_item_expandable(item_id, has_ref or false)
+        if not has_ref then
+            self._tree:remove_children(item_id)
+        end
+    end)
+end
+
+---@private
+function DebugView:_load_breakpoints()
+    local root_item = self._tree:get_item(_roots.breakpoints)
+    if not root_item or not root_item.expanded then return end
+
+    local items = {}
+
+    for _, bp in ipairs(breakpoints.all()) do
+        local short       = vim.fn.fnamemodify(bp.source, ":~:.")
+        local path        = _roots.breakpoints .. "/src/" .. bp.internal_id
+        local src_st      = manager.bp_status(bp.internal_id)
+        items[#items + 1] = {
+            id         = path,
+            expandable = false,
+            expanded   = false,
+            data       = {
+                kind        = "breakpoint",
+                path        = path,
+                name        = short .. ":" .. bp.line,
+                bp_kind     = "source",
+                bp_id       = bp.internal_id,
+                bp_source   = bp.source,
+                bp_line     = bp.line,
+                disabled    = bp.disabled,
+                verified    = src_st and src_st.verified,
+                condition     = bp.condition,
+                hit_condition = bp.hit_condition,
+                log_message   = bp.log_message,
+            },
+        }
+    end
+
+    for _, bp in ipairs(breakpoints.function_breakpoints()) do
+        local path        = _roots.breakpoints .. "/fn/" .. bp.internal_id
+        local fn_st       = manager.bp_status(bp.internal_id)
+        items[#items + 1] = {
+            id         = path,
+            expandable = false,
+            expanded   = false,
+            data       = {
+                kind     = "breakpoint",
+                path     = path,
+                name     = bp.name,
+                bp_kind  = "function",
+                bp_id    = bp.internal_id,
+                disabled = bp.disabled,
+                verified = fn_st and fn_st.verified,
+            },
+        }
+    end
+
+    for _, bp in ipairs(breakpoints.exception_breakpoints()) do
+        local path = _roots.breakpoints .. "/exc/" .. bp.filter
+        items[#items + 1] = {
+            id         = path,
+            expandable = false,
+            expanded   = false,
+            data       = {
+                kind      = "breakpoint",
+                path      = path,
+                name      = bp.label,
+                bp_kind   = "exception_filter",
+                bp_filter = bp.filter,
+                disabled  = bp.disabled,
+            },
+        }
+    end
+
+    local active_sess = manager.session()
+    local ex_opts_unsupported = active_sess ~= nil
+        and not (active_sess.capabilities and active_sess.capabilities.supportsExceptionOptions)
+
+    for _, bp in ipairs(breakpoints.exception_name_breakpoints()) do
+        local path = _roots.breakpoints .. "/excn/" .. bp.internal_id
+        items[#items + 1] = {
+            id         = path,
+            expandable = false,
+            expanded   = false,
+            data       = {
+                kind        = "breakpoint",
+                path        = path,
+                name        = bp.name,
+                bp_kind     = "exception_type",
+                bp_id       = bp.internal_id,
+                bp_ex_name  = bp.name,
+                break_mode  = bp.break_mode,
+                disabled    = bp.disabled,
+                unsupported = ex_opts_unsupported,
+            },
+        }
+    end
+
+    self._tree:set_children(_roots.breakpoints, items)
+end
+
+-- ── Public: window management ─────────────────────────────────────────────
+
+---Create (or return existing) buffer for embedding in a window.
+---@param on_deleted fun()  called when the buffer is wiped
+---@return integer bufnr
+function DebugView:get_bufnr(on_deleted)
+    local bufnr, created = self._tree:create_buffer(on_deleted)
+    if created then
+        self:_setup_keymaps(bufnr)
+        -- apply initial state for any already-running sessions
+        for id, sess in pairs(manager.sessions()) do
+            local info = {
+                id                = id,
+                name              = sess.config.adapter or "debug",
+                state             = sess.state,
+                is_paused         = sess.state == "stopped",
+                nb_paused_threads = 0,
+            }
+            self:_upsert_session_row(id, info)
+        end
+        local aid = manager.active_id()
+        if aid then
+            self:_set_active(aid, manager.get_session(aid))
+        end
+    end
+    return bufnr
+end
+
+---Close the DebugView window if it is currently visible.
+function DebugView:close()
+    local winid = self._tree:get_winid()
+    if winid > 0 then
+        vim.api.nvim_win_close(winid, true)
+    end
+end
+
+---@param focus boolean
+function DebugView:_open(focus)
+    local winid = self._tree:get_winid()
+    if winid > 0 then
+        if focus then vim.api.nvim_set_current_win(winid) end
+        return
+    end
+    local prev_win = vim.api.nvim_get_current_win()
+    local bufnr = self:get_bufnr(function() end)
+    vim.cmd("vsplit")
+    local win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win, bufnr)
+    vim.api.nvim_win_set_width(win, 50)
+    vim.wo[win].winfixbuf = true
+    if not focus then vim.api.nvim_set_current_win(prev_win) end
+end
+
+---Open the DebugView in a vertical split (or focus if already visible).
+function DebugView:open()
+    self:_open(true)
+end
+
+---Open the DebugView without stealing focus. No-op if already visible.
+function DebugView:show()
+    self:_open(false)
+end
+
+-- ── Keymaps ────────────────────────────────────────────────────────────────
+
+---@private
+---@param bufnr integer
+function DebugView:_setup_keymaps(bufnr)
+    ---@param key string
+    ---@param desc string
+    ---@param fn fun()
+    local function map(key, desc, fn)
+        vim.keymap.set("n", key, fn, { buffer = bufnr, desc = desc })
+    end
+
+    map("i", "Add watch expression", function()
+        local cur = self._tree:get_cursor_item()
+        if not cur then return end
+        local id = tostring(cur.id)
+        local under_xpr = id == _roots.expressions or vim.startswith(id, _roots.expressions .. "/")
+        if not under_xpr then return end
+        inputwin.open({ prompt = "Watch expression: " }, function(expr)
+            if expr and expr ~= "" then expressions.add(expr) end
+        end)
+    end)
+
+    map("d", "Remove watch expression or breakpoint", function()
+        local cur = self._tree:get_cursor_item()
+        if not cur or not cur.data then return end
+        if cur.data.kind == "expression" then
+            for _, e in ipairs(expressions.all()) do
+                if e.expr == cur.data.name then
+                    expressions.remove(e.internal_id); break
+                end
+            end
+        elseif cur.data.kind == "breakpoint" then
+            local d = cur.data
+            if d.bp_kind == "source" and d.bp_source and d.bp_line then
+                breakpoints.remove(d.bp_source, d.bp_line)
+            elseif d.bp_kind == "function" then
+                breakpoints.remove_function(d.name)
+            elseif d.bp_kind == "exception_type" and d.bp_ex_name then
+                breakpoints.remove_exception_name(d.bp_ex_name)
+                local sess = manager.session()
+                if sess then sess:sync_exception_breakpoints() end
+            end
+        end
+    end)
+
+    map("r", "Rename expression", function()
+        local cur = self._tree:get_cursor_item()
+        if not cur or not cur.data or cur.data.kind ~= "expression" then return end
+        local d = cur.data
+        if not d.expr_id then return end
+        inputwin.open({ prompt = "Expression: ", default = d.name or "" }, function(input)
+            if input and input ~= "" then expressions.update(d.expr_id, input) end
+        end)
+    end)
+
+    map("e", "Toggle breakpoint enabled/disabled", function()
+        local cur = self._tree:get_cursor_item()
+        if not cur or not cur.data or cur.data.kind ~= "breakpoint" then return end
+        local d = cur.data
+        local sess = manager.session()
+        if d.bp_kind == "source" and d.bp_source and d.bp_line then
+            breakpoints.patch(d.bp_source, d.bp_line, { disabled = not d.disabled })
+            if sess then sess:sync_breakpoints(d.bp_source) end
+        elseif d.bp_kind == "function" then
+            breakpoints.add_function(d.name, { disabled = not d.disabled })
+            if sess then sess:sync_function_breakpoints() end
+        elseif d.bp_kind == "exception_filter" and d.bp_filter then
+            breakpoints.set_exception_enabled(d.bp_filter, d.disabled)
+            if sess then sess:sync_exception_breakpoints() end
+        elseif d.bp_kind == "exception_type" and d.bp_ex_name then
+            breakpoints.set_exception_name_enabled(d.bp_ex_name, d.disabled)
+            if sess then sess:sync_exception_breakpoints() end
+        end
+    end)
+
+    map("c", "Change variable value or breakpoint condition", function()
+        local cur = self._tree:get_cursor_item()
+        if not cur or not cur.data then return end
+        local d = cur.data
+        if d.kind == "breakpoint" and d.bp_kind == "source" and d.bp_source and d.bp_line then
+            inputwin.open({ prompt = "Condition (empty to clear): ", default = d.condition or "" }, function(input)
+                if input == nil then return end
+                breakpoints.patch(d.bp_source, d.bp_line, { condition = input })
+                local sess = manager.session()
+                if sess then sess:sync_breakpoints(d.bp_source) end
+            end)
+        elseif d.kind == "breakpoint" and d.bp_kind == "exception_type" and d.bp_ex_name then
+            local _modes = { "always", "unhandled", "userUnhandled", "never" }
+            local cur_mode = d.break_mode
+            select(_modes, {
+                prompt      = "Break mode for " .. d.bp_ex_name .. ": ",
+                format_item = function(m) return (m == cur_mode and "● " or "  ") .. m end,
+            }, function(mode)
+                if not mode then return end
+                breakpoints.add_exception_name(d.bp_ex_name, mode)
+                local sess = manager.session()
+                if sess then sess:sync_exception_breakpoints() end
+            end)
+        elseif d.kind == "variable" and self._active_sess then
+            local parent = self._tree:get_parent_item(cur.id)
+            local parent_ref = parent and parent.data and parent.data.variablesReference
+            inputwin.open({ prompt = "New value: ", default = d.value or "" }, function(input)
+                if input == nil then return end
+                self._active_sess:set_variable(parent_ref,
+                { name = d.name, value = d.value, variablesReference = d.variablesReference or 0, evaluateName = d
+                    .evaluateName }, input,
+                    function(_, err)
+                        if err then return end
+                        self:_load_vars(self._query_ctx)
+                    end)
+            end)
+        end
+    end)
+
+    map("K", "Show details / full value", function()
+        local cur = self._tree:get_cursor_item()
+        if cur and cur.data then self:_show_hover(cur.data) end
+    end)
+
+    map("g?", "Show keymaps", function()
+        vim.notify(table.concat({
+            "<CR>  Select session / switch frame / jump to breakpoint source",
+            "K     Show full value / frame details / exception info / breakpoint details",
+            "i     Add watch expression",
+            "d     Remove watch expression or breakpoint",
+            "r     Rename expression",
+            "e     Toggle breakpoint enabled/disabled",
+            "c     Change variable value, breakpoint condition, or exception break mode",
+        }, "\n"))
+    end)
+end
+
+return DebugView

@@ -1,0 +1,36 @@
+---@class easydap.Signs
+---@field debug_frame              string  current execution position
+---@field active_breakpoint        string  enabled + verified
+---@field inactive_breakpoint      string  enabled but not yet verified by adapter
+---@field cond_breakpoint          string  conditional, enabled + verified
+---@field inactive_cond_breakpoint string  conditional, enabled but not yet verified
+---@field logpoint                 string  logpoint, enabled + verified
+---@field inactive_logpoint        string  logpoint, enabled but not yet verified
+---@field disabled_breakpoint      string  plain breakpoint, disabled
+---@field disabled_cond_breakpoint string  conditional breakpoint, disabled
+---@field disabled_logpoint        string  logpoint, disabled
+
+---@class easydap.Config
+---@field antiflicker_delay    integer  milliseconds to wait before clearing stale UI (inline vars, DebugView) to avoid flicker during step-through
+---@field debug_value_max_len  integer  max characters shown for variable/expression values in DebugView before truncating
+---@field signs easydap.Signs
+
+---@type easydap.Config
+local M = {
+	antiflicker_delay   = 200,
+	debug_value_max_len = 30,
+	signs = {
+		debug_frame              = "▶",
+		active_breakpoint        = "●",
+		inactive_breakpoint      = "○",
+		cond_breakpoint          = "■",
+		inactive_cond_breakpoint = "□",
+		logpoint                 = "◆",
+		inactive_logpoint        = "◇",
+		disabled_breakpoint      = "ø",
+		disabled_cond_breakpoint = "ø",
+		disabled_logpoint        = "ø",
+	},
+}
+
+return M

@@ -1,4 +1,4 @@
----@class easydap.Message
+---@class easydap.dap.Message
 ---@field type        "request"|"response"|"event"
 ---@field seq         integer
 ---@field command?    string    request/response command name
@@ -9,19 +9,19 @@
 ---@field message?    string    response error message
 ---@field request_seq? integer  response: echoes the originating request seq
 
----@class easydap.Parser
+---@class easydap.dap.Parser
 ---@field buf        string        accumulated raw bytes
----@field on_message fun(msg: easydap.Message)  called for each complete decoded message
----@field feed       fun(self: easydap.Parser, chunk: string)
+---@field on_message fun(msg: easydap.dap.Message)  called for each complete decoded message
+---@field feed       fun(self: easydap.dap.Parser, chunk: string)
 
 local M = {}
 
 ---Create a new streaming parser.
 ---Feed raw bytes from the adapter into `parser:feed(chunk)`.
 ---`parser.on_message` is called (on the same thread) for each complete message.
----@return easydap.Parser
+---@return easydap.dap.Parser
 function M.new_parser()
-    ---@type easydap.Parser
+    ---@type easydap.dap.Parser
     ---@diagnostic disable-next-line: missing-fields
     local self = {
         buf = "",
@@ -66,7 +66,7 @@ function M.new_parser()
 end
 
 ---Encode a message table as a Content-Length-framed DAP payload.
----@param msg easydap.Message
+---@param msg easydap.dap.Message
 ---@return string
 function M.encode(msg)
     local body = vim.json.encode(msg)

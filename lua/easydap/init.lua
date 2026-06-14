@@ -1,65 +1,180 @@
----@brief easydap — generic DAP backend.
----
----Public API re-exports the client's session management and stepping methods
----at the top level, with `breakpoints` and `configs` as sub-module properties.
----
----  local dap = require("easydap")
----  dap.configs.register("mydbg", { ... })
----  dap.start("mydbg", { on_event = ..., on_session = ... })
----  dap.continue()
----  dap.breakpoints.toggle(source, line)
-
-local _client = require("easydap.client")
-
 local M = {}
 
--- ── Sub-modules ────────────────────────────────────────────────────────────
+---@type easydap.DebugView?
+local _debug_view
+local _initialized = false
 
-M.breakpoints = require("easydap.breakpoints")
-M.configs     = require("easydap.configs")
+local function _save()
+    local store = require("easydap.store")
+    local bps   = require("easydap.dap.breakpoints")
+    local exprs = require("easydap.ui.expressions")
+    store.set("breakpoints", bps.get_data())
+    store.set("expressions", exprs.get_data())
+end
 
--- ── Signals ────────────────────────────────────────────────────────────────
+local function _load()
+    local store = require("easydap.store")
+    local bps   = require("easydap.dap.breakpoints")
+    local exprs = require("easydap.ui.expressions")
+    bps.restore(store.get("breakpoints"))
+    exprs.restore(store.get("expressions"))
+end
 
-M.on_session_added     = _client.on_session_added
-M.on_session_removed   = _client.on_session_removed
-M.on_session_updated   = _client.on_session_updated
-M.on_active_changed    = _client.on_active_changed
-M.on_session_stopped   = _client.on_session_stopped
-M.on_raw_message       = _client.on_raw_message
-M.on_selection_changed = _client.on_selection_changed
+local function _register_user_commands()
+    local cmd     = require("easydap.manager")
+    local usercmd = require("easydap.util.usercmd")
 
--- ── Session access ─────────────────────────────────────────────────────────
+    usercmd.register_subcommand("view", cmd.panel.toggle)
 
-M.session       = _client.session
-M.active_id     = _client.active_id
-M.get_session   = _client.get_session
-M.sessions      = _client.sessions
-M.select_session = _client.select_session
+    local _bp_subs = {
+        "toggle", "add", "remove",
+        "clear_file", "clear_all", "clear_fn",
+        "enable", "disable", "enable_all", "disable_all",
+        "condition", "logpoint",
+        "fn", "exception_filter", "exception_type",
+        "list",
+    }
 
--- ── Lifecycle ──────────────────────────────────────────────────────────────
+    usercmd.register_subcommand("breakpoint", function(_, args, _)
+        local sub = args[1]
+        if     sub == nil or sub == "" or sub == "toggle" then cmd.breakpoint.toggle()
+        elseif sub == "add"            then cmd.breakpoint.add(args[2])
+        elseif sub == "remove"         then cmd.breakpoint.remove()
+        elseif sub == "clear_file"     then cmd.breakpoint.clear_file()
+        elseif sub == "clear_all"      then cmd.breakpoint.clear_all()
+        elseif sub == "clear_fn"       then cmd.breakpoint.clear_fn()
+        elseif sub == "enable"         then cmd.breakpoint.enable()
+        elseif sub == "disable"        then cmd.breakpoint.disable()
+        elseif sub == "enable_all"     then cmd.breakpoint.enable_all()
+        elseif sub == "disable_all"    then cmd.breakpoint.disable_all()
+        elseif sub == "condition"      then cmd.breakpoint.condition()
+        elseif sub == "logpoint"       then cmd.breakpoint.logpoint()
+        elseif sub == "fn"             then cmd.breakpoint.fn(args[2])
+        elseif sub == "exception_filter" then cmd.breakpoint.exception_filter()
+        elseif sub == "exception_type"   then cmd.breakpoint.exception_type(args[2], args[3])
+        elseif sub == "list"           then cmd.breakpoint.list()
+        else vim.notify("[dap] unknown subcommand: " .. tostring(sub), vim.log.levels.WARN) end
+    end, {
+        complete_fn = function(rest, _)
+            if #rest == 0 then return _bp_subs end
+            if rest[1] == "fn" and #rest == 1 then
+                return vim.tbl_map(function(bp) return bp.name end,
+                    require("easydap.dap.breakpoints").function_breakpoints())
+            end
+            if rest[1] == "exception_type" and #rest == 1 then
+                return vim.tbl_map(function(bp) return bp.name end,
+                    require("easydap.dap.breakpoints").exception_name_breakpoints())
+            end
+            if rest[1] == "exception_type" and #rest == 2 then
+                return { "always", "unhandled", "userUnhandled", "never" }
+            end
+            return {}
+        end,
+    })
 
-M.start      = _client.start
-M.stop       = _client.stop
-M.disconnect = _client.disconnect
-M.quit       = _client.quit
+    local _debug_subs = {
+        "view", "continue", "continue_all",
+        "step_over", "next", "step_in", "step_out", "step_back",
+        "pause", "restart",
+        "stop", "terminate", "terminate_all",
+        "session", "thread", "frame",
+        "inspect",
+    }
 
--- ── Stepping ──────────────────────────────────────────────────────────────
+    usercmd.register_subcommand("debug", function(_, args, _)
+        local sub = args[1]
+        if     sub == "view"                        then cmd.panel.toggle()
+        elseif sub == "continue"                    then cmd.debug.continue()
+        elseif sub == "continue_all"                then cmd.debug.continue_all()
+        elseif sub == "step_over" or sub == "next"  then cmd.debug.step_over()
+        elseif sub == "step_in"                     then cmd.debug.step_in()
+        elseif sub == "step_out"                    then cmd.debug.step_out()
+        elseif sub == "step_back"                   then cmd.debug.step_back()
+        elseif sub == "pause"                       then cmd.debug.pause()
+        elseif sub == "restart"                     then cmd.debug.restart()
+        elseif sub == "stop" or sub == "terminate"  then cmd.debug.stop()
+        elseif sub == "terminate_all"               then cmd.debug.terminate_all()
+        elseif sub == "inspect"                     then cmd.debug.inspect()
+        elseif sub == "session"                     then cmd.debug.session()
+        elseif sub == "thread"                      then cmd.debug.thread()
+        elseif sub == "frame"                       then cmd.debug.frame()
+        else vim.notify("[dap] unknown subcommand: " .. tostring(sub), vim.log.levels.WARN) end
+    end, {
+        complete_fn = function(rest, _)
+            if #rest == 0 then return _debug_subs end
+            return {}
+        end,
+    })
 
-M.continue      = _client.continue
-M.next          = _client.next
-M.step_in       = _client.step_in
-M.step_out      = _client.step_out
-M.step_back     = _client.step_back
-M.pause         = _client.pause
-M.restart       = _client.restart
-M.continue_all  = _client.continue_all
-M.terminate_all = _client.terminate_all
-M.select_thread = _client.select_thread
-M.select_frame  = _client.select_frame
+    usercmd.register_user_cmd("Debug", function(_, args, _)
+        local sub = args[1]
+        local def = usercmd.get_subcommand(sub)
+        if def then
+            def.run(sub, { unpack(args, 2) }, {})
+        else
+            vim.notify("[easydap] unknown command: " .. tostring(sub), vim.log.levels.WARN)
+        end
+    end, {
+        desc = "easydap commands",
+        subcommand_fn = function(_, rest, arg_lead)
+            if #rest == 0 then return usercmd.subcommand_names() end
+            local def = usercmd.get_subcommand(rest[1])
+            return def and def.complete({ unpack(rest, 2) }, arg_lead) or {}
+        end,
+    })
+end
 
--- ── Evaluate / complete ────────────────────────────────────────────────────
+local function _init()
+    if _initialized then return end
+    _initialized = true
 
-M.evaluate = _client.evaluate
-M.complete  = _client.complete
+    vim.api.nvim_create_autocmd("VimLeavePre", {
+        callback = _save,
+        desc     = "easydap: persist breakpoints and expressions",
+    })
+
+    require("easydap.ui.breakpoints_ui").init()
+    require("easydap.ui.debugline_ui").init()
+    require("easydap.ui.inlinevars").enable()
+
+    local client = require("easydap.dap.client")
+    client.on_session_added:subscribe(function()
+        vim.schedule(function() M.debug_view():show() end)
+    end)
+end
+
+---Return the singleton DebugView, creating it on first call.
+---@return easydap.DebugView
+function M.debug_view()
+    if not _debug_view then
+        _debug_view = require("easydap.ui.DebugView").new()
+    end
+    return _debug_view
+end
+
+---Open the DebugView in a vertical split (or focus if already visible).
+function M.open_debug_view()
+    M.debug_view():open()
+end
+
+---Run a debug task. This is the public backend entry point used by task runners.
+---@param task    table
+---@param ctx     easytasks.RunCtx
+---@param on_done fun(ok: boolean)
+---@return fun()
+function M.run(task, ctx, on_done)
+    return require("easydap.task").start(task, ctx, on_done)
+end
+
+---@param opts? easydap.Config
+function M.setup(opts)
+    local config = require("easydap.config")
+    for k, v in pairs(opts or {}) do
+        config[k] = v
+    end
+    _init()
+    _load()
+    _register_user_commands()
+end
 
 return M

@@ -4,65 +4,59 @@
 
 local Signal = require("easydap.util.Signal")
 
----@class easydap.SourceBreakpoint
----@field _id         integer   internal stable id (for signs)
----@field source      string    absolute file path
----@field line        integer
----@field condition   string?
+---@class easydap.dap.SourceBreakpoint
+---@field internal_id   integer   internal stable id (for signs)
+---@field source        string    absolute file path
+---@field line          integer
+---@field condition     string?
 ---@field hit_condition string?
----@field log_message string?
+---@field log_message   string?
+---@field disabled      boolean
+
+---@class easydap.dap.FunctionBreakpoint
+---@field internal_id integer
+---@field name        string
 ---@field disabled    boolean
----@field verified    boolean
----@field id          integer?         adapter-assigned id
----@field message     string?
----@field hits        integer
 
----@class easydap.FunctionBreakpoint
----@field _id      integer
----@field name     string
----@field disabled boolean
----@field verified boolean
----@field id       integer?
-
----@class easydap.ExceptionBreakpoint
+---@class easydap.dap.ExceptionBreakpoint
 ---@field filter   string
 ---@field label    string
 ---@field default  boolean
 ---@field disabled boolean
 
----@class easydap.ExceptionFilterDef
+---@class easydap.dap.ExceptionFilterDef
 ---@field filter  string
 ---@field label   string
 ---@field default boolean?
 
----@alias easydap.ExceptionBreakMode "never"|"always"|"unhandled"|"userUnhandled"
+---@alias easydap.dap.ExceptionBreakMode "never"|"always"|"unhandled"|"userUnhandled"
 
----@class easydap.ExceptionNameBreakpoint
----@field _id        integer
----@field name       string
----@field break_mode easydap.ExceptionBreakMode
----@field disabled   boolean
+---@class easydap.dap.ExceptionNameBreakpoint
+---@field internal_id integer
+---@field name        string
+---@field break_mode  easydap.dap.ExceptionBreakMode
+---@field disabled    boolean
 
----@class easydap.BreakpointData
----@field source             table[]                    stripped easydap.SourceBreakpoint records
----@field functions          easydap.FunctionBreakpoint[]
----@field exception_names    easydap.ExceptionNameBreakpoint[]?
+---@class easydap.dap.BreakpointData
+---@field source             table[]                    stripped easydap.dap.SourceBreakpoint records
+---@field functions          easydap.dap.FunctionBreakpoint[]
+---@field exception_names    easydap.dap.ExceptionNameBreakpoint[]?
 ---@field exception_filters  table<string,boolean>?     filter → disabled
 
----@alias easydap.BreakpointChangeKind "source" | "function" | "exception" | "exception_name" | "restore"
+---@alias easydap.dap.BreakpointChangeKind "source" | "function" | "exception_filter" | "exception_type" | "restore"
 
 local M = {}
 
 ---Fires whenever any breakpoint is added, removed, or its state changes.
-M.on_change = Signal.new() ---@type easydap.util.Signal<fun(kind: easydap.BreakpointChangeKind)>
+M.on_change = Signal.new() ---@type easytasks.util.Signal<fun(kind: easydap.dap.BreakpointChangeKind)>
 
----@type easydap.SourceBreakpoint[]
+---@type easydap.dap.SourceBreakpoint[]
 local _source_bps = {}
----@type easydap.FunctionBreakpoint[]
+---@type easydap.dap.FunctionBreakpoint[]
 local _function_bps = {}
----@type easydap.ExceptionBreakpoint[]
+---@type easydap.dap.ExceptionBreakpoint[]
 local _exception_bps = {}
----@type easydap.ExceptionNameBreakpoint[]
+---@type easydap.dap.ExceptionNameBreakpoint[]
 local _exception_name_bps = {}
 ---@type table<string,boolean>  filter → disabled, populated by restore() for use by set_exception_filters()
 local _saved_exception_states = {}
@@ -79,7 +73,7 @@ end
 ---@param source string
 ---@param line   integer
 ---@param opts   { condition?: string, hit_condition?: string, log_message?: string, disabled?: boolean }?
----@return easydap.SourceBreakpoint
+---@return easydap.dap.SourceBreakpoint
 function M.add(source, line, opts)
     opts = opts or {}
     for _, bp in ipairs(_source_bps) do
@@ -92,19 +86,15 @@ function M.add(source, line, opts)
             return bp
         end
     end
-    ---@type easydap.SourceBreakpoint
+    ---@type easydap.dap.SourceBreakpoint
     local bp = {
-        _id           = _new_id(),
+        internal_id   = _new_id(),
         source        = source,
         line          = line,
         condition     = opts.condition,
         hit_condition = opts.hit_condition,
         log_message   = opts.log_message,
         disabled      = opts.disabled or false,
-        verified      = false,
-        id            = nil,
-        message       = nil,
-        hits          = 0,
     }
     _source_bps[#_source_bps + 1] = bp
     M.on_change:emit("source")
@@ -117,7 +107,7 @@ end
 ---@param source string
 ---@param line   integer
 ---@param opts   { condition?: string, hit_condition?: string, log_message?: string, disabled?: boolean }
----@return easydap.SourceBreakpoint
+---@return easydap.dap.SourceBreakpoint
 function M.patch(source, line, opts)
     local bp
     for _, b in ipairs(_source_bps) do
@@ -125,8 +115,8 @@ function M.patch(source, line, opts)
     end
     if not bp then
         bp = {
-            _id = _new_id(), source = source, line = line,
-            disabled = false, verified = false, id = nil, message = nil, hits = 0,
+            internal_id = _new_id(), source = source, line = line,
+            disabled = false,
         }
         _source_bps[#_source_bps + 1] = bp
     end
@@ -155,7 +145,7 @@ end
 ---@param source string
 ---@param line   integer
 ---@param opts   { condition?: string, hit_condition?: string, log_message?: string, disabled?: boolean }?
----@return easydap.SourceBreakpoint?
+---@return easydap.dap.SourceBreakpoint?
 function M.toggle(source, line, opts)
     for i, bp in ipairs(_source_bps) do
         if bp.source == source and bp.line == line then
@@ -168,7 +158,7 @@ function M.toggle(source, line, opts)
 end
 
 ---@param source string
----@return easydap.SourceBreakpoint[]
+---@return easydap.dap.SourceBreakpoint[]
 function M.for_source(source)
     local r = {}
     for _, bp in ipairs(_source_bps) do
@@ -189,7 +179,7 @@ function M.all_sources()
     return r
 end
 
----@return easydap.SourceBreakpoint[]
+---@return easydap.dap.SourceBreakpoint[]
 function M.all()
     return vim.list_extend({}, _source_bps)
 end
@@ -198,7 +188,7 @@ end
 
 ---@param name string
 ---@param opts { disabled?: boolean }?
----@return easydap.FunctionBreakpoint
+---@return easydap.dap.FunctionBreakpoint
 function M.add_function(name, opts)
     opts = opts or {}
     for _, bp in ipairs(_function_bps) do
@@ -208,7 +198,7 @@ function M.add_function(name, opts)
             return bp
         end
     end
-    local bp = { _id = _new_id(), name = name, disabled = opts.disabled or false, verified = false, id = nil }
+    local bp = { internal_id = _new_id(), name = name, disabled = opts.disabled or false }
     _function_bps[#_function_bps + 1] = bp
     M.on_change:emit("function")
     return bp
@@ -227,14 +217,14 @@ function M.remove_function(name)
     return false
 end
 
----@return easydap.FunctionBreakpoint[]
+---@return easydap.dap.FunctionBreakpoint[]
 function M.function_breakpoints()
     return vim.list_extend({}, _function_bps)
 end
 
 -- ── Exception breakpoints ──────────────────────────────────────────────────
 
----@param filter_defs easydap.ExceptionFilterDef[]
+---@param filter_defs easydap.dap.ExceptionFilterDef[]
 function M.set_exception_filters(filter_defs)
     local old = {}
     for _, bp in ipairs(_exception_bps) do old[bp.filter] = bp end
@@ -256,10 +246,10 @@ function M.set_exception_filters(filter_defs)
             disabled = disabled,
         }
     end
-    M.on_change:emit("exception")
+    M.on_change:emit("exception_filter")
 end
 
----@return easydap.ExceptionBreakpoint[]
+---@return easydap.dap.ExceptionBreakpoint[]
 function M.exception_breakpoints()
     return vim.list_extend({}, _exception_bps)
 end
@@ -271,7 +261,7 @@ function M.set_exception_enabled(filter, enabled)
     for _, bp in ipairs(_exception_bps) do
         if bp.filter == filter then
             bp.disabled = not enabled
-            M.on_change:emit("exception")
+            M.on_change:emit("exception_filter")
             return true
         end
     end
@@ -281,21 +271,21 @@ end
 -- ── Exception name breakpoints ─────────────────────────────────────────────
 
 ---@param name       string
----@param break_mode easydap.ExceptionBreakMode?  defaults to "always"
----@return easydap.ExceptionNameBreakpoint
+---@param break_mode easydap.dap.ExceptionBreakMode?  defaults to "always"
+---@return easydap.dap.ExceptionNameBreakpoint
 function M.add_exception_name(name, break_mode)
     break_mode = break_mode or "always"
     for _, bp in ipairs(_exception_name_bps) do
         if bp.name == name then
             bp.break_mode = break_mode
             bp.disabled   = false
-            M.on_change:emit("exception_name")
+            M.on_change:emit("exception_type")
             return bp
         end
     end
-    local bp = { _id = _new_id(), name = name, break_mode = break_mode, disabled = false }
+    local bp = { internal_id = _new_id(), name = name, break_mode = break_mode, disabled = false }
     _exception_name_bps[#_exception_name_bps + 1] = bp
-    M.on_change:emit("exception_name")
+    M.on_change:emit("exception_type")
     return bp
 end
 
@@ -305,7 +295,7 @@ function M.remove_exception_name(name)
     for i, bp in ipairs(_exception_name_bps) do
         if bp.name == name then
             table.remove(_exception_name_bps, i)
-            M.on_change:emit("exception_name")
+            M.on_change:emit("exception_type")
             return true
         end
     end
@@ -314,20 +304,20 @@ end
 
 ---Toggle: removes if present, adds (with break_mode) if absent.
 ---@param name       string
----@param break_mode easydap.ExceptionBreakMode?
----@return easydap.ExceptionNameBreakpoint?
+---@param break_mode easydap.dap.ExceptionBreakMode?
+---@return easydap.dap.ExceptionNameBreakpoint?
 function M.toggle_exception_name(name, break_mode)
     for i, bp in ipairs(_exception_name_bps) do
         if bp.name == name then
             table.remove(_exception_name_bps, i)
-            M.on_change:emit("exception_name")
+            M.on_change:emit("exception_type")
             return nil
         end
     end
     return M.add_exception_name(name, break_mode)
 end
 
----@return easydap.ExceptionNameBreakpoint[]
+---@return easydap.dap.ExceptionNameBreakpoint[]
 function M.exception_name_breakpoints()
     return vim.list_extend({}, _exception_name_bps)
 end
@@ -339,7 +329,7 @@ function M.set_exception_name_enabled(name, enabled)
     for _, bp in ipairs(_exception_name_bps) do
         if bp.name == name then
             bp.disabled = not enabled
-            M.on_change:emit("exception_name")
+            M.on_change:emit("exception_type")
             return true
         end
     end
@@ -348,11 +338,11 @@ end
 
 -- ── Lookup ─────────────────────────────────────────────────────────────────
 
----@param id integer  adapter-assigned id
----@return easydap.SourceBreakpoint|easydap.FunctionBreakpoint|nil
-function M.find_by_id(id)
-    for _, bp in ipairs(_source_bps)   do if bp.id == id then return bp end end
-    for _, bp in ipairs(_function_bps) do if bp.id == id then return bp end end
+---@param id integer  internal stable id (bp.internal_id)
+---@return easydap.dap.SourceBreakpoint|easydap.dap.FunctionBreakpoint|nil
+function M.find_by_internal_id(id)
+    for _, bp in ipairs(_source_bps)   do if bp.internal_id == id then return bp end end
+    for _, bp in ipairs(_function_bps) do if bp.internal_id == id then return bp end end
 end
 
 ---Enable all source breakpoints.
@@ -374,46 +364,40 @@ function M.disable_all()
 end
 
 ---Notify listeners that breakpoint state was mutated externally (e.g. verified by adapter).
----@param kind easydap.BreakpointChangeKind
+---@param kind easydap.dap.BreakpointChangeKind
 function M.notify_change(kind)
     M.on_change:emit(kind)
 end
 
 -- ── Persistence ────────────────────────────────────────────────────────────
 
----@return easydap.BreakpointData
+---@return easydap.dap.BreakpointData
 function M.get_data()
-    local strip = { verified = true, id = true, message = true, hits = true }
-    local function clean(bp)
-        local t = {}
-        for k, v in pairs(bp) do if not strip[k] then t[k] = v end end
-        return t
-    end
     local exc_states = {}
     for _, bp in ipairs(_exception_bps) do exc_states[bp.filter] = bp.disabled end
     return {
-        source            = vim.tbl_map(clean, _source_bps),
-        functions         = _function_bps,
+        source            = vim.list_extend({}, _source_bps),
+        functions         = vim.list_extend({}, _function_bps),
         exception_names   = _exception_name_bps,
         exception_filters = exc_states,
     }
 end
 
----@param data easydap.BreakpointData?
+---@param data easydap.dap.BreakpointData?
 function M.restore(data)
-    _source_bps               = (type(data) == "table" and data.source)            or {}
-    _function_bps             = (type(data) == "table" and data.functions)         or {}
-    _exception_name_bps       = (type(data) == "table" and data.exception_names)   or {}
+    _source_bps              = (type(data) == "table" and data.source)          or {}
+    _function_bps            = (type(data) == "table" and data.functions)       or {}
+    _exception_name_bps      = (type(data) == "table" and data.exception_names) or {}
     _saved_exception_states  = (type(data) == "table" and type(data.exception_filters) == "table"
                                     and data.exception_filters) or {}
     local max_id = 0
-    for _, bp in ipairs(_source_bps)         do if bp._id and bp._id > max_id then max_id = bp._id end end
-    for _, bp in ipairs(_function_bps)       do if bp._id and bp._id > max_id then max_id = bp._id end end
-    for _, bp in ipairs(_exception_name_bps) do if bp._id and bp._id > max_id then max_id = bp._id end end
+    for _, bp in ipairs(_source_bps)         do if bp.internal_id and bp.internal_id > max_id then max_id = bp.internal_id end end
+    for _, bp in ipairs(_function_bps)       do if bp.internal_id and bp.internal_id > max_id then max_id = bp.internal_id end end
+    for _, bp in ipairs(_exception_name_bps) do if bp.internal_id and bp.internal_id > max_id then max_id = bp.internal_id end end
     if max_id >= _next_id then _next_id = max_id + 1 end
-    for _, bp in ipairs(_source_bps)         do if not bp._id then bp._id = _new_id() end end
-    for _, bp in ipairs(_function_bps)       do if not bp._id then bp._id = _new_id() end end
-    for _, bp in ipairs(_exception_name_bps) do if not bp._id then bp._id = _new_id() end end
+    for _, bp in ipairs(_source_bps)         do if not bp.internal_id then bp.internal_id = _new_id() end end
+    for _, bp in ipairs(_function_bps)       do if not bp.internal_id then bp.internal_id = _new_id() end end
+    for _, bp in ipairs(_exception_name_bps) do if not bp.internal_id then bp.internal_id = _new_id() end end
     M.on_change:emit("restore")
 end
 

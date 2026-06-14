@@ -1,19 +1,6 @@
 local M = {}
 
----@param winid number?
-function M.get_window_text_width(winid)
-    if not winid or winid == 0 then winid = vim.api.nvim_get_current_win() end
-    local infos = vim.fn.getwininfo(winid)
-    if not infos or #infos == 0 then
-        return vim.o.columns - 3 -- fallback assumption
-    end
-    local info = infos[1]
-    return info.width - info.textoff
-end
-
----@param bufnr integer
----@return boolean
-function M.is_regular_buffer(bufnr)
+local function _is_regular_buffer(bufnr)
     if not vim.api.nvim_buf_is_valid(bufnr) then
         return false
     end
@@ -23,55 +10,61 @@ function M.is_regular_buffer(bufnr)
     return true
 end
 
----@param msg string
----@param default_yes boolean
----@param callback fun(confirmed: boolean|nil)
-function M.confirm_action(msg, default_yes, callback)
-    local choices = "&Yes\n&No"
-    local default = default_yes and 1 or 2
+local function _is_regular_win(winid)
+    if not vim.api.nvim_win_is_valid(winid) then return false end
+    local cfg = vim.api.nvim_win_get_config(winid)
+    if cfg.relative ~= "" then return false end      -- skip popups
+    if vim.wo[winid].winfixbuf then return false end -- skip fixed windows
+    local bufnr = vim.api.nvim_win_get_buf(winid)
+    return _is_regular_buffer(bufnr)
+end
 
-    local ok, choice = pcall(vim.fn.confirm, msg, choices, default)
-    if not ok then
-        callback(nil)
-        return
-    end
-    if choice == 1 then
-        callback(true)
-    elseif choice == 2 then
-        callback(false)
+---@param winid integer
+---@param line? integer 1-based line number (nil = just open)
+---@param col?  integer 0-based column (nil = column 0)
+local function _safe_set_cursor_pos(winid, line, col)
+    if not (line and type(line) == 'number' and line > 0) then return end
+    if not vim.api.nvim_win_is_valid(winid) then return end
+    local bufnr = vim.api.nvim_win_get_buf(winid)
+    if not vim.api.nvim_buf_is_valid(bufnr) then return end
+    local maxline = vim.api.nvim_buf_line_count(bufnr)
+    line = math.min(line, maxline)
+    local line_length = #vim.api.nvim_buf_get_lines(bufnr, line - 1, line, true)[1]
+    if col and type(col) == 'number' and col >= 0 then
+        col = math.min(col, line_length)
     else
-        callback(nil)
+        col = 0
     end
+    vim.api.nvim_win_set_cursor(winid, { line, col })
 end
 
----@param c1 number
----@param c2 number
----@param alpha number
----@return string
-function M.blend_colors(c1, c2, alpha)
-    local r1 = bit.rshift(c1, 16)
-    local g1 = bit.band(bit.rshift(c1, 8), 0xFF)
-    local b1 = bit.band(c1, 0xFF)
+---@return number winid
+local function _get_regular_window()
+    local cur_win = vim.api.nvim_get_current_win()
+    if _is_regular_win(cur_win) then
+        return cur_win
+    end
 
-    local r2 = bit.rshift(c2, 16)
-    local g2 = bit.band(bit.rshift(c2, 8), 0xFF)
-    local b2 = bit.band(c2, 0xFF)
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+        if winid ~= cur_win and _is_regular_win(winid) then
+            return winid
+        end
+    end
 
-    local r = math.floor(r1 * (1 - alpha) + r2 * alpha)
-    local g = math.floor(g1 * (1 - alpha) + g2 * alpha)
-    local b = math.floor(b1 * (1 - alpha) + b2 * alpha)
-
-    return string.format("#%02x%02x%02x", r, g, b)
+    vim.cmd('vsplit')
+    return vim.api.nvim_get_current_win()
 end
 
----@param buffer integer Buffer to display, or 0 for current buffer
----@param enter boolean Enter the window (make it the current window)
----@param config vim.api.keyset.win_config Map defining the window configuration
----@param on_close function
----@return integer winid, integer augroup
+
+--- @param buffer integer Buffer to display, or 0 for current buffer
+--- @param enter boolean Enter the window (make it the current window)
+--- @param config vim.api.keyset.win_config Map defining the window configuration
+--- @param on_close function
+--- @return integer winid, integer augroup
 function M.create_window(buffer, enter, config, on_close)
     local win = vim.api.nvim_open_win(buffer, enter, config)
-    local augroup = vim.api.nvim_create_augroup("easydap_window_#" .. win, { clear = true })
+    local augroup = vim.api.nvim_create_augroup("keystone_window_#" .. win, { clear = true })
     vim.api.nvim_create_autocmd("WinClosed", {
         group = augroup,
         callback = function(args)
@@ -110,12 +103,79 @@ function M.create_sratch_buffer(listed, buffer_options, on_delete)
         vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
             buffer = buf,
             once = true,
-            callback = function(_)
+            callback = function(ev)
                 on_delete()
             end,
         })
     end
     return buf
+end
+
+---@param filepath string
+---@param line? integer 1-based line number (nil = just open)
+---@param col?  integer 0-based column (nil = column 0)
+---@return number winid or -1
+---@return number bufnr or -1
+function M.smart_open_file(filepath, line, col)
+    if line and line < 1 then line = nil end
+    if col and col < 0 then col = nil end
+    if not filepath or filepath == "" then return -1, -1 end
+    local full_path = vim.fn.fnamemodify(filepath, ':p')
+
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+        if _is_regular_win(winid) then
+            local bufnr = vim.api.nvim_win_get_buf(winid)
+            if vim.api.nvim_buf_get_name(bufnr) == full_path then
+                vim.api.nvim_set_current_win(winid)
+                _safe_set_cursor_pos(winid, line, col)
+                return winid, bufnr
+            end
+        end
+    end
+
+    local winid = _get_regular_window()
+    vim.api.nvim_set_current_win(winid)
+
+    local bufnr = vim.fn.bufnr(full_path)
+    if bufnr ~= -1 then
+        vim.fn.win_execute(winid, "buffer " .. bufnr)
+        vim.bo[bufnr].buflisted = true
+    else
+        vim.cmd.edit(vim.fn.fnameescape(filepath))
+        bufnr = vim.api.nvim_win_get_buf(winid)
+    end
+
+    _safe_set_cursor_pos(winid, line, col)
+    return winid, bufnr
+end
+
+---Linearly blend two 24-bit integer colors.
+---@param c1 integer  -- base color
+---@param c2 integer  -- blend-toward color
+---@param alpha number  -- 0 = all c1, 1 = all c2
+---@return integer
+function M.blend_colors(c1, c2, alpha)
+    local r1 = bit.rshift(c1, 16)
+    local g1 = bit.band(bit.rshift(c1, 8), 0xFF)
+    local b1 = bit.band(c1, 0xFF)
+    local r2 = bit.rshift(c2, 16)
+    local g2 = bit.band(bit.rshift(c2, 8), 0xFF)
+    local b2 = bit.band(c2, 0xFF)
+    local r = math.floor(r1 * (1 - alpha) + r2 * alpha)
+    local g = math.floor(g1 * (1 - alpha) + g2 * alpha)
+    local b = math.floor(b1 * (1 - alpha) + b2 * alpha)
+    return bit.bor(bit.lshift(r, 16), bit.lshift(g, 8), b)
+end
+
+---Derive a subtle background tint from a foreground color by blending it
+---into the Normal background at low opacity.
+---@param fg integer  -- 24-bit foreground color
+---@return integer
+function M.auto_bg(fg)
+    local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+    local bg = normal.bg or 0x1e1e2e
+    return M.blend_colors(bg, fg, 0.15)
 end
 
 return M

@@ -8,104 +8,121 @@
 ---  "stopped"           (session)                  — execution stopped
 ---  "continued"         (session)                  — execution resumed
 ---  "thread_updated"    (session)                  — thread list changed
----  "breakpoint_updated"(bp)                       — bp verified/message changed
+---  "breakpoint_updated"(bp, status)               — bp verified/message changed; status is { verified, message, hits }
 ---  "terminated"        (session)                  — session ended
 ---  "run_in_terminal"   (bufnr)                    — terminal buffer opened
 ---  "start_debugging"   (child_config, parent_sess)— adapter requests child session
 
-local breakpoints = require("easydap.breakpoints")
+local breakpoints = require("easydap.dap.breakpoints")
 
----@class easydap.Thread
+---@class easydap.dap.Thread
 ---@field id           integer
 ---@field name         string
 ---@field status       "running"|"stopped"|"exited"
----@field stack_frames table[]?
+---@field stack_frames easydap.dap.StackFrame[]?
 ---@field total_frames integer?
 
----@class easydap.StackFrame
----@field id                        integer
----@field name                      string
----@field source                    table?
----@field line                      integer?
----@field column                    integer?
----@field scopes                    table[]?
----@field instructionPointerReference string?
+---@class easydap.dap.StackFrame : easydap.dap.proto.StackFrame
+---@field scopes easydap.dap.Scope[]?
 
----@class easydap.Session
----@field conn          easydap.Connection
----@field config        easydap.Config
+---Scope augmented with a Lua-side variable cache populated by fetch_variables.
+---@class easydap.dap.Scope : easydap.dap.proto.Scope
+---@field variables? easydap.dap.Variable[]
+
+---Variable augmented with a Lua-side child cache populated by fetch_variables.
+---@class easydap.dap.Variable : easydap.dap.proto.Variable
+---@field variables? easydap.dap.Variable[]
+
+---Adapter-verified status for a single breakpoint tracked by the session.
+---@class easydap.dap.BpStatus
+---@field verified boolean?
+---@field message  string?
+---@field hits     integer
+
+---@class easydap.dap.Session
+---@field conn          easydap.dap.Connection
+---@field config        easydap.dap.Config
 ---@field state         string
 ---@field state_reason  string?
----@field capabilities  table
----@field initialized   boolean
----@field threads       easydap.Thread[]
----@field thread_id     integer?
----@field stack_id      integer?
+---@field capabilities  easydap.dap.proto.Capabilities
+---@field _initialized  boolean
+---@field threads       easydap.dap.Thread[]
+---@field _thread_id    integer?
+---@field _stack_id     integer?
 ---@field exception_description string?
----@field modules       table[]
----@field sources       table[]
----@field source_buffers table<integer,integer>   sourceReference -> bufnr
----@field on            fun(self: easydap.Session, event: string, handler: fun(...))
----@field start         fun(self: easydap.Session)
----@field stop          fun(self: easydap.Session, cb: fun()?)
----@field disconnect    fun(self: easydap.Session, cb: fun()?)
----@field continue      fun(self: easydap.Session, thread_id: integer?)
----@field next          fun(self: easydap.Session, thread_id: integer?)
----@field step_in       fun(self: easydap.Session, thread_id: integer?)
----@field step_out      fun(self: easydap.Session, thread_id: integer?)
----@field pause         fun(self: easydap.Session, thread_id: integer?)
----@field step_back     fun(self: easydap.Session, thread_id: integer?)
----@field restart       fun(self: easydap.Session)
----@field evaluate      fun(self: easydap.Session, expr: string, context: string, cb: fun(body: table?, err: string?))
----@field request       fun(self: easydap.Session, command: string, args: table?, cb: fun(body: table?, err: string?)?)
----@field capable       fun(self: easydap.Session, name: string): boolean
----@field current_thread      fun(self: easydap.Session): easydap.Thread?
----@field current_stack_frame fun(self: easydap.Session): easydap.StackFrame?
----@field stopped_threads     fun(self: easydap.Session): easydap.Thread[]
----@field fetch_variables     fun(self: easydap.Session, object: table, cb: fun()?)
----@field fetch_stack_trace   fun(self: easydap.Session, thread: easydap.Thread, levels: integer, cb: fun()?)
----@field fetch_scopes        fun(self: easydap.Session, frame: easydap.StackFrame, cb: fun()?)
----@field set_variable        fun(self: easydap.Session, reference: integer?, variable: table, value: string, cb: fun(body: table?, err: string?)?)
----@field get_source_buffer   fun(self: easydap.Session, ref: integer, cb: fun(bufnr: integer?, err: string?))
----@field sync_breakpoints              fun(self: easydap.Session, source: integer|string|nil, cb: fun()?)
----@field sync_function_breakpoints    fun(self: easydap.Session, cb: fun()?)
----@field sync_exception_breakpoints   fun(self: easydap.Session, cb: fun()?)
----@field completions                  fun(self: easydap.Session, text: string, column: integer, frame_id: integer?, cb: fun(targets: table[]))
----@field select_thread                fun(self: easydap.Session, thread_id: integer)
----@field select_frame                 fun(self: easydap.Session, frame_id: integer)
----@field report                  fun(self: easydap.Session, msg: string)
----@field _emit                    fun(self: easydap.Session, event: string, ...)
----@field _handle_event            fun(self: easydap.Session, event: string, body: table)
----@field _handle_adapter_request  fun(self: easydap.Session, command: string, args: table, respond: easydap.RespondFn)
----@field _on_close                fun(self: easydap.Session)
+---@field _modules      easydap.dap.proto.Module[]
+---@field _sources      easydap.dap.proto.Source[]
+---@field _source_buffers table<integer,integer>   sourceReference -> bufnr
+---@field on            fun(self: easydap.dap.Session, event: string, handler: fun(...))
+---@field start         fun(self: easydap.dap.Session)
+---@field stop          fun(self: easydap.dap.Session, cb: fun()?)
+---@field terminate     fun(self: easydap.dap.Session, cb: fun(err: string?)?)
+---@field disconnect    fun(self: easydap.dap.Session, cb: fun()?)
+---@field continue      fun(self: easydap.dap.Session, thread_id: integer?)
+---@field next          fun(self: easydap.dap.Session, thread_id: integer?)
+---@field step_in       fun(self: easydap.dap.Session, thread_id: integer?)
+---@field step_out      fun(self: easydap.dap.Session, thread_id: integer?)
+---@field pause         fun(self: easydap.dap.Session, thread_id: integer?)
+---@field step_back     fun(self: easydap.dap.Session, thread_id: integer?)
+---@field restart       fun(self: easydap.dap.Session)
+---@field evaluate      fun(self: easydap.dap.Session, expr: string, context: string, cb: fun(body: easydap.dap.proto.EvaluateResponseBody?, err: string?))
+---@field request       fun(self: easydap.dap.Session, command: string, args: table?, cb: fun(body: table?, err: string?)?)
+---@field capable       fun(self: easydap.dap.Session, name: string): boolean
+---@field current_thread      fun(self: easydap.dap.Session): easydap.dap.Thread?
+---@field current_stack_frame fun(self: easydap.dap.Session): easydap.dap.StackFrame?
+---@field stopped_threads     fun(self: easydap.dap.Session): easydap.dap.Thread[]
+---@field fetch_variables     fun(self: easydap.dap.Session, object: easydap.dap.Scope|easydap.dap.Variable, cb: fun()?)
+---@field fetch_stack_trace   fun(self: easydap.dap.Session, thread: easydap.dap.Thread, levels: integer, cb: fun()?)
+---@field fetch_scopes        fun(self: easydap.dap.Session, frame: easydap.dap.StackFrame, cb: fun()?)
+---@field set_variable        fun(self: easydap.dap.Session, reference: integer?, variable: easydap.dap.Variable, value: string, cb: fun(body: table?, err: string?)?)
+---@field get_source_buffer   fun(self: easydap.dap.Session, ref: integer, cb: fun(bufnr: integer?, err: string?))
+---@field _bp_status      table<integer, easydap.dap.BpStatus>
+---@field _adapter_id_map table<integer, integer>
+---@field sync_breakpoints              fun(self: easydap.dap.Session, source: string|nil, cb: fun()?)
+---@field sync_function_breakpoints    fun(self: easydap.dap.Session, cb: fun()?)
+---@field sync_exception_breakpoints   fun(self: easydap.dap.Session, cb: fun()?)
+---@field bp_status                    fun(self: easydap.dap.Session, bp_id: integer): easydap.dap.BpStatus?
+---@field completions                  fun(self: easydap.dap.Session, text: string, column: integer, frame_id: integer?, cb: fun(targets: easydap.dap.proto.CompletionItem[]))
+---@field select_thread                fun(self: easydap.dap.Session, thread_id: integer)
+---@field select_frame                 fun(self: easydap.dap.Session, frame_id: integer)
+---@field report                  fun(self: easydap.dap.Session, msg: string)
+---@field _emit                    fun(self: easydap.dap.Session, event: string, ...)
+---@field _handle_event            fun(self: easydap.dap.Session, event: string, body: table)
+---@field _handle_adapter_request  fun(self: easydap.dap.Session, command: string, args: table, respond: easydap.dap.RespondFn)
+---@field _on_continued            fun(self: easydap.dap.Session, body: easydap.dap.proto.ContinuedEventBody)
+---@field _on_close                fun(self: easydap.dap.Session)
 
 local M = {}
 
-local _Session = {}
-_Session.__index = _Session
+local Session = {}
+Session.__index = Session
 
----@param conn   easydap.Connection
----@param config easydap.Config
----@return easydap.Session
+---@param conn   easydap.dap.Connection
+---@param config easydap.dap.Config
+---@return easydap.dap.Session
 function M.new(conn, config)
-    ---@type easydap.Session
+    ---@type easydap.dap.Session
     local self      = setmetatable({
         conn                  = conn,
         config                = config,
         state                 = "starting",
         state_reason          = nil,
         capabilities          = {},
-        initialized           = false,
+        _initialized          = false,
         threads               = {},
-        thread_id             = nil,
-        stack_id              = nil,
+        _thread_id            = nil,
+        _stack_id             = nil,
         exception_description = nil,
-        modules               = {},
-        sources               = {},
-        source_buffers        = {},
+        _modules              = {},
+        _sources              = {},
+        _source_buffers       = {},
+        _bp_status            = {},
+        _adapter_id_map       = {},
         _listeners            = {},
+        _stop_cb              = nil,
+        _stopping             = false,
         report                = function(_, msg) vim.notify(msg, vim.log.levels.WARN) end,
-    }, _Session)
+    }, Session)
 
     conn.on_event   = function(event, body) self:_handle_event(event, body) end
     conn.on_request = function(cmd, args, respond) self:_handle_adapter_request(cmd, args, respond) end
@@ -116,12 +133,16 @@ end
 
 -- ── Listener helpers ───────────────────────────────────────────────────────
 
-function _Session:on(event, handler)
+---@param event   string
+---@param handler fun(...)
+function Session:on(event, handler)
     self._listeners[event] = self._listeners[event] or {}
     table.insert(self._listeners[event], handler)
 end
 
-function _Session:_emit(event, ...)
+---@param event string
+---@param ...   any
+function Session:_emit(event, ...)
     for _, h in ipairs(self._listeners[event] or {}) do
         pcall(h, ...)
     end
@@ -131,7 +152,7 @@ end
 
 ---@param state  string
 ---@param reason string?
-function _Session:_set_state(state, reason)
+function Session:_set_state(state, reason)
     self.state        = state
     self.state_reason = reason
     self:_emit("state_changed", self)
@@ -139,15 +160,15 @@ end
 
 ---@param name string  capability key e.g. "supportsRestartRequest"
 ---@return boolean
-function _Session:capable(name)
+function Session:capable(name)
     return self.capabilities[name] == true
 end
 
 -- ── Thread helpers ─────────────────────────────────────────────────────────
 
 ---@param id integer?
----@return easydap.Thread?
-function _Session:_find_thread(id)
+---@return easydap.dap.Thread?
+function Session:_find_thread(id)
     for _, t in ipairs(self.threads) do
         if t.id == id then return t end
     end
@@ -155,7 +176,7 @@ end
 
 ---@param id     integer?
 ---@param status "running"|"stopped"|"exited"
-function _Session:_upsert_thread(id, status)
+function Session:_upsert_thread(id, status)
     local t = self:_find_thread(id)
     if t then
         t.status = status
@@ -167,9 +188,9 @@ function _Session:_upsert_thread(id, status)
 end
 
 ---@param thread_id  integer?
----@param all_threads boolean
+---@param all_threads boolean?
 ---@param status     "running"|"stopped"|"exited"
-function _Session:_set_thread_status(thread_id, all_threads, status)
+function Session:_set_thread_status(thread_id, all_threads, status)
     if all_threads then
         for _, t in ipairs(self.threads) do t.status = status end
     else
@@ -179,14 +200,14 @@ end
 
 ---@param id    integer?
 ---@param force boolean?
-function _Session:_select_thread(id, force)
-    if id and (force or not self.thread_id) then
-        self.thread_id = id
+function Session:_select_thread(id, force)
+    if id and (force or not self._thread_id) then
+        self._thread_id = id
     end
 end
 
----@return easydap.Thread[]
-function _Session:stopped_threads()
+---@return easydap.dap.Thread[]
+function Session:stopped_threads()
     local r = {}
     for _, t in ipairs(self.threads) do
         if t.status == "stopped" then r[#r + 1] = t end
@@ -194,18 +215,18 @@ function _Session:stopped_threads()
     return r
 end
 
----@return easydap.Thread?
-function _Session:current_thread()
-    return self:_find_thread(self.thread_id)
+---@return easydap.dap.Thread?
+function Session:current_thread()
+    return self:_find_thread(self._thread_id)
 end
 
----@return easydap.StackFrame?
-function _Session:current_stack_frame()
+---@return easydap.dap.StackFrame?
+function Session:current_stack_frame()
     local thread = self:current_thread()
     if not thread or not thread.stack_frames then return end
-    if self.stack_id then
+    if self._stack_id then
         for _, f in ipairs(thread.stack_frames) do
-            if f.id == self.stack_id then return f end
+            if f.id == self._stack_id then return f end
         end
     end
     return thread.stack_frames[1]
@@ -214,14 +235,24 @@ end
 -- ── Outgoing requests ──────────────────────────────────────────────────────
 
 ---Low-level request, forwarded to the connection.
+---Dropped (cb called with error) when the session is terminating or terminated
+---so in-flight init chains (setBreakpoints, configurationDone, …) drain fast.
+---"terminate" and "disconnect" are always forwarded so stop()/disconnect() work.
 ---@param command string
 ---@param args    table?
 ---@param cb      fun(body: table?, err: string?)?
-function _Session:request(command, args, cb)
+function Session:request(command, args, cb)
+    if (self.state == "terminated" or self._stopping)
+        and command ~= "disconnect"
+    then
+        if cb then cb(nil, "session " .. (self.state == "terminated" and "terminated" or "closing")) end
+        return
+    end
     self.conn:request(command, args, cb)
 end
 
-function _Session:_do_initialize()
+---@return nil
+function Session:_do_initialize()
     self:request("initialize", {
         clientID                            = "easydap",
         adapterID                           = self.config.type or self.config.adapter or "",
@@ -247,29 +278,28 @@ function _Session:_do_initialize()
     end)
 end
 
-function _Session:_do_launch_or_attach()
+---@param cb fun()?  called on successful response
+function Session:_do_launch_or_attach(cb)
     local req_type = self.config.request or "launch"
     self:request(req_type, self:_protocol_args(), function(_, err)
         if err then
             self:report(("[dap] %s failed: %s"):format(req_type, err))
             self:_shutdown()
+        elseif cb then
+            cb()
         end
     end)
 end
 
 ---@return table
-function _Session:_protocol_args()
-    local args = {}
-    for k, v in pairs(self.config.request_args or {}) do
-        args[k] = (v == false) and vim.NIL or v
-    end
-    return args
+function Session:_protocol_args()
+    return self.config.request_args or {}
 end
 
--- Breakpoint sync chain ────────────────────────────────────────────────────
+-- Breakpoint sync chain ──────────
 
----@return table  params for setExceptionBreakpoints
-function _Session:_exception_bp_params()
+---@return easydap.dap.proto.SetExceptionBreakpointsArguments
+function Session:_exception_bp_params()
     local filters = {}
     for _, bp in ipairs(breakpoints.exception_breakpoints()) do
         if not bp.disabled then filters[#filters + 1] = bp.filter end
@@ -287,7 +317,8 @@ function _Session:_exception_bp_params()
     return params
 end
 
-function _Session:_configure_exceptions(cb)
+---@param cb fun()
+function Session:_configure_exceptions(cb)
     local filter_defs = self.capabilities.exceptionBreakpointFilters or {}
     breakpoints.set_exception_filters(filter_defs)
     local params = self:_exception_bp_params()
@@ -300,7 +331,8 @@ function _Session:_configure_exceptions(cb)
     end)
 end
 
-function _Session:_sync_source_breakpoints(cb)
+---@param cb fun()
+function Session:_sync_source_breakpoints(cb)
     local sources = breakpoints.all_sources()
     if #sources == 0 then return cb() end
     local done = 0
@@ -312,39 +344,42 @@ function _Session:_sync_source_breakpoints(cb)
     end
 end
 
-function _Session:_sync_one_source(source, cb)
+---@param source string
+---@param cb     fun()
+function Session:_sync_one_source(source, cb)
     if source == "" then return cb() end
-    local bps = breakpoints.for_source(source)
-    local source_obj = { path = source }
-
-    local active = {}
-    for _, bp in ipairs(bps) do
+    local source_obj  = { path = source }
+    local active_bps  = {}
+    local active_req  = {}
+    for _, bp in ipairs(breakpoints.for_source(source)) do
         if not bp.disabled then
             local entry = { line = bp.line }
-            if bp.condition then entry.condition = bp.condition end
+            if bp.condition     then entry.condition   = bp.condition end
             if bp.hit_condition then entry.hitCondition = bp.hit_condition end
-            if bp.log_message then entry.logMessage = bp.log_message end
-            active[#active + 1] = entry
+            if bp.log_message   then entry.logMessage   = bp.log_message end
+            active_bps[#active_bps + 1] = bp
+            active_req[#active_req + 1] = entry
         end
     end
 
     self:request("setBreakpoints", {
         source      = source_obj,
-        breakpoints = active,
-        lines       = vim.tbl_map(function(e) return e.line end, active),
+        breakpoints = active_req,
+        lines       = vim.tbl_map(function(e) return e.line end, active_req),
     }, function(body, err)
         if err then
             self:report("[dap] setBreakpoints failed: " .. err)
         elseif body and body.breakpoints then
             local changed = false
             for i, upd in ipairs(body.breakpoints) do
-                local bp = bps[i]
+                local bp = active_bps[i]
                 if bp then
-                    bp.verified = upd.verified
-                    bp.id       = upd.id
-                    bp.message  = upd.message
-                    changed     = true
-                    self:_emit("breakpoint_updated", bp)
+                    local prev = self._bp_status[bp.internal_id]
+                    local st   = { verified = upd.verified, message = upd.message, hits = prev and prev.hits or 0 }
+                    self._bp_status[bp.internal_id] = st
+                    if upd.id then self._adapter_id_map[upd.id] = bp.internal_id end
+                    changed = true
+                    self:_emit("breakpoint_updated", bp, st)
                 end
             end
             if changed then breakpoints.notify_change("source") end
@@ -353,11 +388,13 @@ function _Session:_sync_one_source(source, cb)
     end)
 end
 
-function _Session:_sync_function_breakpoints(cb)
+---@param cb fun()
+function Session:_sync_function_breakpoints(cb)
     self:sync_function_breakpoints(cb)
 end
 
-function _Session:_configuration_done(cb)
+---@param cb fun()
+function Session:_configuration_done(cb)
     if self:capable("supportsConfigurationDoneRequest") then
         self:request("configurationDone", {}, function(_, err)
             if err then
@@ -370,17 +407,22 @@ function _Session:_configuration_done(cb)
     end
 end
 
--- Full "initialized" sequence ──────────────────────────────────────────────
+-- Full "initialized" sequence ──────
 
-function _Session:_on_initialized()
-    self.initialized = true
+---@return nil
+function Session:_on_initialized()
+    self._initialized = true
     self:_set_state("initialized")
     self:_configure_exceptions(function()
         self:_sync_source_breakpoints(function()
             self:_sync_function_breakpoints(function()
                 self:_configuration_done(function()
                     if self.config.defer_launch_attach then
-                        self:_do_launch_or_attach()
+                        self:_do_launch_or_attach(function()
+                            self:_set_state("running")
+                        end)
+                    else
+                        self:_set_state("running")
                     end
                 end)
             end)
@@ -390,7 +432,8 @@ end
 
 -- Thread / stack refresh ───────────────────────────────────────────────────
 
-function _Session:_update_threads(cb)
+---@param cb fun()?
+function Session:_update_threads(cb)
     self:request("threads", {}, function(body, err)
         if not err and body and body.threads then
             local updated = {}
@@ -404,8 +447,8 @@ function _Session:_update_threads(cb)
                 end
             end
             self.threads = updated
-            if not self.thread_id and #self.threads > 0 then
-                self.thread_id = self.threads[1].id
+            if not self._thread_id and #self.threads > 0 then
+                self._thread_id = self.threads[1].id
             end
         end
         self:_emit("thread_updated", self)
@@ -413,7 +456,10 @@ function _Session:_update_threads(cb)
     end)
 end
 
-function _Session:_fetch_stack_trace(thread, levels, cb)
+---@param thread easydap.dap.Thread?
+---@param levels integer
+---@param cb     fun()?
+function Session:_fetch_stack_trace(thread, levels, cb)
     if not thread or thread.status ~= "stopped" then return cb and cb() end
     local current = thread.stack_frames and #thread.stack_frames or 0
     local total   = thread.total_frames
@@ -441,7 +487,9 @@ function _Session:_fetch_stack_trace(thread, levels, cb)
     end)
 end
 
-function _Session:_fetch_scopes(frame, cb)
+---@param frame easydap.dap.StackFrame?
+---@param cb    fun()?
+function Session:_fetch_scopes(frame, cb)
     if not frame or frame.scopes then return cb and cb() end
     self:request("scopes", { frameId = frame.id }, function(body, err)
         if not err and body and body.scopes then
@@ -453,7 +501,8 @@ end
 
 -- Invalidate + re-fetch current thread's stack → scopes, then notify.
 ---@param invalidate "stack_frames"|"variables"|nil
-function _Session:_update(invalidate, cb)
+---@param cb         fun()?
+function Session:_update(invalidate, cb)
     if invalidate == "stack_frames" then
         for _, t in ipairs(self.threads) do
             t.stack_frames = nil
@@ -478,7 +527,9 @@ end
 
 -- ── Incoming events ────────────────────────────────────────────────────────
 
-function _Session:_handle_event(event, body)
+---@param event string
+---@param body  table
+function Session:_handle_event(event, body)
     if event == "initialized" then
         self:_on_initialized()
     elseif event == "stopped" then
@@ -509,14 +560,15 @@ function _Session:_handle_event(event, body)
     end
 end
 
-function _Session:_on_stopped(body)
+---@param body easydap.dap.proto.StoppedEventBody
+function Session:_on_stopped(body)
     local tid         = body.threadId
     local reason      = body.reason
     local all_stopped = body.allThreadsStopped
 
     self:_set_state("stopped", reason)
     self:_select_thread(tid, true)
-    self.stack_id              = nil
+    self._stack_id              = nil
     self.exception_description = nil
 
     if reason == "exception" then
@@ -529,9 +581,12 @@ function _Session:_on_stopped(body)
     end
 
     if body.hitBreakpointIds then
-        for _, id in ipairs(body.hitBreakpointIds) do
-            local bp = breakpoints.find_by_id(id)
-            if bp then bp.hits = (bp.hits or 0) + 1 end
+        for _, adapter_id in ipairs(body.hitBreakpointIds) do
+            local bp_id = self._adapter_id_map[adapter_id]
+            if bp_id then
+                local st = self._bp_status[bp_id]
+                if st then st.hits = st.hits + 1 end
+            end
         end
     end
 
@@ -544,7 +599,8 @@ function _Session:_on_stopped(body)
     end)
 end
 
-function _Session:_on_continued(body)
+---@param body easydap.dap.proto.ContinuedEventBody
+function Session:_on_continued(body)
     local tid           = body.threadId
     local all_continued = body.allThreadsContinued
     if all_continued == nil then all_continued = true end
@@ -554,14 +610,16 @@ function _Session:_on_continued(body)
     self:_emit("continued", self)
 end
 
-function _Session:_on_output(body)
+---@param body easydap.dap.proto.OutputEventBody
+function Session:_on_output(body)
     local out = body.output
     if not out then return end
     local cat = body.category or "console"
     self:_emit("output", cat, out)
 end
 
-function _Session:_on_thread(body)
+---@param body easydap.dap.proto.ThreadEventBody
+function Session:_on_thread(body)
     local tid    = body.threadId
     local reason = body.reason
     self:_select_thread(tid)
@@ -576,87 +634,103 @@ function _Session:_on_thread(body)
     end)
 end
 
-function _Session:_on_module(body)
+---@param body easydap.dap.proto.ModuleEventBody
+function Session:_on_module(body)
     local reason = body.reason
     local mod    = body.module
     if not mod then return end
     if reason == "new" then
-        self.modules[#self.modules + 1] = mod
+        self._modules[#self._modules + 1] = mod
     elseif reason == "changed" then
-        for i, m in ipairs(self.modules) do
+        for i, m in ipairs(self._modules) do
             if m.id == mod.id then
-                self.modules[i] = vim.tbl_extend("force", m, mod); break
+                self._modules[i] = vim.tbl_extend("force", m, mod); break
             end
         end
     elseif reason == "removed" then
-        for i, m in ipairs(self.modules) do
+        for i, m in ipairs(self._modules) do
             if m.id == mod.id then
-                table.remove(self.modules, i); break
+                table.remove(self._modules, i); break
             end
         end
     end
 end
 
-function _Session:_on_loaded_source(body)
+---@param body easydap.dap.proto.LoadedSourceEventBody
+function Session:_on_loaded_source(body)
     local reason = body.reason
     local src    = body.source
     if not src then return end
     if reason == "new" then
-        self.sources[#self.sources + 1] = src
+        self._sources[#self._sources + 1] = src
     elseif reason == "changed" then
-        for i, s in ipairs(self.sources) do
+        for i, s in ipairs(self._sources) do
             if s.id == src.id then
-                self.sources[i] = vim.tbl_extend("force", s, src); break
+                self._sources[i] = vim.tbl_extend("force", s, src); break
             end
         end
     elseif reason == "removed" then
-        for i, s in ipairs(self.sources) do
+        for i, s in ipairs(self._sources) do
             if s.id == src.id then
-                table.remove(self.sources, i); break
+                table.remove(self._sources, i); break
             end
         end
     end
 end
 
-function _Session:_on_breakpoint_event(body)
+---@param body easydap.dap.proto.BreakpointEventBody
+function Session:_on_breakpoint_event(body)
     local upd = body.breakpoint
     if not upd or not upd.id then return end
-    local bp = breakpoints.find_by_id(upd.id)
+    local bp_id = self._adapter_id_map[upd.id]
+    if not bp_id then return end
+    local prev = self._bp_status[bp_id] or { hits = 0 }
+    local st   = { verified = upd.verified, message = upd.message, hits = prev.hits }
+    self._bp_status[bp_id] = st
+    local bp = breakpoints.find_by_internal_id(bp_id)
     if bp then
-        bp.verified = upd.verified
-        bp.message  = upd.message
         breakpoints.notify_change(bp.source and "source" or "function")
-        self:_emit("breakpoint_updated", bp)
+        self:_emit("breakpoint_updated", bp, st)
     end
 end
 
-function _Session:_on_process(body)
+---@param body easydap.dap.proto.ProcessEventBody
+function Session:_on_process(body)
     local method = ((body.startMethod or "start") .. "ed"):gsub("^%l", string.upper)
     self:_set_state(body.startMethod or "started")
     self:_emit("output", "console", method .. " " .. (body.name or "") .. "\n")
 end
 
-function _Session:_on_exited(body)
+---@param body easydap.dap.proto.ExitedEventBody
+function Session:_on_exited(body)
     self:_set_state("exited")
     self:_emit("output", "console", "Exit code " .. tostring(body.exitCode) .. "\n")
 end
 
-function _Session:_on_terminated()
+---@return nil
+function Session:_on_terminated()
     self:_set_state("terminated")
     self:_emit("terminated", self)
     self:_shutdown()
 end
 
-function _Session:_on_close()
+---@return nil
+function Session:_on_close()
+    local cb = self._stop_cb
+    self._stop_cb = nil
     if self.state ~= "terminated" then
         self:_set_state("terminated")
         self:_emit("terminated", self)
     end
+    if cb then cb() end
 end
 
 -- ── Adapter-initiated requests ─────────────────────────────────────────────
 
-function _Session:_handle_adapter_request(command, args, respond)
+---@param command string
+---@param args    table
+---@param respond easydap.dap.RespondFn
+function Session:_handle_adapter_request(command, args, respond)
     if command == "runInTerminal" then
         self:_run_in_terminal(args, respond)
     elseif command == "startDebugging" then
@@ -669,73 +743,92 @@ function _Session:_handle_adapter_request(command, args, respond)
     end
 end
 
-function _Session:_run_in_terminal(args, respond)
-    local cmd = args.args or {}
-    local cwd = args.cwd
-    local env_list = {}
-    if args.env then
-        for k, v in pairs(args.env) do
-            env_list[#env_list + 1] = k .. "=" .. v
-        end
+---@param args    easydap.dap.proto.RunInTerminalRequestArguments
+---@param respond easydap.dap.RespondFn
+function Session:_run_in_terminal(args, respond)
+    local term = require("easydap.util.term")
+    local cmd  = args.args or {}
+    if args.argsCanBeInterpretedByShell then
+        cmd = { vim.o.shell, "-c", table.concat(cmd, " ") }
     end
-
-    local buf = vim.api.nvim_create_buf(false, true)
-    local pid
-    vim.api.nvim_buf_call(buf, function()
-        local run_cmd = cmd
-        if args.argsCanBeInterpretedByShell then
-            run_cmd = { vim.o.shell, "-c", table.concat(cmd, " ") }
-        end
-        local job = vim.fn.jobstart(run_cmd, {
-            term    = true,
-            cwd     = cwd,
-            env     = #env_list > 0 and env_list or nil,
-            on_exit = function() self:_emit("terminal_exit", buf) end,
+    local handle
+    local ok, err = pcall(function()
+        handle = term.spawn(cmd, {
+            cwd     = args.cwd,
+            env     = args.env,
+            on_exit = function() if handle then self:_emit("terminal_exit", handle.bufnr) end end,
         })
-        if job and job > 0 then pid = vim.fn.jobpid(job) end
     end)
-    self:_emit("run_in_terminal", buf)
-    respond({ processId = pid })
+    if not ok or not handle then
+        respond(nil, "failed to spawn terminal" .. (not ok and (": " .. tostring(err)) or ""))
+        return
+    end
+    self:_emit("run_in_terminal", handle.bufnr)
+    respond({ processId = handle.pid })
 end
 
 -- ── Lifecycle ──────────────────────────────────────────────────────────────
 
 ---Start the DAP handshake (send initialize).
-function _Session:start()
+---@return nil
+function Session:start()
     self:_set_state("starting")
     self:_do_initialize()
 end
 
-function _Session:_shutdown()
+---@return nil
+function Session:_shutdown()
     self.conn:close()
 end
 
 ---Gracefully terminate the debug session.
+---`cb` is always called exactly once, even if the adapter closes the
+---connection before responding (via the _on_close path).
+---A 3-second timeout forces _shutdown() for adapters that accept disconnect
+---but never reply
 ---@param cb fun()?
-function _Session:stop(cb)
-    if self:capable("supportsTerminateRequest") then
-        self:request("terminate", {}, function(_, err)
-            if err then
-                self:request("disconnect", { restart = false, terminateDebuggee = true }, function()
-                    self:_shutdown()
-                    if cb then cb() end
-                end)
-            else
-                self:_shutdown()
-                if cb then cb() end
-            end
-        end)
-    else
-        self:request("disconnect", { restart = false, terminateDebuggee = true }, function()
-            self:_shutdown()
-            if cb then cb() end
-        end)
+function Session:stop(cb)
+    if self.state == "terminated" or self._stopping then
+        if cb then cb() end
+        return
     end
+    self._stopping = true
+    -- Store cb so _on_close delivers it regardless of how termination happens.
+    self._stop_cb = cb
+    -- Not yet initialized — skip protocol, just kill the transport.
+    if self.state == "starting" then
+        self:_shutdown()
+        return
+    end
+    local terminate_debuggee = (self.config.request or "launch") ~= "attach"
+    -- Fallback: force-close if the adapter ignores the protocol request.
+    local timer = vim.defer_fn(function()
+        if self.state ~= "terminated" then self:_shutdown() end
+    end, 3000)
+    local function done()
+        if not timer:is_closing() then timer:close() end
+        self:_shutdown()
+    end
+    self:request("disconnect", { restart = false, terminateDebuggee = terminate_debuggee }, function()
+        done()
+    end)
+end
+
+---Ask the adapter to terminate the debuggee (requires supportsTerminateRequest).
+---@param cb fun(err: string?)?
+function Session:terminate_debuggee(cb)
+    if not self:capable("supportsTerminateRequest") then
+        if cb then cb("adapter does not support terminate") end
+        return
+    end
+    self:request("terminate", {}, function(_, err)
+        if cb then cb(err) end
+    end)
 end
 
 ---Disconnect without terminating the debuggee.
 ---@param cb fun()?
-function _Session:disconnect(cb)
+function Session:disconnect(cb)
     self:request("disconnect", { restart = false, terminateDebuggee = false }, function()
         self:_shutdown()
         if cb then cb() end
@@ -744,8 +837,11 @@ end
 
 -- ── Control flow ───────────────────────────────────────────────────────────
 
+---@param self      easydap.dap.Session
+---@param command   string
+---@param thread_id integer?
 local function _step_like(self, command, thread_id)
-    thread_id = thread_id or self.thread_id
+    thread_id = thread_id or self._thread_id
     local args = { threadId = thread_id }
     if self:capable("supportsSteppingGranularity") then
         args.granularity = "line"
@@ -755,12 +851,13 @@ local function _step_like(self, command, thread_id)
             self:report(("[dap] %s failed: %s"):format(command, err))
             return
         end
-        self:_on_continued({ threadId = thread_id, allThreadsContinued = false })
+        self:_on_continued({ threadId = thread_id --[[@as integer]], allThreadsContinued = false })
     end)
 end
 
-function _Session:continue(thread_id)
-    thread_id = thread_id or self.thread_id
+---@param thread_id integer?
+function Session:continue(thread_id)
+    thread_id = thread_id or self._thread_id
     self:request("continue", { threadId = thread_id }, function(body, err)
         if err then
             self:report("[dap] continue failed: " .. err)
@@ -772,13 +869,17 @@ function _Session:continue(thread_id)
     end)
 end
 
-function _Session:next(thread_id) _step_like(self, "next", thread_id) end
+---@param thread_id integer?
+function Session:next(thread_id) _step_like(self, "next", thread_id) end
 
-function _Session:step_in(thread_id) _step_like(self, "stepIn", thread_id) end
+---@param thread_id integer?
+function Session:step_in(thread_id) _step_like(self, "stepIn", thread_id) end
 
-function _Session:step_out(thread_id) _step_like(self, "stepOut", thread_id) end
+---@param thread_id integer?
+function Session:step_out(thread_id) _step_like(self, "stepOut", thread_id) end
 
-function _Session:step_back(thread_id)
+---@param thread_id integer?
+function Session:step_back(thread_id)
     if not self:capable("supportsStepBack") then
         self:report("[dap] adapter does not support step back")
         return
@@ -786,19 +887,23 @@ function _Session:step_back(thread_id)
     _step_like(self, "stepBack", thread_id)
 end
 
-function _Session:pause(thread_id)
-    thread_id = thread_id or self.thread_id or 0
+---@param thread_id integer?
+function Session:pause(thread_id)
+    thread_id = thread_id or self._thread_id or 0
     self:request("pause", { threadId = thread_id }, function(_, err)
         if err then self:report("[dap] pause failed: " .. err) end
     end)
 end
 
-function _Session:restart()
+---@return nil
+function Session:restart()
     if not self:capable("supportsRestartRequest") then return end
-    self.threads   = {}
-    self.thread_id = nil
-    self.modules   = {}
-    self.sources   = {}
+    self.threads          = {}
+    self._thread_id        = nil
+    self._modules          = {}
+    self._sources          = {}
+    self._bp_status       = {}
+    self._adapter_id_map  = {}
     self:request("restart", { arguments = self:_protocol_args() }, function(_, err)
         if err then self:report("[dap] restart failed: " .. err) end
     end)
@@ -808,9 +913,9 @@ end
 
 ---Evaluate an expression in the current frame.
 ---@param expr    string
----@param context string  "watch"|"repl"|"hover"|"clipboard"
----@param cb      fun(body: table?, err: string?)
-function _Session:evaluate(expr, context, cb)
+---@param context easydap.dap.proto.EvaluateContext
+---@param cb      fun(body: easydap.dap.proto.EvaluateResponseBody?, err: string?)
+function Session:evaluate(expr, context, cb)
     local frame = self:current_stack_frame()
     local args  = { expression = expr, context = context }
     if frame and #self:stopped_threads() > 0 then
@@ -820,9 +925,9 @@ function _Session:evaluate(expr, context, cb)
 end
 
 ---Fetch variables for a scope or variable object (populates .variables).
----@param object table  must have .variablesReference
+---@param object easydap.dap.Scope|easydap.dap.Variable
 ---@param cb     fun()?
-function _Session:fetch_variables(object, cb)
+function Session:fetch_variables(object, cb)
     local ref = object and object.variablesReference
     if not ref or ref == 0 or object.variables then
         return cb and cb()
@@ -834,25 +939,25 @@ function _Session:fetch_variables(object, cb)
 end
 
 ---Fetch more stack frames for a thread.
----@param thread easydap.Thread
+---@param thread easydap.dap.Thread
 ---@param levels integer
 ---@param cb     fun()?
-function _Session:fetch_stack_trace(thread, levels, cb)
+function Session:fetch_stack_trace(thread, levels, cb)
     self:_fetch_stack_trace(thread, levels, cb)
 end
 
 ---Fetch scopes for a frame.
----@param frame easydap.StackFrame
+---@param frame easydap.dap.StackFrame
 ---@param cb    fun()?
-function _Session:fetch_scopes(frame, cb)
+function Session:fetch_scopes(frame, cb)
     self:_fetch_scopes(frame, cb)
 end
 
 ---Switch the active thread and refresh its stack trace + scopes.
 ---@param thread_id integer
-function _Session:select_thread(thread_id)
-    self.thread_id = thread_id
-    self.stack_id  = nil
+function Session:select_thread(thread_id)
+    self._thread_id = thread_id
+    self._stack_id  = nil
     local t        = self:current_thread()
     if t then
         t.stack_frames = nil
@@ -865,8 +970,8 @@ end
 
 ---Switch the active stack frame and refresh its scopes.
 ---@param frame_id integer
-function _Session:select_frame(frame_id)
-    self.stack_id = frame_id
+function Session:select_frame(frame_id)
+    self._stack_id = frame_id
     local frame = self:current_stack_frame()
     self:_fetch_scopes(frame, function()
         self:_emit("state_changed", self)
@@ -874,12 +979,22 @@ function _Session:select_frame(frame_id)
     end)
 end
 
+---@return nil
+function Session:_invalidate_variable_cache()
+    local frame = self:current_stack_frame()
+    if frame and frame.scopes then
+        for _, scope in ipairs(frame.scopes) do
+            scope.variables = nil
+        end
+    end
+end
+
 ---Set a variable's value.
 ---@param reference integer|nil  parent variablesReference (nil for expression-based)
----@param variable  table
+---@param variable  easydap.dap.Variable
 ---@param value     string
 ---@param cb        fun(body: table?, err: string?)?
-function _Session:set_variable(reference, variable, value, cb)
+function Session:set_variable(reference, variable, value, cb)
     if self:capable("supportsSetVariable") and type(reference) == "number" then
         self:request("setVariable", {
             variablesReference = reference,
@@ -891,6 +1006,8 @@ function _Session:set_variable(reference, variable, value, cb)
             else
                 variable.variables = nil
                 if body then for k, v in pairs(body) do variable[k] = v end end
+                self:_invalidate_variable_cache()
+                self:_emit("variable_changed")
             end
             if cb then cb(body, err) end
         end)
@@ -901,7 +1018,12 @@ function _Session:set_variable(reference, variable, value, cb)
             expression = variable.evaluateName or variable.name,
             value      = value,
         }, function(body, err)
-            if err then self:report("[dap] setExpression failed: " .. err) end
+            if err then
+                self:report("[dap] setExpression failed: " .. err)
+            else
+                self:_invalidate_variable_cache()
+                self:_emit("variable_changed")
+            end
             if cb then cb(body, err) end
         end)
     else
@@ -913,8 +1035,8 @@ end
 ---The buffer is created once and cached.
 ---@param ref integer  sourceReference
 ---@param cb  fun(bufnr: integer?, err: string?)
-function _Session:get_source_buffer(ref, cb)
-    local existing = self.source_buffers[ref]
+function Session:get_source_buffer(ref, cb)
+    local existing = self._source_buffers[ref]
     if existing and vim.api.nvim_buf_is_valid(existing) then
         return cb(existing)
     end
@@ -930,7 +1052,7 @@ function _Session:get_source_buffer(ref, cb)
         local mime_ft = { ["text/javascript"] = "javascript", ["text/x-lldb.disassembly"] = "asm" }
         local ft = mime_ft[body.mimeType or ""]
         if ft then vim.api.nvim_set_option_value("filetype", ft, { buf = buf }) end
-        self.source_buffers[ref] = buf
+        self._source_buffers[ref] = buf
         cb(buf)
     end)
 end
@@ -939,8 +1061,8 @@ end
 ---@param text     string
 ---@param column   integer   1-based cursor column
 ---@param frame_id integer?
----@param cb       fun(targets: table[])
-function _Session:completions(text, column, frame_id, cb)
+---@param cb       fun(targets: easydap.dap.proto.CompletionItem[])
+function Session:completions(text, column, frame_id, cb)
     if not self:capable("supportsCompletionsRequest") then
         cb({})
         return
@@ -953,9 +1075,9 @@ function _Session:completions(text, column, frame_id, cb)
 end
 
 ---Re-sync breakpoints for a specific source (or all sources) to the adapter.
----@param source integer|string|nil  bufnr, filepath, or nil for all
+---@param source string|nil  filepath, or nil for all
 ---@param cb     fun()?
-function _Session:sync_breakpoints(source, cb)
+function Session:sync_breakpoints(source, cb)
     if source then
         self:_sync_one_source(source, cb or function() end)
     else
@@ -965,7 +1087,7 @@ end
 
 ---Re-sync function breakpoints to the adapter.
 ---@param cb fun()?
-function _Session:sync_function_breakpoints(cb)
+function Session:sync_function_breakpoints(cb)
     if not self:capable("supportsFunctionBreakpoints") then
         if cb then cb() end
         return
@@ -984,11 +1106,12 @@ function _Session:sync_function_breakpoints(cb)
             for i, upd in ipairs(body.breakpoints) do
                 local bp = active[i]
                 if bp then
-                    bp.verified = upd.verified
-                    bp.id       = upd.id
-                    bp.message  = upd.message
-                    changed     = true
-                    self:_emit("breakpoint_updated", bp)
+                    local prev = self._bp_status[bp.internal_id]
+                    local st   = { verified = upd.verified, message = upd.message, hits = prev and prev.hits or 0 }
+                    self._bp_status[bp.internal_id] = st
+                    if upd.id then self._adapter_id_map[upd.id] = bp.internal_id end
+                    changed = true
+                    self:_emit("breakpoint_updated", bp, st)
                 end
             end
             if changed then breakpoints.notify_change("function") end
@@ -997,9 +1120,16 @@ function _Session:sync_function_breakpoints(cb)
     end)
 end
 
+---Return this session's adapter-verified status for a breakpoint.
+---@param bp_id integer  internal stable id (bp.internal_id)
+---@return easydap.dap.BpStatus?
+function Session:bp_status(bp_id)
+    return self._bp_status[bp_id]
+end
+
 ---Re-sync exception breakpoints to the adapter.
 ---@param cb fun()?
-function _Session:sync_exception_breakpoints(cb)
+function Session:sync_exception_breakpoints(cb)
     local params = self:_exception_bp_params()
     self:request("setExceptionBreakpoints", params, function(_, err)
         if err then
