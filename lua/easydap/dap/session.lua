@@ -66,6 +66,7 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field step_back     fun(self: easydap.dap.Session, thread_id: integer?)
 ---@field restart       fun(self: easydap.dap.Session)
 ---@field evaluate      fun(self: easydap.dap.Session, expr: string, context: string, cb: fun(body: easydap.dap.proto.EvaluateResponseBody?, err: string?))
+---@field disassemble   fun(self: easydap.dap.Session, ref: string, count: integer, offset: integer?, cb: fun(instructions: easydap.dap.proto.DisassembledInstruction[]?, err: string?))
 ---@field request       fun(self: easydap.dap.Session, command: string, args: table?, cb: fun(body: table?, err: string?)?)
 ---@field capable       fun(self: easydap.dap.Session, name: string): boolean
 ---@field current_thread      fun(self: easydap.dap.Session): easydap.dap.Thread?
@@ -906,6 +907,26 @@ function Session:restart()
     self._adapter_id_map  = {}
     self:request("restart", { arguments = self:_protocol_args() }, function(_, err)
         if err then self:report("[dap] restart failed: " .. err) end
+    end)
+end
+
+---Disassemble instructions around a memory reference.
+---Stateless: disassembly is a query, not cached session state.
+---@param ref    string   memoryReference (e.g. frame.instructionPointerReference)
+---@param count  integer  instructionCount
+---@param offset integer? instructionOffset (may be negative to fetch before ref)
+---@param cb     fun(instructions: easydap.dap.proto.DisassembledInstruction[]?, err: string?)
+function Session:disassemble(ref, count, offset, cb)
+    if not self:capable("supportsDisassembleRequest") then
+        return cb(nil, "adapter does not support disassemble")
+    end
+    self:request("disassemble", {
+        memoryReference   = ref,
+        instructionCount  = count,
+        instructionOffset = offset,
+        resolveSymbols    = true,
+    }, function(body, err)
+        cb(body and body.instructions, err)
     end)
 end
 

@@ -2,6 +2,8 @@ local M = {}
 
 ---@type easydap.DebugView?
 local _debug_view
+---@type easydap.DisassemblyView?
+local _disassembly_view
 local _initialized = false
 
 local function _save()
@@ -104,7 +106,7 @@ local function _register_user_commands()
         "pause", "restart",
         "stop", "terminate", "terminate_all",
         "session", "thread", "frame",
-        "inspect",
+        "inspect", "disassemble",
     }
 
     usercmd.register_user_cmd("Debug", function(_, args, _)
@@ -133,6 +135,8 @@ local function _register_user_commands()
             cmd.debug.terminate_all()
         elseif sub == "inspect" then
             cmd.debug.inspect()
+        elseif sub == "disassemble" then
+            cmd.debug.disassemble()
         elseif sub == "session" then
             cmd.debug.session()
         elseif sub == "thread" then
@@ -199,6 +203,20 @@ end
 ---Open the DebugView in a vertical split (or focus if already visible).
 function M.open_debug_view()
     M.debug_view():open()
+end
+
+---Return the singleton DisassemblyView, creating it on first call.
+---@return easydap.DisassemblyView
+function M.disassembly_view()
+    if not _disassembly_view then
+        _disassembly_view = require("easydap.ui.DisassemblyView").new()
+    end
+    return _disassembly_view
+end
+
+---Open the disassembly pane for the active session's current frame.
+function M.open_disassembly_view()
+    M.disassembly_view():open()
 end
 
 ---Run a debug task. This is the public backend entry point used by task runners.

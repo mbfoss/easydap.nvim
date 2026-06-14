@@ -146,9 +146,13 @@ end
 ---@return integer
 local function _cursor_location()
     local bufnr = vim.api.nvim_get_current_buf()
+    if vim.bo.buftype[bufnr] ~= "" then
+        vim.notify("[dap] current buffer is not a regular buffer", vim.log.levels.WARN)
+        return nil, 0
+    end
     local file  = vim.api.nvim_buf_get_name(bufnr)
     if file == "" then
-        vim.notify("[dap] buffer has no file path", vim.log.levels.WARN)
+        vim.notify("[dap] current buffer has no file path", vim.log.levels.WARN)
         return nil, 0
     end
     return file, vim.api.nvim_win_get_cursor(0)[1]
@@ -429,6 +433,9 @@ function M.debug.inspect(expr)
         })
     end)
 end
+
+---Open the disassembly pane for the active session's current frame.
+function M.debug.disassemble() require("easydap").open_disassembly_view() end
 
 function M.debug.session()
     local sessions = client.sessions()

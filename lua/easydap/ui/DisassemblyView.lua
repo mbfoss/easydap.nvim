@@ -1,0 +1,416 @@
+---@brief Disassembly pane, source-synced.
+---Opens a vertical split showing the instructions around the current program
+---counter and keeps a two-way cursor sync with the source window it was
+---launched from (Compiler-Explorer / gdb `layout split` style): moving the
+---cursor in the source highlights the matching instruction block here, and
+---moving the cursor here jumps the source window to the originating line.
+---
+---Read-only: instruction-granularity stepping and instruction breakpoints are
+---deliberately not handled here.
+
+local manager  = require("easydap.manager")
+local config   = require("easydap.config")
+local ui_util  = require("easydap.util.ui_util")
+local throttle = require("easydap.util.throttle")
+
+-- ── Tunables ───────────────────────────────────────────────────────────────
+
+local _COUNT  = 80   -- instructions requested per disassemble
+local _OFFSET = -20  -- start a little before the PC so it sits mid-pane
+local _ADDR_W = 18   -- width of the address column
+
+-- ── Highlight groups ───────────────────────────────────────────────────────
+
+local _PC_HL    = "EasydapDisasmPC"
+local _BLOCK_HL = "EasydapDisasmBlock"
+local _SYM_HL   = "EasydapDisasmSymbol"
+local _ADDR_HL  = "EasydapDisasmAddr"
+
+local function _define_highlights()
+    vim.api.nvim_set_hl(0, _PC_HL, { bg = ui_util.auto_bg(0xD4A017), default = true })
+    vim.api.nvim_set_hl(0, _BLOCK_HL, { bg = ui_util.auto_bg(0x4A6FA5), default = true })
+    vim.api.nvim_set_hl(0, _SYM_HL, { link = "Function", default = true })
+    vim.api.nvim_set_hl(0, _ADDR_HL, { link = "Comment", default = true })
+end
+
+-- ── Helpers ────────────────────────────────────────────────────────────────
+
+---Compare two adapter addresses, tolerating differing hex widths/zero-padding.
+---@param a string?
+---@param b string?
+---@return boolean
+local function _addr_eq(a, b)
+    if not a or not b then return false end
+    if a == b then return true end
+    local na, nb = tonumber(a), tonumber(b)
+    return na ~= nil and na == nb
+end
+
+---@param path string?
+---@return string?
+local function _norm(path)
+    if not path or path == "" then return nil end
+    return vim.fn.fnamemodify(path, ":p")
+end
+
+-- ── Class ──────────────────────────────────────────────────────────────────
+
+---@class easydap.DisassemblyView.SrcRange
+---@field first integer  first asm row (1-based) mapped to a source line
+---@field last  integer  last asm row mapped to that source line
+
+---Instruction augmented with the resolved/normalised source location.
+---@class easydap.DisassemblyView.Row : easydap.dap.proto.DisassembledInstruction
+---@field _path?  string  normalised source path
+---@field _sline? integer source line
+
+---@class easydap.DisassemblyView
+---@field private _bufnr?    integer
+---@field private _win?      integer  the asm window
+---@field private _src_win?  integer  source window kept in sync
+---@field private _sess?     easydap.dap.Session
+---@field private _rows      table<integer, easydap.DisassemblyView.Row>  asm line -> instruction
+---@field private _by_src    table<string, table<integer, easydap.DisassemblyView.SrcRange>>
+---@field private _ns        integer  static render highlights (symbols, addresses)
+---@field private _ns_pc     integer  PC line highlight + sign
+---@field private _ns_block  integer  transient source-block highlight
+---@field private _aug       integer  autocmd group
+---@field private _gen       integer  generation guard for stale session callbacks
+---@field private _syncing   boolean  re-entrancy guard around programmatic moves
+---@field private _src_sync  fun()    throttled source -> asm
+---@field private _asm_sync  fun()    throttled asm -> source
+local DisassemblyView = {}
+DisassemblyView.__index = DisassemblyView
+
+---@return easydap.DisassemblyView
+function DisassemblyView.new()
+    _define_highlights()
+
+    local self = setmetatable({
+        _rows     = {},
+        _by_src   = {},
+        _ns       = vim.api.nvim_create_namespace("easydap_disasm"),
+        _ns_pc    = vim.api.nvim_create_namespace("easydap_disasm_pc"),
+        _ns_block = vim.api.nvim_create_namespace("easydap_disasm_block"),
+        _aug      = vim.api.nvim_create_augroup("easydap_disasm", { clear = true }),
+        _gen      = 0,
+        _syncing  = false,
+    }, DisassemblyView)
+    self:_init()
+    return self
+end
+
+---@private
+function DisassemblyView:_init()
+    self._src_sync = throttle.throttle_wrap(40, function() self:_sync_from_source() end)
+    self._asm_sync = throttle.throttle_wrap(40, function() self:_sync_to_source() end)
+
+    -- source -> asm: a global CursorMoved that only fires while focused in the
+    -- bound source window and the pane is open.
+    vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+        group = self._aug,
+        callback = function()
+            if self._syncing or not self:_is_open() then return end
+            if vim.api.nvim_get_current_win() ~= self._src_win then return end
+            self._src_sync()
+        end,
+    })
+
+    vim.api.nvim_create_autocmd("WinClosed", {
+        group = self._aug,
+        callback = function(ev)
+            if tonumber(ev.match) == self._win then
+                self._win = nil
+            end
+        end,
+    })
+
+    manager.on_active_changed:subscribe(function(_, sess) self:_bind_session(sess) end)
+    manager.on_selection_changed:subscribe(function()
+        if self:_is_open() then self:_load(false) end
+    end)
+    self:_bind_session(manager.session())
+end
+
+-- ── Session binding ────────────────────────────────────────────────────────
+
+---@private
+---@param sess easydap.dap.Session?
+function DisassemblyView:_bind_session(sess)
+    self._gen = self._gen + 1
+    local gen = self._gen
+    self._sess = sess
+    if not sess then return end
+
+    sess:on("stopped", function()
+        if gen ~= self._gen then return end
+        if self:_is_open() then self:_load(false) end
+    end)
+    sess:on("continued", function()
+        if gen ~= self._gen then return end
+        self:_clear_pc()
+    end)
+    sess:on("terminated", function()
+        if gen ~= self._gen then return end
+        self:close()
+    end)
+end
+
+-- ── Window / buffer plumbing ───────────────────────────────────────────────
+
+---@private
+---@return boolean
+function DisassemblyView:_is_open()
+    return self._win ~= nil and vim.api.nvim_win_is_valid(self._win)
+end
+
+---@private
+function DisassemblyView:_ensure_win()
+    if not (self._bufnr and vim.api.nvim_buf_is_valid(self._bufnr)) then
+        self._bufnr = ui_util.create_sratch_buffer(false, { filetype = "asm" }, function ()
+            self._bufnr = nil
+        end)
+        pcall(vim.api.nvim_buf_set_name, self._bufnr, "easydap://disassembly")
+        self:_setup_keymaps(self._bufnr)
+
+        -- asm -> source: bound to the asm buffer.
+        vim.api.nvim_create_autocmd("CursorMoved", {
+            group  = self._aug,
+            buffer = self._bufnr,
+            callback = function()
+                if self._syncing then return end
+                self._asm_sync()
+            end,
+        })
+    end
+
+    if not self:_is_open() then
+        local prev = vim.api.nvim_get_current_win()
+        vim.cmd("vsplit")
+        local win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_buf(win, self._bufnr)
+        vim.wo[win].number         = false
+        vim.wo[win].relativenumber = false
+        vim.wo[win].signcolumn     = "yes"
+        vim.wo[win].winfixbuf      = true
+        self._win = win
+        vim.api.nvim_set_current_win(prev)
+    end
+end
+
+---@private
+---@param lines string[]
+function DisassemblyView:_set_lines(lines)
+    local buf = self._bufnr
+    if not buf then return end
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+end
+
+-- ── Loading & rendering ────────────────────────────────────────────────────
+
+---Fetch and render disassembly for the active frame.
+---@private
+---@param focus boolean  focus the pane afterwards (only on explicit open)
+function DisassemblyView:_load(focus)
+    local sess = manager.session()
+    if not sess then
+        if focus then vim.notify("[dap] no active session", vim.log.levels.WARN) end
+        return
+    end
+    local frame = sess:current_stack_frame()
+    local ref   = frame and frame.instructionPointerReference
+    if not ref then
+        if focus then vim.notify("[dap] no instruction pointer for current frame", vim.log.levels.WARN) end
+        return
+    end
+
+    sess:disassemble(ref, _COUNT, _OFFSET, function(instrs, err)
+        vim.schedule(function()
+            if err or not instrs then
+                vim.notify("[dap] disassemble failed: " .. (err or "no instructions"), vim.log.levels.WARN)
+                return
+            end
+            self:_ensure_win()
+            self:_render(instrs, ref)
+            if focus and self:_is_open() then
+                vim.api.nvim_set_current_win(self._win)
+            end
+        end)
+    end)
+end
+
+---@private
+---@param instrs easydap.dap.proto.DisassembledInstruction[]
+---@param pc_ref string
+function DisassemblyView:_render(instrs, pc_ref)
+    local lines   = {} ---@type string[]
+    local rows    = {} ---@type table<integer, easydap.DisassemblyView.Row>
+    local by_src  = {} ---@type table<string, table<integer, easydap.DisassemblyView.SrcRange>>
+    local headers = {} ---@type integer[]
+    local pc_row  = nil ---@type integer?
+    local cur_sym = nil ---@type string?
+
+    for _, ins in ipairs(instrs) do
+        if ins.symbol and ins.symbol ~= cur_sym then
+            cur_sym       = ins.symbol
+            lines[#lines + 1]   = ins.symbol .. ":"
+            headers[#headers + 1] = #lines
+        end
+
+        local addr = ins.address or ""
+        lines[#lines + 1] = ("%-" .. _ADDR_W .. "s %s"):format(addr, ins.instruction or "")
+        local lnum = #lines
+
+        ---@cast ins easydap.DisassemblyView.Row
+        rows[lnum] = ins
+        if _addr_eq(addr, pc_ref) then pc_row = lnum end
+
+        local path  = ins.location and _norm(ins.location.path)
+        local sline = ins.line
+        if path and sline then
+            ins._path, ins._sline = path, sline
+            by_src[path] = by_src[path] or {}
+            local e = by_src[path][sline]
+            if e then
+                e.first = math.min(e.first, lnum)
+                e.last  = math.max(e.last, lnum)
+            else
+                by_src[path][sline] = { first = lnum, last = lnum }
+            end
+        end
+    end
+
+    self:_set_lines(lines)
+    self._rows   = rows
+    self._by_src = by_src
+
+    -- static highlights
+    vim.api.nvim_buf_clear_namespace(self._bufnr, self._ns, 0, -1)
+    for _, h in ipairs(headers) do
+        vim.api.nvim_buf_set_extmark(self._bufnr, self._ns, h - 1, 0, { line_hl_group = _SYM_HL })
+    end
+    for lnum, ins in pairs(rows) do
+        local addr_len = #(ins.address or "")
+        if addr_len > 0 then
+            vim.api.nvim_buf_set_extmark(self._bufnr, self._ns, lnum - 1, 0, {
+                end_col = addr_len, hl_group = _ADDR_HL,
+            })
+        end
+    end
+
+    self:_draw_pc(pc_row)
+end
+
+-- ── PC marker ──────────────────────────────────────────────────────────────
+
+---@private
+---@param pc_row integer?
+function DisassemblyView:_draw_pc(pc_row)
+    self:_clear_pc()
+    if not pc_row then return end
+    vim.api.nvim_buf_set_extmark(self._bufnr, self._ns_pc, pc_row - 1, 0, {
+        line_hl_group = _PC_HL,
+        sign_text     = config.signs.debug_frame,
+        sign_hl_group = _PC_HL,
+    })
+    if self:_is_open() then
+        pcall(vim.api.nvim_win_set_cursor, self._win, { pc_row, 0 })
+    end
+end
+
+---@private
+function DisassemblyView:_clear_pc()
+    if self._bufnr and vim.api.nvim_buf_is_valid(self._bufnr) then
+        vim.api.nvim_buf_clear_namespace(self._bufnr, self._ns_pc, 0, -1)
+    end
+end
+
+---@private
+function DisassemblyView:_clear_block()
+    if self._bufnr and vim.api.nvim_buf_is_valid(self._bufnr) then
+        vim.api.nvim_buf_clear_namespace(self._bufnr, self._ns_block, 0, -1)
+    end
+end
+
+-- ── Sync ───────────────────────────────────────────────────────────────────
+
+---Move/highlight the asm pane to match the source cursor.
+---@private
+function DisassemblyView:_sync_from_source()
+    local win = self._src_win
+    if not (win and vim.api.nvim_win_is_valid(win)) then return end
+
+    local path = _norm(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)))
+    local line = vim.api.nvim_win_get_cursor(win)[1]
+
+    self:_clear_block()
+    local entry = path and self._by_src[path] and self._by_src[path][line]
+    if not entry then return end
+
+    for l = entry.first, entry.last do
+        vim.api.nvim_buf_set_extmark(self._bufnr, self._ns_block, l - 1, 0, { line_hl_group = _BLOCK_HL })
+    end
+
+    self._syncing = true
+    pcall(vim.api.nvim_win_set_cursor, self._win, { entry.first, 0 })
+    vim.schedule(function() self._syncing = false end)
+end
+
+---Move the source window to match the asm cursor.
+---@private
+function DisassemblyView:_sync_to_source()
+    if not self:_is_open() then return end
+    local ins = self._rows[vim.api.nvim_win_get_cursor(self._win)[1]]
+    if not ins or not ins._path then return end
+
+    local win = self._src_win
+    if not (win and vim.api.nvim_win_is_valid(win)) then return end
+
+    self._syncing = true
+    local curpath = _norm(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)))
+    if curpath == ins._path then
+        pcall(vim.api.nvim_win_set_cursor, win, { ins._sline, 0 })
+    else
+        -- inlined frame: instruction maps to a different file
+        local asm = self._win
+        vim.api.nvim_set_current_win(win)
+        local newwin = ui_util.smart_open_file(ins._path, ins._sline, 0)
+        if newwin and newwin > 0 then self._src_win = newwin end
+        if asm and vim.api.nvim_win_is_valid(asm) then
+            vim.api.nvim_set_current_win(asm)
+        end
+    end
+    vim.schedule(function() self._syncing = false end)
+end
+
+-- ── Keymaps ────────────────────────────────────────────────────────────────
+
+---@private
+---@param bufnr integer
+function DisassemblyView:_setup_keymaps(bufnr)
+    vim.keymap.set("n", "q", function() self:close() end,
+        { buffer = bufnr, desc = "Close disassembly pane" })
+end
+
+-- ── Public API ─────────────────────────────────────────────────────────────
+
+---Open the disassembly pane for the active frame (or focus + refresh if open).
+function DisassemblyView:open()
+    if not self:_is_open() then
+        self._src_win = vim.api.nvim_get_current_win()
+    end
+    self:_load(true)
+end
+
+---Close the disassembly pane if visible.
+function DisassemblyView:close()
+    if self:_is_open() then
+        pcall(vim.api.nvim_win_close, self._win, true)
+    end
+    self._win = nil
+    self:_clear_block()
+end
+
+return DisassemblyView
