@@ -1187,11 +1187,23 @@ function DebugView:_setup_keymaps(bufnr)
         end
     end)
 
-    map("c", "Change variable value or breakpoint condition", function()
+    map("c", "Change variable value, breakpoint condition, or data breakpoint access type", function()
         local cur = self._tree:get_cursor_item()
         if not cur or not cur.data then return end
         local d = cur.data
-        if d.kind == "breakpoint" and d.bp_kind == "source" and d.bp_source and d.bp_line then
+        if d.kind == "breakpoint" and d.bp_kind == "data" and d.bp_data_id then
+            local sess = manager.session()
+            if not sess then vim.notify("[dap] no active session", vim.log.levels.WARN); return end
+            local _types   = { "read", "write", "readWrite" }
+            local cur_at   = d.access_type
+            select(_types, {
+                prompt      = "Access type for " .. d.name .. ": ",
+                format_item = function(t) return (t == cur_at and "● " or "  ") .. t end,
+            }, function(at)
+                if not at then return end
+                sess:add_data_breakpoint({ data_id = d.bp_data_id, name = d.name, access_type = at })
+            end)
+        elseif d.kind == "breakpoint" and d.bp_kind == "source" and d.bp_source and d.bp_line then
             inputwin.open({ prompt = "Condition (empty to clear): ", default = d.condition or "" }, function(input)
                 if input == nil then return end
                 breakpoints.patch(d.bp_source, d.bp_line, { condition = input })
@@ -1244,7 +1256,7 @@ function DebugView:_setup_keymaps(bufnr)
             "d     Remove watch expression or breakpoint",
             "r     Rename expression",
             "e     Toggle breakpoint enabled/disabled",
-            "c     Change variable value, breakpoint condition, or exception break mode",
+            "c     Change variable value / breakpoint condition / exception break mode / data access type",
         }, "\n"), { title = "Keymaps" })
     end)
 end
