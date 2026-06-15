@@ -1173,7 +1173,7 @@ function DebugView:_setup_keymaps(bufnr)
         end)
     end)
 
-    map("e", "Toggle breakpoint enabled/disabled", function()
+    map("x", "Toggle breakpoint enabled/disabled", function()
         local cur = self._tree:get_cursor_item()
         if not cur or not cur.data or cur.data.kind ~= "breakpoint" then return end
         local d = cur.data
@@ -1268,7 +1268,7 @@ function DebugView:_setup_keymaps(bufnr)
             "i     Add: watch expression (expressions) / function breakpoint (breakpoints) / data breakpoint (variable)",
             "d     Remove watch expression or breakpoint",
             "r     Rename expression",
-            "e     Toggle breakpoint enabled/disabled",
+            "x     Toggle breakpoint enabled/disabled",
             "c     Change variable value / breakpoint condition or hit condition / exception break mode / data access type",
         }, "\n"), { title = "Keymaps" })
     end)
