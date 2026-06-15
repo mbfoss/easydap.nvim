@@ -17,10 +17,8 @@ local _au_group_gen
 
 -- ── Tunables ───────────────────────────────────────────────────────────────
 
-local _COUNT    = 80  -- instructions requested per initial disassemble
-local _OFFSET   = -20 -- start a little before the PC so it sits mid-pane
+local _COUNT    = 80  -- fallback instruction count when the window doesn't exist yet
 local _ADDR_W   = 18  -- width of the address column
-local _PAGE     = 40  -- instructions fetched per on-demand page
 local _PAGE_PAD = 6   -- trigger paging when the cursor is within this many rows of an edge
 
 -- ── Highlight groups ───────────────────────────────────────────────────────
@@ -174,6 +172,15 @@ end
 -- ── Window / buffer plumbing ───────────────────────────────────────────────
 
 ---@private
+---@return integer
+function DisassemblyView:_win_height()
+    if self:_is_open() then
+        return vim.api.nvim_win_get_height(self._win)
+    end
+    return _COUNT
+end
+
+---@private
 ---@return boolean
 function DisassemblyView:_is_open()
     return self._win ~= nil and vim.api.nvim_win_is_valid(self._win)
@@ -254,7 +261,9 @@ function DisassemblyView:_load(focus)
         return
     end
 
-    sess:disassemble(ref, _COUNT, _OFFSET, function(instrs, err)
+    local count  = self:_win_height()
+    local offset = -math.floor(count / 2)
+    sess:disassemble(ref, count, offset, function(instrs, err)
         vim.schedule(function()
             if err or not instrs then
                 vim.notify("[dap] disassemble failed: " .. (err or "no instructions"), vim.log.levels.WARN)
@@ -441,10 +450,11 @@ function DisassemblyView:_page(dir)
 
     -- Fetch a fresh page centred around the anchor: paging down keeps the anchor
     -- near the top (more instructions below it), paging up near the bottom.
-    local offset = dir == "down" and -_PAGE_PAD or -(_PAGE - _PAGE_PAD)
+    local count  = self:_win_height()
+    local offset = dir == "down" and -_PAGE_PAD or -(count - _PAGE_PAD)
 
     local gen = self._gen
-    sess:disassemble(anchor_addr, _PAGE, offset, function(new, err)
+    sess:disassemble(anchor_addr, count, offset, function(new, err)
         if gen ~= self._gen then return end
         vim.schedule(function()
             if gen ~= self._gen then return end
