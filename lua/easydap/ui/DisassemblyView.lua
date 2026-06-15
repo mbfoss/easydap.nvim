@@ -175,7 +175,9 @@ function DisassemblyView:_bind_session(sess)
     end)
     sess:on("terminated", function()
         if gen ~= self._gen then return end
-        self:close()
+        -- keep the pane open for post-mortem inspection; just drop the now-stale
+        -- PC marker (mirrors debugline_ui's terminate handling).
+        self:_clear_pc()
     end)
     sess:on("instruction_breakpoints_changed", function()
         if gen ~= self._gen then return end
@@ -294,6 +296,13 @@ function DisassemblyView:_load(focus)
         return
     end
 
+    -- Fast path: if the new PC is already in the loaded window (the common case
+    -- when single-stepping), just move the marker — no disassemble round-trip.
+    if self:_is_open() and self._instrs and #self._instrs > 0 and self:_repoint_pc(ref) then
+        if focus then vim.api.nvim_set_current_win(self._win) end
+        return
+    end
+
     vim.notify("disassemble")
     local count  = self:_page_size()
     local offset = -math.floor(count / 2)
@@ -310,6 +319,27 @@ function DisassemblyView:_load(focus)
             end
         end)
     end)
+end
+
+---Move the PC marker to `ref` when it already lives in the loaded window,
+---recentering the cursor on it exactly as a fresh render would. Returns false
+---(no state touched) when the address is not currently loaded, signalling the
+---caller to fall back to a full disassemble.
+---@private
+---@param ref string
+---@return boolean handled
+function DisassemblyView:_repoint_pc(ref)
+    local row = _row_of(self._rows, ref)
+    if not row then return false end
+
+    self._pc_ref = ref
+    self:_draw_pc(row)
+    if self:_is_open() then
+        pcall(vim.api.nvim_win_set_cursor, self._win, { row, 0 })
+        self._last_row = row
+        self:_update_winbar()
+    end
+    return true
 end
 
 ---Render an instruction list into buffer lines and the accompanying lookup
