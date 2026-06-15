@@ -17,9 +17,9 @@ local _au_group_gen
 
 -- ── Tunables ───────────────────────────────────────────────────────────────
 
-local _COUNT    = 80  -- fallback instruction count when the window doesn't exist yet
-local _ADDR_W   = 18  -- width of the address column
-local _PAGE_PAD = 6   -- trigger paging when the cursor is within this many rows of an edge
+local _COUNT    = 80 -- fallback instruction count when the window doesn't exist yet
+local _ADDR_W   = 18 -- width of the address column
+local _PAGE_PAD = 6  -- trigger paging when the cursor is within this many rows of an edge
 
 -- ── Highlight groups ───────────────────────────────────────────────────────
 
@@ -115,6 +115,7 @@ end
 ---@field private _instrs?   easydap.DisassemblyView.Row[]  current ordered instruction list (paging)
 ---@field private _pc_ref?   string   instructionReference marked as the PC for the current load
 ---@field private _paging?   boolean  in-flight paging guard
+---@field private _last_row? integer  previous cursor row, to detect single-line moves
 ---@field private _aug?      integer  sync autocmd group; created on open, deleted on close
 ---@field private _gen       integer  generation guard for stale session callbacks
 ---@field private _syncing   boolean  re-entrancy guard around programmatic moves
@@ -309,6 +310,7 @@ function DisassemblyView:_load(focus)
         return
     end
 
+    vim.notify("disassemble")
     local count  = self:_page_size()
     local offset = -math.floor(count / 2)
     sess:disassemble(ref, count, offset, function(instrs, err)
@@ -396,6 +398,9 @@ function DisassemblyView:_render(instrs, pc_ref, recenter)
     if recenter and pc_row and self:_is_open() then
         pcall(vim.api.nvim_win_set_cursor, self._win, { pc_row, 0 })
     end
+
+    -- reset the single-line-move baseline: a fresh render is a jump, not a step
+    self._last_row = self:_is_open() and vim.api.nvim_win_get_cursor(self._win)[1] or nil
 end
 
 -- ── PC marker ──────────────────────────────────────────────────────────────
@@ -469,21 +474,27 @@ end
 
 -- ── Paging ─────────────────────────────────────────────────────────────────
 
----Fetch more instructions when the cursor nears either edge of the buffer.
----Triggered from CursorMoved, so ordinary scrolling (with `scrolloff` dragging
----the cursor along) keeps fresh instructions flowing in without any explicit
----jump. The trigger margin honours `scrolloff` so paging happens before the
----cursor is pinned against the edge.
+---Fetch more instructions when the cursor steps to within one line of an edge.
+---Triggered from CursorMoved, but only for single-line moves (j/k, <Up>/<Down>):
+---jumps like G/gg/<C-d>/search move by more than one line and are deliberately
+---ignored, so they land where the user aimed and never drag the view around.
 ---@private
 function DisassemblyView:_maybe_page()
-    if self._paging or self._syncing or not self:_is_open() then return end
-    if not self._instrs or #self._instrs == 0 then return end
+    if not self:_is_open() then return end
 
-    local row   = vim.api.nvim_win_get_cursor(self._win)[1]
+    local row      = vim.api.nvim_win_get_cursor(self._win)[1]
+    local prev     = self._last_row
+    self._last_row = row
+
+    if self._paging or self._syncing then return end
+    if not self._instrs or #self._instrs == 0 then return end
+    -- only page when the cursor moved by exactly one line
+    if not prev or math.abs(row - prev) ~= 1 then return end
+
     local total = vim.api.nvim_buf_line_count(self._bufnr)
     local so    = vim.wo[self._win].scrolloff
     if so < 0 then so = vim.go.scrolloff end
-    local pad   = math.max(_PAGE_PAD, so + 2)
+    local pad = math.max(_PAGE_PAD, so + 2)
 
     if row <= pad then
         self:_page("up")
@@ -518,6 +529,7 @@ function DisassemblyView:_page(dir)
     local page   = self:_page_size()
     local offset = dir == "down" and 1 or -page
 
+    vim.notify("disassemble")
     local gen = self._gen
     sess:disassemble(edge_addr, page, offset, function(new, err)
         if gen ~= self._gen then return end
@@ -550,9 +562,9 @@ function DisassemblyView:_apply_page(dir, new, page, anchor_addr)
         if ins.address then seen[ins.address] = true end
     end
 
-    local cap = page * 2  -- keep at most two pages' worth of instructions loaded
+    local cap = page * 2 -- keep at most two pages' worth of instructions loaded
     local merged ---@type easydap.DisassemblyView.Row[]
-    local consume = 0     -- old top lines the prepend overwrites (a stale header)
+    local consume = 0    -- old top lines the prepend overwrites (a stale header)
 
     if dir == "down" then
         local added = 0
@@ -591,16 +603,18 @@ function DisassemblyView:_apply_page(dir, new, page, anchor_addr)
     end
 
     local new_lines, rows, by_src, pc_row = self:_build(merged, self._pc_ref)
-    local oa = _row_of(self._rows, anchor_addr)
-    local na = _row_of(rows, anchor_addr)
+    local oa                              = _row_of(self._rows, anchor_addr)
+    local na                              = _row_of(rows, anchor_addr)
 
-    self._syncing          = true
-    vim.bo[buf].modifiable = true
+    self._syncing                         = true
+    vim.bo[buf].modifiable                = true
     if oa and na then
         local o = vim.api.nvim_buf_line_count(buf)
         local n = #new_lines
         if dir == "down" then
-            -- append below, then trim the top (group boundary => oa-na lines)
+            -- append below, then trim the top (group boundary => oa-na lines).
+            -- Both edits sit outside the anchor's screen region, so Neovim keeps
+            -- the cursor on its instruction and the view steady on its own.
             vim.api.nvim_buf_set_lines(buf, o, o, false,
                 vim.list_slice(new_lines, na + (o - oa) + 1, n))
             if oa > na then
