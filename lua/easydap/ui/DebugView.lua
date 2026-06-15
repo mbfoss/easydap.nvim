@@ -7,6 +7,7 @@ local str_util    = require("easydap.util.str_util")
 local inputwin    = require("easydap.util.inputwin")
 local select      = require("easydap.util.select").select
 local timer       = require("easydap.util.timer")
+local floatwin    = require("easydap.util.floatwin")
 
 ---@alias easydap.DebugView.ItemKind
 ---| "root"
@@ -31,12 +32,14 @@ local timer       = require("easydap.util.timer")
 ---@field session_info easydap.manager.SessionInfo?
 ---@field is_current boolean?
 ---@field frame_id   integer?
----@field bp_kind       ("source"|"function"|"exception_filter"|"exception_type")?
+---@field bp_kind       ("source"|"function"|"exception_filter"|"exception_type"|"data")?
 ---@field bp_id         integer?
 ---@field bp_source     string?
 ---@field bp_line       integer?
 ---@field bp_filter     string?
 ---@field bp_ex_name    string?
+---@field bp_data_id    string?
+---@field access_type   string?
 ---@field break_mode    string?
 ---@field unsupported   boolean?
 ---@field disabled      boolean?
@@ -137,6 +140,9 @@ local function _fmt_breakpoint(data, chunks)
         icon, hl = "✗", "DiagnosticError"
     elseif data.bp_kind == "exception_filter" or data.bp_kind == "exception_type" then
         icon, hl = "⚡", "DiagnosticInfo"
+    elseif data.bp_kind == "data" then
+        icon, hl = (data.verified == false) and "◌" or "◉",
+            (data.verified == false) and "DiagnosticWarn" or "DiagnosticInfo"
     elseif data.log_message then
         icon, hl = "◆", "DiagnosticHint"
     elseif data.condition or data.hit_condition then
@@ -153,6 +159,9 @@ local function _fmt_breakpoint(data, chunks)
     elseif data.bp_kind == "exception_type" and data.break_mode then
         chunks[#chunks + 1] = { " [" .. data.break_mode .. "]", "Comment" }
     else
+        if data.bp_kind == "data" and data.access_type then
+            chunks[#chunks + 1] = { " [" .. data.access_type .. "]", "Comment" }
+        end
         if data.condition then
             chunks[#chunks + 1] = { " • if: " .. data.condition, "Comment" }
         end
@@ -198,6 +207,7 @@ end
 ---@field private _greyout_timer    fun()?
 ---@field private _session_timer    fun()?
 ---@field private _removal_timers   table<number,fun()>
+---@field private _dbp_gen          integer?
 local DebugView = {}
 DebugView.__index = DebugView
 
@@ -504,6 +514,9 @@ function DebugView:_show_hover(data)
             lines[#lines + 1] = "exception: " .. (data.bp_ex_name or data.name or "?")
             if data.break_mode then lines[#lines + 1] = "break mode: " .. data.break_mode end
             if data.unsupported then lines[#lines + 1] = "(not supported by adapter)" end
+        elseif data.bp_kind == "data" then
+            lines[#lines + 1] = "data: " .. (data.name or "?")
+            if data.access_type then lines[#lines + 1] = "access: " .. data.access_type end
         end
         if data.condition and data.condition ~= "" then
             lines[#lines + 1] = "condition: " .. data.condition
@@ -569,6 +582,18 @@ function DebugView:_set_active(id, sess)
     local old_id      = self._active_id
     self._active_id   = id
     self._active_sess = sess
+
+    -- Re-bind data-breakpoint refresh to the new active session. Data breakpoints
+    -- are session-scoped, so we listen directly; stale listeners self-disable via
+    -- the generation guard (the session drops all listeners when it terminates).
+    self._dbp_gen = (self._dbp_gen or 0) + 1
+    local dbp_gen = self._dbp_gen
+    if sess then
+        sess:on("data_breakpoints_changed", function()
+            if dbp_gen ~= self._dbp_gen then return end
+            self:_load_breakpoints()
+        end)
+    end
 
     -- refresh is_current flag on old and new session rows
     if old_id then
@@ -942,6 +967,26 @@ function DebugView:_load_breakpoints()
         }
     end
 
+    if active_sess then
+        for i, bp in ipairs(active_sess:data_breakpoints()) do
+            local path        = _roots.breakpoints .. "/data/" .. i
+            items[#items + 1] = {
+                id         = path,
+                expandable = false,
+                expanded   = false,
+                data       = {
+                    kind        = "breakpoint",
+                    path        = path,
+                    name        = bp.name,
+                    bp_kind     = "data",
+                    bp_data_id  = bp.data_id,
+                    access_type = bp.access_type,
+                    verified    = bp.verified,
+                },
+            }
+        end
+    end
+
     self._tree:set_children(_roots.breakpoints, items)
 end
 
@@ -1013,6 +1058,47 @@ end
 
 -- ── Keymaps ────────────────────────────────────────────────────────────────
 
+---Toggle a data breakpoint (watchpoint) on a variable tree node, resolving its
+---dataId against the active session and prompting for an access type when the
+---adapter offers several.
+---@private
+---@param cur easydap.ui.TreeBuffer.Item  a node whose data.kind == "variable"
+function DebugView:_toggle_data_breakpoint(cur)
+    local sess = self._active_sess
+    if not sess then vim.notify("[dap] no active session", vim.log.levels.WARN); return end
+    if not sess:capable("supportsDataBreakpoints") then
+        vim.notify("[dap] adapter does not support data breakpoints", vim.log.levels.WARN)
+        return
+    end
+    local d          = cur.data
+    local parent     = self._tree:get_parent_item(cur.id)
+    local parent_ref = parent and parent.data and parent.data.variablesReference
+    sess:data_breakpoint_info(d.name, parent_ref, function(body, err)
+        if err or not body or not body.dataId then
+            local why = err or (body and body.description) or "not available"
+            vim.notify("[dap] cannot watch '" .. d.name .. "': " .. why, vim.log.levels.WARN)
+            return
+        end
+        for _, bp in ipairs(sess:data_breakpoints()) do
+            if bp.data_id == body.dataId then
+                sess:remove_data_breakpoint(body.dataId)
+                return
+            end
+        end
+        local function add(access)
+            sess:add_data_breakpoint({ data_id = body.dataId, name = d.name, access_type = access })
+        end
+        local types = body.accessTypes or {}
+        if #types > 1 then
+            select(types, { prompt = "Access type for `" .. d.name .. "`: " }, function(t)
+                if t then add(t) end
+            end)
+        else
+            add(types[1])
+        end
+    end)
+end
+
 ---@private
 ---@param bufnr integer
 function DebugView:_setup_keymaps(bufnr)
@@ -1023,15 +1109,26 @@ function DebugView:_setup_keymaps(bufnr)
         vim.keymap.set("n", key, fn, { buffer = bufnr, desc = desc })
     end
 
-    map("i", "Add watch expression", function()
+    map("i", "Add watch expression / function breakpoint / toggle data breakpoint", function()
         local cur = self._tree:get_cursor_item()
         if not cur then return end
         local id = tostring(cur.id)
-        local under_xpr = id == _roots.expressions or vim.startswith(id, _roots.expressions .. "/")
-        if not under_xpr then return end
-        inputwin.open({ prompt = "Watch expression: " }, function(expr)
-            if expr and expr ~= "" then expressions.add(expr) end
-        end)
+        local function under(root) return id == root or vim.startswith(id, root .. "/") end
+        if under(_roots.expressions) then
+            inputwin.open({ prompt = "Watch expression: " }, function(expr)
+                if expr and expr ~= "" then expressions.add(expr) end
+            end)
+        elseif under(_roots.breakpoints) then
+            inputwin.open({ prompt = "Function breakpoint: " }, function(name)
+                if name and name ~= "" then
+                    breakpoints.add_function(name)
+                    local sess = manager.session()
+                    if sess then sess:sync_function_breakpoints() end
+                end
+            end)
+        elseif cur.data and cur.data.kind == "variable" then
+            self:_toggle_data_breakpoint(cur)
+        end
     end)
 
     map("d", "Remove watch expression or breakpoint", function()
@@ -1053,6 +1150,9 @@ function DebugView:_setup_keymaps(bufnr)
                 breakpoints.remove_exception_name(d.bp_ex_name)
                 local sess = manager.session()
                 if sess then sess:sync_exception_breakpoints() end
+            elseif d.bp_kind == "data" and d.bp_data_id then
+                local sess = manager.session()
+                if sess then sess:remove_data_breakpoint(d.bp_data_id) end
             end
         end
     end)
@@ -1137,15 +1237,15 @@ function DebugView:_setup_keymaps(bufnr)
     end)
 
     map("g?", "Show keymaps", function()
-        vim.notify(table.concat({
+        floatwin.open(table.concat({
             "<CR>  Select session / switch frame / jump to breakpoint source",
             "K     Show full value / frame details / exception info / breakpoint details",
-            "i     Add watch expression",
+            "i     Add: watch expression (expressions) / function breakpoint (breakpoints) / data breakpoint (variable)",
             "d     Remove watch expression or breakpoint",
             "r     Rename expression",
             "e     Toggle breakpoint enabled/disabled",
             "c     Change variable value, breakpoint condition, or exception break mode",
-        }, "\n"))
+        }, "\n"), { title = "Keymaps" })
     end)
 end
 

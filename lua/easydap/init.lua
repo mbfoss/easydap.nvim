@@ -41,6 +41,7 @@ local function _register_user_commands()
         "enable", "disable", "enable_all", "disable_all",
         "condition", "logpoint",
         "fn", "exception_filter", "exception_type",
+        "data", "data_clear", "data_list",
         "list",
     }
 
@@ -80,6 +81,12 @@ local function _register_user_commands()
             cmd.breakpoint.exception_filter()
         elseif sub == "exception_type" then
             cmd.breakpoint.exception_type(args[2], args[3])
+        elseif sub == "data" then
+            cmd.breakpoint.data(args[2])
+        elseif sub == "data_clear" then
+            cmd.breakpoint.data_clear()
+        elseif sub == "data_list" then
+            cmd.breakpoint.data_list()
         elseif sub == "list" then
             cmd.breakpoint.list()
         else

@@ -39,6 +39,18 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field message  string?
 ---@field hits     integer
 
+---A data breakpoint (watchpoint) tracked by the session.
+---Session-scoped: dataIds are obtained per-session via dataBreakpointInfo and
+---are not persisted to the project store.
+---@class easydap.dap.DataBreakpoint
+---@field data_id       string
+---@field name          string                                   human label (variable/expression watched)
+---@field access_type   easydap.dap.proto.DataBreakpointAccessType?
+---@field condition     string?
+---@field hit_condition string?
+---@field verified      boolean?
+---@field message       string?
+
 ---@class easydap.dap.Session
 ---@field conn          easydap.dap.Connection
 ---@field config        easydap.dap.Config
@@ -70,6 +82,12 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field instruction_breakpoints        fun(self: easydap.dap.Session): table<string, easydap.dap.BpStatus>
 ---@field toggle_instruction_breakpoint  fun(self: easydap.dap.Session, ref: string, cb: fun(err: string?)?)
 ---@field _instr_bps                     table<string, easydap.dap.BpStatus>
+---@field data_breakpoints               fun(self: easydap.dap.Session): easydap.dap.DataBreakpoint[]
+---@field data_breakpoint_info           fun(self: easydap.dap.Session, name: string, variables_reference: integer?, cb: fun(body: easydap.dap.proto.DataBreakpointInfoResponseBody?, err: string?))
+---@field add_data_breakpoint            fun(self: easydap.dap.Session, entry: { data_id: string, name: string, access_type?: easydap.dap.proto.DataBreakpointAccessType, condition?: string, hit_condition?: string }, cb: fun(err: string?)?)
+---@field remove_data_breakpoint         fun(self: easydap.dap.Session, data_id: string, cb: fun(err: string?)?)
+---@field clear_data_breakpoints         fun(self: easydap.dap.Session, cb: fun(err: string?)?)
+---@field _data_bps                      easydap.dap.DataBreakpoint[]
 ---@field request       fun(self: easydap.dap.Session, command: string, args: table?, cb: fun(body: table?, err: string?)?)
 ---@field capable       fun(self: easydap.dap.Session, name: string): boolean
 ---@field current_thread      fun(self: easydap.dap.Session): easydap.dap.Thread?
@@ -123,6 +141,7 @@ function M.new(conn, config)
         _bp_status            = {},
         _adapter_id_map       = {},
         _instr_bps            = {},
+        _data_bps             = {},
         _listeners            = {},
         _stop_cb              = nil,
         _stopping             = false,
@@ -144,6 +163,7 @@ end
 ---| "thread_updated"
 ---| "breakpoint_updated"
 ---| "instruction_breakpoints_changed"
+---| "data_breakpoints_changed"
 ---| "variable_changed"
 ---| "stopped"
 ---| "continued"
@@ -939,6 +959,7 @@ function Session:restart()
     self._bp_status       = {}
     self._adapter_id_map  = {}
     self._instr_bps       = {}
+    self._data_bps        = {}
     self:request("restart", { arguments = self:_protocol_args() }, function(_, err)
         if err then self:report("[dap] restart failed: " .. err) end
     end)
@@ -1017,6 +1038,123 @@ function Session:toggle_instruction_breakpoint(ref, cb)
         self._instr_bps[ref] = { verified = false, hits = 0 }
     end
     self:_sync_instruction_breakpoints(cb)
+end
+
+-- ── Data breakpoints (watchpoints) ─────────────────────────────────────────
+
+---Data breakpoints currently set on this session, in display order.
+---Session-scoped: dataIds are only valid within a live session, so these are
+---never persisted to the project store.
+---@return easydap.dap.DataBreakpoint[]
+function Session:data_breakpoints()
+    return self._data_bps
+end
+
+---Resolve the dataId and supported access types for a data breakpoint on a
+---variable or expression. Must be called while stopped (it scopes to the
+---current frame when no container reference is given).
+---@param name string                       variable name, or an expression
+---@param variables_reference integer?       parent container reference (nil = expression in current frame)
+---@param cb fun(body: easydap.dap.proto.DataBreakpointInfoResponseBody?, err: string?)
+function Session:data_breakpoint_info(name, variables_reference, cb)
+    if not self:capable("supportsDataBreakpoints") then
+        return cb(nil, "adapter does not support data breakpoints")
+    end
+    local args = { name = name }
+    if variables_reference and variables_reference > 0 then
+        args.variablesReference = variables_reference
+    else
+        local frame = self:current_stack_frame()
+        if frame then args.frameId = frame.id end
+    end
+    self:request("dataBreakpointInfo", args, cb)
+end
+
+---Add (or update) a data breakpoint with an already-resolved dataId, then push
+---the full set to the adapter. Resolve `data_id` first via data_breakpoint_info.
+---@param entry { data_id: string, name: string, access_type?: easydap.dap.proto.DataBreakpointAccessType, condition?: string, hit_condition?: string }
+---@param cb fun(err: string?)?
+function Session:add_data_breakpoint(entry, cb)
+    if not self:capable("supportsDataBreakpoints") then
+        self:report("[dap] adapter does not support data breakpoints")
+        if cb then cb("unsupported") end
+        return
+    end
+    for _, bp in ipairs(self._data_bps) do
+        if bp.data_id == entry.data_id then
+            bp.name          = entry.name
+            bp.access_type   = entry.access_type
+            bp.condition     = entry.condition
+            bp.hit_condition = entry.hit_condition
+            return self:_sync_data_breakpoints(cb)
+        end
+    end
+    self._data_bps[#self._data_bps + 1] = {
+        data_id       = entry.data_id,
+        name          = entry.name,
+        access_type   = entry.access_type,
+        condition     = entry.condition,
+        hit_condition = entry.hit_condition,
+    }
+    self:_sync_data_breakpoints(cb)
+end
+
+---Remove the data breakpoint with the given dataId and re-sync.
+---@param data_id string
+---@param cb fun(err: string?)?
+function Session:remove_data_breakpoint(data_id, cb)
+    for i, bp in ipairs(self._data_bps) do
+        if bp.data_id == data_id then
+            table.remove(self._data_bps, i)
+            return self:_sync_data_breakpoints(cb)
+        end
+    end
+    if cb then cb() end
+end
+
+---Remove all data breakpoints and re-sync.
+---@param cb fun(err: string?)?
+function Session:clear_data_breakpoints(cb)
+    if #self._data_bps == 0 then
+        if cb then cb() end
+        return
+    end
+    self._data_bps = {}
+    self:_sync_data_breakpoints(cb)
+end
+
+---Push the current data-breakpoint set to the adapter.
+---DAP requires the full list on every call; breakpoints not in the list are cleared.
+---@private
+---@param cb fun(err: string?)?
+function Session:_sync_data_breakpoints(cb)
+    if not self:capable("supportsDataBreakpoints") then
+        if cb then cb("adapter does not support data breakpoints") end
+        return
+    end
+    local list = {}
+    for _, bp in ipairs(self._data_bps) do
+        local entry = { dataId = bp.data_id }
+        if bp.access_type   then entry.accessType   = bp.access_type end
+        if bp.condition     then entry.condition    = bp.condition end
+        if bp.hit_condition then entry.hitCondition = bp.hit_condition end
+        list[#list + 1] = entry
+    end
+    self:request("setDataBreakpoints", { breakpoints = list }, function(body, err)
+        if err then
+            self:report("[dap] setDataBreakpoints failed: " .. err)
+        elseif body and body.breakpoints then
+            for i, upd in ipairs(body.breakpoints) do
+                local bp = self._data_bps[i]
+                if bp then
+                    bp.verified = upd.verified
+                    bp.message  = upd.message
+                end
+            end
+        end
+        self:_emit("data_breakpoints_changed", self)
+        if cb then cb(err) end
+    end)
 end
 
 -- ── Data fetching ──────────────────────────────────────────────────────────

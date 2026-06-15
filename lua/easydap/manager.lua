@@ -402,6 +402,89 @@ function M.breakpoint.list()
     end)
 end
 
+-- ── Data breakpoints (watchpoints) ─────────────────────────────────────────
+
+---Resolve `name` against the active session and either add a data breakpoint
+---(prompting for an access type when several are offered) or, if one already
+---exists for the resolved dataId, remove it.
+---@param sess easydap.dap.Session
+---@param name string
+---@param variables_reference integer?
+local function _toggle_data_bp(sess, name, variables_reference)
+    sess:data_breakpoint_info(name, variables_reference, function(body, err)
+        if err or not body or not body.dataId then
+            local why = err or (body and body.description) or "not available"
+            vim.notify("[dap] cannot watch '" .. name .. "': " .. why, vim.log.levels.WARN)
+            return
+        end
+        for _, bp in ipairs(sess:data_breakpoints()) do
+            if bp.data_id == body.dataId then
+                sess:remove_data_breakpoint(body.dataId)
+                vim.notify("[dap] data breakpoint removed: " .. name, vim.log.levels.INFO)
+                return
+            end
+        end
+        local function add(access)
+            sess:add_data_breakpoint({ data_id = body.dataId, name = name, access_type = access })
+            vim.notify("[dap] data breakpoint set: " .. name
+                .. (access and (" (" .. access .. ")") or ""), vim.log.levels.INFO)
+        end
+        local types = body.accessTypes or {}
+        if #types > 1 then
+            select(types, { prompt = "Access type for " .. name .. ": " }, function(t)
+                if t then add(t) end
+            end)
+        else
+            add(types[1])
+        end
+    end)
+end
+
+---Set or toggle a data breakpoint (watchpoint) on a variable or expression.
+---Requires a stopped session whose adapter advertises supportsDataBreakpoints.
+---@param name? string  defaults to the word under the cursor (prompted)
+function M.breakpoint.data(name)
+    local sess = M.session()
+    if not sess then vim.notify("[dap] no active session", vim.log.levels.WARN); return end
+    if not sess:capable("supportsDataBreakpoints") then
+        vim.notify("[dap] adapter does not support data breakpoints", vim.log.levels.WARN)
+        return
+    end
+    if name and name ~= "" then
+        _toggle_data_bp(sess, name)
+    else
+        vim.ui.input({ prompt = "Watch (data breakpoint): ", default = vim.fn.expand("<cword>") },
+            function(input)
+                if input and input ~= "" then _toggle_data_bp(sess, input) end
+            end)
+    end
+end
+
+---Remove all data breakpoints on the active session.
+function M.breakpoint.data_clear()
+    local sess = M.session()
+    if not sess then vim.notify("[dap] no active session", vim.log.levels.WARN); return end
+    sess:clear_data_breakpoints()
+end
+
+---List data breakpoints on the active session; selecting one removes it.
+function M.breakpoint.data_list()
+    local sess = M.session()
+    if not sess then vim.notify("[dap] no active session", vim.log.levels.WARN); return end
+    local bps = sess:data_breakpoints()
+    if #bps == 0 then vim.notify("[dap] no data breakpoints", vim.log.levels.INFO); return end
+    select(bps, {
+        prompt      = "Remove data breakpoint",
+        format_item = function(bp)
+            local icon = bp.verified == false and "◌" or "◉"
+            local at   = bp.access_type and ("  [" .. bp.access_type .. "]") or ""
+            return icon .. " " .. bp.name .. at
+        end,
+    }, function(bp)
+        if bp then sess:remove_data_breakpoint(bp.data_id) end
+    end)
+end
+
 -- ── Debug controls ────────────────────────────────────────────────────────
 
 M.debug = {}
