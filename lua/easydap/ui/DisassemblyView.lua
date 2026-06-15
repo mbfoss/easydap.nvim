@@ -484,6 +484,51 @@ function DisassemblyView:_toggle_bp_at_cursor()
     sess:toggle_instruction_breakpoint(ins.address)
 end
 
+-- ── Instruction details (hover) ────────────────────────────────────────────
+
+---Show the adapter-reported metadata for the instruction under the cursor in an
+---LSP-style floating preview: address, raw bytes, owning symbol, source mapping
+---and breakpoint state. A second press focuses the float (LSP `K` convention);
+---moving the cursor dismisses it.
+---@private
+function DisassemblyView:_hover()
+    if not self:_is_open() then return end
+    local ins = self._rows[vim.api.nvim_win_get_cursor(self._win)[1]]
+    if not ins then return end
+
+    local lines = {} ---@type string[]
+    local function add(label, val)
+        if val and val ~= "" then lines[#lines + 1] = ("- **%s** %s"):format(label, val) end
+    end
+
+    lines[#lines + 1] = ("### `%s`"):format(ins.address or "?")
+    lines[#lines + 1] = ""
+    add("Instruction", ins.instruction and ("`%s`"):format(ins.instruction))
+    add("Bytes", ins.instructionBytes and ("`%s`"):format(ins.instructionBytes))
+    add("Symbol", ins.symbol and ("`%s`"):format(ins.symbol))
+
+    local path = ins._path or (ins.location and ins.location.path)
+    if path and ins.line then
+        local loc = ("%s:%d"):format(vim.fn.fnamemodify(path, ":~:."), ins.line)
+        if ins.column then loc = ("%s:%d"):format(loc, ins.column) end
+        if ins.endLine and ins.endLine ~= ins.line then loc = ("%s–%d"):format(loc, ins.endLine) end
+        add("Source", loc)
+    end
+
+    local bps = self._sess and self._sess:instruction_breakpoints()
+    local bp  = bps and ins.address and bps[ins.address]
+    if bp then add("Breakpoint", bp.verified and "verified" or "pending") end
+
+    vim.lsp.util.open_floating_preview(lines, "markdown", {
+        border    = "rounded",
+        focusable = true,
+        focus     = false,
+        focus_id  = "easydap_asm_hover",
+        max_width = 80,
+        wrap      = true,
+    })
+end
+
 -- ── Winbar (sticky function header) ────────────────────────────────────────
 
 ---The running symbol owning `lnum`: the nearest `symbol` at or above it. Lets the
@@ -759,6 +804,7 @@ function DisassemblyView:_setup_keymaps(bufnr)
 
     map("q", function() self:close() end, "Close disassembly pane")
     map("<CR>", function() self:_toggle_bp_at_cursor() end, "Toggle instruction breakpoint")
+    map("K", function() self:_hover() end, "Instruction reference")
     map("j", function() self:_edge_motion("down", "j") end, "Down (page at last line)")
     map("k", function() self:_edge_motion("up", "k") end, "Up (page at first line)")
     map("<Down>", function() self:_edge_motion("down", "j") end, "Down (page at last line)")
