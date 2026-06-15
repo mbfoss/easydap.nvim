@@ -101,22 +101,19 @@ end
 
 -- ── Stepping (delegate to client with active id) ───────────────────────────
 
----@type easydap.dap.proto.SteppingGranularity
-local _granularity = "line"
-
----Set the granularity used for subsequent steps. The disassembly pane switches
----this to "instruction" while focused and back to "line" on leave.
----@param g easydap.dap.proto.SteppingGranularity
-function M.set_granularity(g) _granularity = g end
-
+---Granularity used for subsequent steps. Derived from the focused buffer:
+---instruction while the disassembly pane is current, line everywhere else.
 ---@return easydap.dap.proto.SteppingGranularity
-function M.granularity() return _granularity end
+function M.granularity()
+    if vim.b.easydap_disasm then return "instruction" end
+    return "line"
+end
 
 function M.continue()     if _active_id then client.continue(_active_id) end end
-function M.next()         if _active_id then client.next(_active_id, _granularity) end end
-function M.step_in()      if _active_id then client.step_in(_active_id, _granularity) end end
-function M.step_out()     if _active_id then client.step_out(_active_id, _granularity) end end
-function M.step_back()    if _active_id then client.step_back(_active_id, _granularity) end end
+function M.next()         if _active_id then client.next(_active_id, M.granularity()) end end
+function M.step_in()      if _active_id then client.step_in(_active_id, M.granularity()) end end
+function M.step_out()     if _active_id then client.step_out(_active_id, M.granularity()) end end
+function M.step_back()    if _active_id then client.step_back(_active_id, M.granularity()) end end
 function M.pause()        if _active_id then client.pause(_active_id) end end
 function M.restart()      if _active_id then client.restart(_active_id) end end
 

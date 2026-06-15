@@ -190,6 +190,9 @@ function DisassemblyView:_ensure_win()
             self:close()
         end)
         pcall(vim.api.nvim_buf_set_name, self._bufnr, "easydap://disassembly")
+        -- identity flag consumers use to recognise the disassembly pane (the
+        -- buffer name may be cwd-prefixed, so matching on it is unreliable).
+        vim.b[self._bufnr].easydap_disasm = true
         self:_setup_keymaps(self._bufnr)
 
         -- asm -> source sync + edge paging, bound to the asm buffer.
@@ -201,18 +204,6 @@ function DisassemblyView:_ensure_win()
                 if self._syncing then return end
                 self._asm_sync()
             end,
-        })
-
-        -- steps issued while focused here use instruction granularity.
-        vim.api.nvim_create_autocmd("BufEnter", {
-            group    = self._aug,
-            buffer   = self._bufnr,
-            callback = function() manager.set_granularity("instruction") end,
-        })
-        vim.api.nvim_create_autocmd("BufLeave", {
-            group    = self._aug,
-            buffer   = self._bufnr,
-            callback = function() manager.set_granularity("line") end,
         })
     end
 
@@ -429,7 +420,10 @@ function DisassemblyView:_maybe_page()
     end
 end
 
----Extend the instruction window in the given direction and re-render in place.
+---Shift the instruction window in the given direction and re-render it in
+---place. The buffer is *replaced*, not extended, so its size stays bounded at a
+---single page; the instruction under the cursor is kept as the anchor so the
+---view does not jump.
 ---@private
 ---@param dir "up"|"down"
 function DisassemblyView:_page(dir)
@@ -441,45 +435,23 @@ function DisassemblyView:_page(dir)
     -- anchor the view on the instruction under the cursor so it doesn't jump
     local anchor      = self._rows[vim.api.nvim_win_get_cursor(self._win)[1]]
     local anchor_addr = anchor and anchor.address
-
-    local ref, offset
-    if dir == "up" then
-        ref, offset = instrs[1].address, -_PAGE
-    else
-        ref, offset = instrs[#instrs].address, 1
-    end
-    if not ref then
+    if not anchor_addr then
         self._paging = false; return
     end
 
+    -- Fetch a fresh page centred around the anchor: paging down keeps the anchor
+    -- near the top (more instructions below it), paging up near the bottom.
+    local offset = dir == "down" and -_PAGE_PAD or -(_PAGE - _PAGE_PAD)
+
     local gen = self._gen
-    sess:disassemble(ref, _PAGE, offset, function(new, err)
+    sess:disassemble(anchor_addr, _PAGE, offset, function(new, err)
         if gen ~= self._gen then return end
         vim.schedule(function()
             if gen ~= self._gen then return end
             self._paging = false
-            local cur = self._instrs
-            if err or not new or #new == 0 or not cur or not self:_is_open() then return end
+            if err or not new or #new == 0 or not self:_is_open() then return end
 
-            local have = {}
-            for _, i in ipairs(cur) do have[i.address] = true end
-            local add = {}
-            for _, i in ipairs(new) do
-                if i.address and not have[i.address] then add[#add + 1] = i end
-            end
-            if #add == 0 then return end
-
-            local merged ---@type easydap.DisassemblyView.Row[]
-            if dir == "up" then
-                merged = {}
-                vim.list_extend(merged, add)
-                vim.list_extend(merged, cur)
-            else
-                merged = cur
-                vim.list_extend(merged, add)
-            end
-
-            self:_render(merged, self._pc_ref, false)
+            self:_render(new, self._pc_ref, false)
 
             local r = self:_row_of_addr(anchor_addr)
             if r then

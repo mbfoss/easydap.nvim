@@ -41,7 +41,7 @@ local function _show_stopped(sess)
     if sess.state_reason == "function call" then
         return -- spurious stop triggered by gdp
     end
-    local activate = vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()) ~= "easydap://disassembly"
+    local activate = not vim.b.easydap_disasm
     local col = frame.column and (frame.column - 1) or nil
     ui_util.smart_open_file(src.path, lnum, col, activate)
 end
