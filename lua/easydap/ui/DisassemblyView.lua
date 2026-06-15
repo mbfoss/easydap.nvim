@@ -133,13 +133,15 @@ function DisassemblyView:_ensure_autocmds()
     _au_group_gen = _au_group_gen and (_au_group_gen + 1) or 1
     self._aug = vim.api.nvim_create_augroup(("easydap_disasm_sync_%d"):format(_au_group_gen), { clear = true })
 
-    -- source -> asm: a global CursorMoved that only fires while focused in the
-    -- bound source window and the pane is open.
+    -- source -> asm: a global CursorMoved that fires while the cursor is in any
+    -- window other than the asm pane itself. _sync_from_source then decides,
+    -- from _by_src, whether that window actually shows mapped source — so the
+    -- bound source window is discovered dynamically rather than pinned at open.
     vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
         group = self._aug,
         callback = function()
             if self._syncing or not self:_is_open() then return end
-            if vim.api.nvim_get_current_win() ~= self._src_win then return end
+            if vim.api.nvim_get_current_win() == self._win then return end
             self._src_sync()
         end,
     })
@@ -728,11 +730,14 @@ end
 
 -- ── Sync ───────────────────────────────────────────────────────────────────
 
----Move/highlight the asm pane to match the source cursor.
+---Move/highlight the asm pane to match the cursor in the active source window.
+---The source window is taken to be whatever (non-asm) window currently holds the
+---cursor; we only adopt it as `_src_win` once it proves to show mapped source.
 ---@private
 function DisassemblyView:_sync_from_source()
-    local win = self._src_win
-    if not (win and vim.api.nvim_win_is_valid(win)) then return end
+    if not self:_is_open() then return end
+    local win = vim.api.nvim_get_current_win()
+    if win == self._win or not vim.api.nvim_win_is_valid(win) then return end
 
     local path = _norm(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)))
     local line = vim.api.nvim_win_get_cursor(win)[1]
@@ -740,6 +745,8 @@ function DisassemblyView:_sync_from_source()
     self:_clear_block()
     local entry = path and self._by_src[path] and self._by_src[path][line]
     if not entry then return end
+
+    self._src_win = win -- remember it for the asm -> source direction
 
     for l = entry.first, entry.last do
         vim.api.nvim_buf_set_extmark(self._bufnr, self._ns_block, l - 1, 0, { line_hl_group = _BLOCK_HL, priority = 30 })
