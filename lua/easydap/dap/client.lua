@@ -134,6 +134,7 @@ local function _register_session(sess, opts, progress)
         "state_changed", "output", "stopped", "continued",
         "thread_updated", "terminated", "breakpoint_updated",
         "run_in_terminal", "start_debugging",
+        "memory_changed", "progress",
     }
     if on_event then
         for _, ev in ipairs(ALL_EVENTS) do

@@ -65,6 +65,7 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field exception_description string?
 ---@field _modules      easydap.dap.proto.Module[]
 ---@field _sources      easydap.dap.proto.Source[]
+---@field _progress     table<string, string>   active progressId -> title
 ---@field _source_buffers table<integer,integer>   sourceReference -> bufnr
 ---@field on            fun(self: easydap.dap.Session, event: string, handler: fun(...))
 ---@field start         fun(self: easydap.dap.Session)
@@ -83,6 +84,7 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field set_next_statement fun(self: easydap.dap.Session, target_id: integer, thread_id: integer?)
 ---@field restart_frame      fun(self: easydap.dap.Session, frame_id: integer)
 ---@field exception_info     fun(self: easydap.dap.Session, thread_id: integer?, cb: fun(body: easydap.dap.proto.ExceptionInfoResponseBody?, err: string?))
+---@field breakpoint_locations fun(self: easydap.dap.Session, source: easydap.dap.proto.Source, line: integer, end_line: integer?, cb: fun(locations: easydap.dap.proto.BreakpointLocation[]?, err: string?))
 ---@field restart       fun(self: easydap.dap.Session)
 ---@field evaluate      fun(self: easydap.dap.Session, expr: string, context: string, cb: fun(body: easydap.dap.proto.EvaluateResponseBody?, err: string?))
 ---@field disassemble   fun(self: easydap.dap.Session, ref: string, count: integer, offset: integer?, cb: fun(instructions: easydap.dap.proto.DisassembledInstruction[]?, err: string?))
@@ -150,6 +152,7 @@ function M.new(conn, config)
         _adapter_id_map       = {},
         _instr_bps            = {},
         _data_bps             = {},
+        _progress             = {},
         _listeners            = {},
         _stop_cb              = nil,
         _stopping             = false,
@@ -180,6 +183,8 @@ end
 ---| "start_debugging"
 ---| "run_in_terminal"
 ---| "terminal_exit"
+---| "memory_changed"
+---| "progress"
 
 ---@param event   easydap.dap.SessionEvent
 ---@param handler fun(...)
@@ -609,6 +614,16 @@ function Session:_handle_event(event, body)
         self:_on_exited(body)
     elseif event == "terminated" then
         self:_on_terminated()
+    elseif event == "invalidated" then
+        self:_on_invalidated(body)
+    elseif event == "memory" then
+        self:_on_memory(body)
+    elseif event == "progressStart" then
+        self:_on_progress(body, "start")
+    elseif event == "progressUpdate" then
+        self:_on_progress(body, "update")
+    elseif event == "progressEnd" then
+        self:_on_progress(body, "end")
     elseif event == "capabilities" then
         if body and body.capabilities then
             self.capabilities = vim.tbl_extend("force", self.capabilities, body.capabilities)
@@ -769,6 +784,64 @@ function Session:_on_terminated()
     self:_set_state("terminated")
     self:_emit("terminated", self)
     self:_shutdown()
+end
+
+---The adapter signals that cached data is stale and must be re-fetched.
+---Only meaningful while stopped — running state holds no cached frames/scopes.
+---@param body easydap.dap.proto.InvalidatedEventBody
+function Session:_on_invalidated(body)
+    if self.state ~= "stopped" then return end
+    local areas = (body and body.areas) or {}
+    local all   = #areas == 0 or vim.tbl_contains(areas, "all")
+    local function area(a) return all or vim.tbl_contains(areas, a) end
+    local function refresh()
+        -- "variables" alone clears scopes; anything touching stacks refetches
+        -- the whole stack (which also drops scopes).
+        if area("variables") and not area("stacks") then
+            self:_update("variables")
+        else
+            self:_update("stack_frames")
+        end
+    end
+    if all or area("threads") then
+        self:_update_threads(refresh)
+    else
+        refresh()
+    end
+end
+
+---The adapter signals that a region of memory changed. Carries no cached state
+---of its own; a memory view subscribes to refetch the affected range.
+---@param body easydap.dap.proto.MemoryEventBody
+function Session:_on_memory(body)
+    if not body or not body.memoryReference then return end
+    self:_emit("memory_changed", body.memoryReference, body.offset, body.count)
+end
+
+---Adapter-driven progress (e.g. slow symbol loading). Surfaced through the
+---status channel and emitted for any richer progress UI.
+---@param body  easydap.dap.proto.ProgressStartEventBody|easydap.dap.proto.ProgressUpdateEventBody|easydap.dap.proto.ProgressEndEventBody
+---@param phase "start"|"update"|"end"
+function Session:_on_progress(body, phase)
+    local id = body and body.progressId
+    if not id then return end
+    local title
+    if phase == "start" then
+        title = body.title
+        self._progress[id] = title
+    else
+        title = self._progress[id]
+        if phase == "end" then self._progress[id] = nil end
+    end
+    if phase ~= "start" and not title then return end
+    local parts = {}
+    if title and title ~= "" then parts[#parts + 1] = title end
+    if body.message and body.message ~= "" then parts[#parts + 1] = body.message end
+    local msg = "[progress] " .. table.concat(parts, ": ")
+    if body.percentage then msg = msg .. (" (%d%%)"):format(math.floor(body.percentage)) end
+    if phase == "end" and #parts <= 1 then msg = msg .. " done" end
+    self:report(msg)
+    self:_emit("progress", phase, body)
 end
 
 ---@return nil
@@ -1084,6 +1157,23 @@ function Session:disassemble(ref, count, offset, cb)
         resolveSymbols    = true,
     }, function(body, err)
         cb(body and body.instructions, err)
+    end)
+end
+
+---Query the valid breakpoint locations within a source range, so a breakpoint
+---can snap to a real statement before it is set. Requires a live session.
+---@param source   easydap.dap.proto.Source
+---@param line     integer
+---@param end_line integer?   query a range [line, end_line] (defaults to one line)
+---@param cb       fun(locations: easydap.dap.proto.BreakpointLocation[]?, err: string?)
+function Session:breakpoint_locations(source, line, end_line, cb)
+    if not self:capable("supportsBreakpointLocationsRequest") then
+        return cb(nil, "adapter does not support breakpoint locations")
+    end
+    local args = { source = source, line = line }
+    if end_line then args.endLine = end_line end
+    self:request("breakpointLocations", args, function(body, err)
+        cb(body and body.breakpoints, err)
     end)
 end
 
