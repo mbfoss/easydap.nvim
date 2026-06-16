@@ -78,6 +78,7 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field step_in       fun(self: easydap.dap.Session, thread_id: integer?, granularity: easydap.dap.proto.SteppingGranularity?, target_id: integer?)
 ---@field step_out      fun(self: easydap.dap.Session, thread_id: integer?, granularity: easydap.dap.proto.SteppingGranularity?)
 ---@field pause         fun(self: easydap.dap.Session, thread_id: integer?)
+---@field terminate_threads  fun(self: easydap.dap.Session, thread_ids: integer[], cb: fun(err: string?)?)
 ---@field step_back     fun(self: easydap.dap.Session, thread_id: integer?, granularity: easydap.dap.proto.SteppingGranularity?)
 ---@field reverse_continue   fun(self: easydap.dap.Session, thread_id: integer?)
 ---@field step_in_targets    fun(self: easydap.dap.Session, frame_id: integer, cb: fun(targets: easydap.dap.proto.StepInTarget[]?, err: string?))
@@ -103,9 +104,11 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field current_thread      fun(self: easydap.dap.Session): easydap.dap.Thread?
 ---@field current_stack_frame fun(self: easydap.dap.Session): easydap.dap.StackFrame?
 ---@field stopped_threads     fun(self: easydap.dap.Session): easydap.dap.Thread[]
----@field fetch_variables     fun(self: easydap.dap.Session, object: easydap.dap.Scope|easydap.dap.Variable, cb: fun()?)
+---@field fetch_variables     fun(self: easydap.dap.Session, object: easydap.dap.Scope|easydap.dap.Variable, cb: fun()?, format: easydap.dap.proto.ValueFormat?)
 ---@field fetch_stack_trace   fun(self: easydap.dap.Session, thread: easydap.dap.Thread, levels: integer, cb: fun()?)
 ---@field fetch_scopes        fun(self: easydap.dap.Session, frame: easydap.dap.StackFrame, cb: fun()?)
+---@field fetch_modules       fun(self: easydap.dap.Session, cb: fun(modules: easydap.dap.proto.Module[]?, err: string?)?)
+---@field fetch_loaded_sources fun(self: easydap.dap.Session, cb: fun(sources: easydap.dap.proto.Source[]?, err: string?)?)
 ---@field set_variable        fun(self: easydap.dap.Session, reference: integer?, variable: easydap.dap.Variable, value: string, cb: fun(body: table?, err: string?)?)
 ---@field get_source_buffer   fun(self: easydap.dap.Session, ref: integer, cb: fun(bufnr: integer?, err: string?))
 ---@field _bp_status      table<integer, easydap.dap.BpStatus>
@@ -115,6 +118,10 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field sync_exception_breakpoints   fun(self: easydap.dap.Session, cb: fun()?)
 ---@field bp_status                    fun(self: easydap.dap.Session, bp_id: integer): easydap.dap.BpStatus?
 ---@field completions                  fun(self: easydap.dap.Session, text: string, column: integer, frame_id: integer?, cb: fun(targets: easydap.dap.proto.CompletionItem[]))
+---@field cancel                       fun(self: easydap.dap.Session, request_id: integer, cb: fun(err: string?)?)
+---@field read_memory                  fun(self: easydap.dap.Session, ref: string, offset: integer, count: integer, cb: fun(body: table?, err: string?))
+---@field write_memory                 fun(self: easydap.dap.Session, ref: string, offset: integer, data: string, cb: fun(body: table?, err: string?))
+---@field breakpoint_locations         fun(self: easydap.dap.Session, source: easydap.dap.proto.Source, line: integer, end_line: integer?, cb: fun(locations: table[]?, err: string?))
 ---@field select_thread                fun(self: easydap.dap.Session, thread_id: integer)
 ---@field select_frame                 fun(self: easydap.dap.Session, frame_id: integer)
 ---@field report                  fun(self: easydap.dap.Session, msg: string)
@@ -184,6 +191,8 @@ end
 ---| "run_in_terminal"
 ---| "terminal_exit"
 ---| "memory_changed"
+---| "modules_changed"
+---| "loaded_sources_changed"
 ---| "progress"
 
 ---@param event   easydap.dap.SessionEvent
@@ -416,9 +425,9 @@ function Session:_sync_one_source(source, cb)
     for _, bp in ipairs(breakpoints.for_source(source)) do
         if not bp.disabled then
             local entry = { line = bp.line }
-            if bp.condition     then entry.condition   = bp.condition end
-            if bp.hit_condition then entry.hitCondition = bp.hit_condition end
-            if bp.log_message   then entry.logMessage   = bp.log_message end
+            if bp.condition     and self:capable("supportsConditionalBreakpoints")    then entry.condition    = bp.condition end
+            if bp.hit_condition and self:capable("supportsHitConditionalBreakpoints") then entry.hitCondition = bp.hit_condition end
+            if bp.log_message   and self:capable("supportsLogPoints")                 then entry.logMessage   = bp.log_message end
             active_bps[#active_bps + 1] = bp
             active_req[#active_req + 1] = entry
         end
@@ -970,6 +979,19 @@ function Session:terminate_debuggee(cb)
     end)
 end
 
+---Cancel an in-flight request by its sequence number.
+---@param request_id integer  seq of the request to cancel
+---@param cb         fun(err: string?)?
+function Session:cancel(request_id, cb)
+    if not self:capable("supportsCancelRequest") then
+        if cb then cb("adapter does not support cancel") end
+        return
+    end
+    self:request("cancel", { requestId = request_id }, function(_, err)
+        if cb then cb(err) end
+    end)
+end
+
 ---Disconnect without terminating the debuggee.
 ---@param cb fun()?
 function Session:disconnect(cb)
@@ -1138,6 +1160,20 @@ function Session:pause(thread_id)
     end)
 end
 
+---Terminate one or more threads (requires supportsTerminateThreadsRequest).
+---@param thread_ids integer[]
+---@param cb         fun(err: string?)?
+function Session:terminate_threads(thread_ids, cb)
+    if not self:capable("supportsTerminateThreadsRequest") then
+        if cb then cb("adapter does not support terminate threads") end
+        return
+    end
+    self:request("terminateThreads", { threadIds = thread_ids }, function(_, err)
+        if err then self:report("[dap] terminateThreads failed: " .. err) end
+        if cb then cb(err) end
+    end)
+end
+
 ---@return nil
 function Session:restart()
     if not self:capable("supportsRestartRequest") then return end
@@ -1171,6 +1207,54 @@ function Session:disassemble(ref, count, offset, cb)
         resolveSymbols    = true,
     }, function(body, err)
         cb(body and body.instructions, err)
+    end)
+end
+
+---Read bytes from an adapter memory reference.
+---@param ref    string   memoryReference (from a variable or frame)
+---@param offset integer  byte offset from ref
+---@param count  integer  number of bytes to read
+---@param cb     fun(body: table?, err: string?)
+function Session:read_memory(ref, offset, count, cb)
+    if not self:capable("supportsReadMemoryRequest") then
+        return cb(nil, "adapter does not support readMemory")
+    end
+    self:request("readMemory", {
+        memoryReference = ref,
+        offset          = offset,
+        count           = count,
+    }, cb)
+end
+
+---Write bytes to an adapter memory reference.
+---@param ref    string   memoryReference
+---@param offset integer  byte offset from ref
+---@param data   string   base64-encoded bytes to write
+---@param cb     fun(body: table?, err: string?)
+function Session:write_memory(ref, offset, data, cb)
+    if not self:capable("supportsWriteMemoryRequest") then
+        return cb(nil, "adapter does not support writeMemory")
+    end
+    self:request("writeMemory", {
+        memoryReference = ref,
+        offset          = offset,
+        data            = data,
+    }, cb)
+end
+
+---Query valid breakpoint locations within a source range.
+---@param source   easydap.dap.proto.Source
+---@param line     integer
+---@param end_line integer?
+---@param cb       fun(locations: table[]?, err: string?)
+function Session:breakpoint_locations(source, line, end_line, cb)
+    if not self:capable("supportsBreakpointLocationsRequest") then
+        return cb(nil, "adapter does not support breakpointLocations")
+    end
+    local args = { source = source, line = line }
+    if end_line then args.endLine = end_line end
+    self:request("breakpointLocations", args, function(body, err)
+        cb(body and body.breakpoints, err)
     end)
 end
 
@@ -1372,7 +1456,9 @@ end
 ---@param cb      fun(body: easydap.dap.proto.EvaluateResponseBody?, err: string?)
 function Session:evaluate(expr, context, cb)
     local frame = self:current_stack_frame()
-    local args  = { expression = expr, context = context }
+    local actual_context = (context == "clipboard" and not self:capable("supportsClipboardContext"))
+        and "hover" or context
+    local args = { expression = expr, context = actual_context }
     if frame and #self:stopped_threads() > 0 then
         args.frameId = frame.id
     end
@@ -1382,12 +1468,17 @@ end
 ---Fetch variables for a scope or variable object (populates .variables).
 ---@param object easydap.dap.Scope|easydap.dap.Variable
 ---@param cb     fun()?
-function Session:fetch_variables(object, cb)
+---@param format easydap.dap.proto.ValueFormat?  hex/etc. display hints; only sent when supportsValueFormatting
+function Session:fetch_variables(object, cb, format)
     local ref = object and object.variablesReference
     if not ref or ref == 0 or object.variables then
         return cb and cb()
     end
-    self:request("variables", { variablesReference = ref }, function(body, _)
+    local args = { variablesReference = ref }
+    if format and self:capable("supportsValueFormatting") then
+        args.format = format
+    end
+    self:request("variables", args, function(body, _)
         if body and body.variables then object.variables = body.variables end
         if cb then cb() end
     end)
@@ -1406,6 +1497,38 @@ end
 ---@param cb    fun()?
 function Session:fetch_scopes(frame, cb)
     self:_fetch_scopes(frame, cb)
+end
+
+---Fetch all loaded modules from the adapter (active poll; complements push-event _on_module).
+---@param cb fun(modules: easydap.dap.proto.Module[]?, err: string?)?
+function Session:fetch_modules(cb)
+    if not self:capable("supportsModulesRequest") then
+        if cb then cb(nil, "adapter does not support modulesRequest") end
+        return
+    end
+    self:request("modules", { startModule = 0, moduleCount = 0 }, function(body, err)
+        if not err and body and body.modules then
+            self._modules = body.modules
+            self:_emit("modules_changed", self)
+        end
+        if cb then cb(body and body.modules, err) end
+    end)
+end
+
+---Fetch all loaded sources from the adapter (active poll; complements push-event _on_loaded_source).
+---@param cb fun(sources: easydap.dap.proto.Source[]?, err: string?)?
+function Session:fetch_loaded_sources(cb)
+    if not self:capable("supportsLoadedSourcesRequest") then
+        if cb then cb(nil, "adapter does not support loadedSourcesRequest") end
+        return
+    end
+    self:request("loadedSources", {}, function(body, err)
+        if not err and body and body.sources then
+            self._sources = body.sources
+            self:_emit("loaded_sources_changed", self)
+        end
+        if cb then cb(body and body.sources, err) end
+    end)
 end
 
 ---Switch the active thread and refresh its stack trace + scopes.
