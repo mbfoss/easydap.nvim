@@ -25,7 +25,7 @@ vim.api.nvim_set_hl(0, _BP_HL, { link = "Debug", default = true })
 
 -- Dimmed marker left at the original line when the adapter moves a breakpoint.
 local _MOVED_HL = "EasydapBreakpointMoved"
-vim.api.nvim_set_hl(0, _MOVED_HL, { link = "Comment", default = true })
+vim.api.nvim_set_hl(0, _MOVED_HL, { link = "NonText", default = true })
 
 ---Glyph per sign name, resolved locally now that `_group` is a raw extmarks
 ---group with no `define_sign`. Populated in `init` from `config.signs`.
