@@ -279,10 +279,22 @@ function M.breakpoint.column()
     if not file then return end
     local bufnr      = vim.api.nvim_get_current_buf()
     local cursor_col = vim.api.nvim_win_get_cursor(0)[2] + 1
+    local linetext   = vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1] or ""
+    local col        = _word_start(linetext, cursor_col)
     local sess       = M.session()
+
+    -- If a column bp already exists at this position, clear it directly so
+    -- existing bps can always be removed even when a session is active.
+    local bps_mod = require("easydap.dap.breakpoints")
+    for _, bp in ipairs(bps_mod.for_source(file)) do
+        if bp.line == row and bp.column == col then
+            _toggle_column_bp(file, row, col)
+            return
+        end
+    end
+
     if not (sess and sess:capable("supportsBreakpointLocationsRequest")) then
-        local linetext = vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1] or ""
-        _toggle_column_bp(file, row, _word_start(linetext, cursor_col))
+        _toggle_column_bp(file, row, col)
         return
     end
     ---@type easydap.dap.proto.Source
@@ -296,20 +308,14 @@ function M.breakpoint.column()
                 cols[#cols + 1] = c
             end
         end
-        table.sort(cols)
         if #cols == 0 then _toggle_column_bp(file, row, cursor_col); return end
-        if #cols == 1 then _toggle_column_bp(file, row, cols[1]);    return end
-        local linetext = vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1] or ""
-        select(cols, {
-            prompt      = "Column breakpoint",
-            format_item = function(c)
-                local snippet = vim.trim(linetext:sub(c))
-                if #snippet > 40 then snippet = snippet:sub(1, 40) .. "…" end
-                return "col " .. c .. (snippet ~= "" and ("  " .. snippet) or "")
-            end,
-        }, function(c)
-            if c then _toggle_column_bp(file, row, c) end
-        end)
+        local nearest = cols[1]
+        for _, c in ipairs(cols) do
+            if math.abs(c - cursor_col) < math.abs(nearest - cursor_col) then
+                nearest = c
+            end
+        end
+        _toggle_column_bp(file, row, nearest)
     end)
 end
 
