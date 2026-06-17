@@ -365,6 +365,29 @@ function M.find_by_internal_id(id)
     for _, bp in ipairs(_function_bps) do if bp.internal_id == id then return bp end end
 end
 
+---Update the stored line (and column, for column breakpoints) of a source
+---breakpoint identified by its internal id. Emits on_change when anything moved.
+---`extmark_col` is the 0-based extmark column from the UI layer; it is converted
+---to 1-based and written to bp.column only when the breakpoint is already a
+---column breakpoint (preserves nil for line breakpoints).
+---@param id          integer
+---@param new_line    integer
+---@param extmark_col integer  0-based column from the extmark
+---@return boolean  true if the breakpoint was found and its position changed
+function M.relocate(id, new_line, extmark_col)
+    for _, bp in ipairs(_source_bps) do
+        if bp.internal_id == id then
+            local new_col = bp.column and (extmark_col + 1) or nil
+            if bp.line == new_line and bp.column == new_col then return false end
+            bp.line   = new_line
+            bp.column = new_col
+            M.on_change:emit("source")
+            return true
+        end
+    end
+    return false
+end
+
 ---Enable all source breakpoints.
 function M.enable_all()
     local changed = false

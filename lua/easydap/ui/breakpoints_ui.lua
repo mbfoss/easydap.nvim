@@ -114,6 +114,13 @@ function M.init()
 
     breakpoints.on_change:subscribe(_refresh)
     manager.on_active_changed:subscribe(function() _refresh() end)
+
+    extmarks.on_synced:subscribe(function(file)
+        for _, mark in ipairs(_group.get_file_extmarks(file, false)) do
+            breakpoints.relocate(mark.id, mark.lnum, mark.col)
+        end
+    end)
+
     _refresh()
 end
 

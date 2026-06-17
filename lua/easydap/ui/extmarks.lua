@@ -1,4 +1,10 @@
+local Signal = require("easydap.util.Signal")
+
 local M = {}
+
+---Fired after extmark positions are synced for a file (on BufWritePost / BufUnload).
+---Subscribers receive the normalised absolute file path.
+M.on_synced = Signal.new() ---@type easydap.util.Signal<fun(file: string)>
 
 ---@class easydap.ui.extmarks.MarkInfo
 ---@field id number
@@ -123,6 +129,7 @@ local function _sync_file_extmarks(bufnr)
 
         ::continue::
     end
+    M.on_synced:emit(file)
 end
 
 local function _ensure_init()
