@@ -895,11 +895,12 @@ function DebugView:_load_breakpoints()
             data       = {
                 kind          = "breakpoint",
                 path          = path,
-                name          = short .. ":" .. bp.line,
+                name          = short .. ":" .. bp.line .. (bp.column and (":" .. bp.column) or ""),
                 bp_kind       = "source",
                 bp_id         = bp.internal_id,
                 bp_source     = bp.source,
                 bp_line       = bp.line,
+                bp_column     = bp.column,
                 disabled      = bp.disabled,
                 verified      = src_st and src_st.verified,
                 condition     = bp.condition,
@@ -1149,7 +1150,7 @@ function DebugView:_setup_keymaps(bufnr)
         elseif cur.data.kind == "breakpoint" then
             local d = cur.data
             if d.bp_kind == "source" and d.bp_source and d.bp_line then
-                breakpoints.remove(d.bp_source, d.bp_line)
+                breakpoints.remove(d.bp_source, d.bp_line, d.bp_column)
             elseif d.bp_kind == "function" then
                 breakpoints.remove_function(d.name)
             elseif d.bp_kind == "exception_type" and d.bp_ex_name then

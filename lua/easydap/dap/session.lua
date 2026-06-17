@@ -425,6 +425,7 @@ function Session:_sync_one_source(source, cb)
     for _, bp in ipairs(breakpoints.for_source(source)) do
         if not bp.disabled then
             local entry = { line = bp.line }
+            if bp.column then entry.column = bp.column end
             if bp.condition     and self:capable("supportsConditionalBreakpoints")    then entry.condition    = bp.condition end
             if bp.hit_condition and self:capable("supportsHitConditionalBreakpoints") then entry.hitCondition = bp.hit_condition end
             if bp.log_message   and self:capable("supportsLogPoints")                 then entry.logMessage   = bp.log_message end

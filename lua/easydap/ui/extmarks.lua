@@ -34,6 +34,7 @@ local M = {}
 local _defined_groups = {}
 
 local _init_done = false
+local _group_prefix = "easydap_extmarks_"
 
 local function _normalize_file(file)
     return vim.fn.fnamemodify(file, ":p")
@@ -528,7 +529,7 @@ function M.define_group(group, group_opts)
     local group_info = {
         priority = group_opts.priority,
         data = {
-            ns = vim.api.nvim_create_namespace(group),
+            ns = vim.api.nvim_create_namespace(_group_prefix .. group),
             byfile = {},
             id_to_file = {},
         }

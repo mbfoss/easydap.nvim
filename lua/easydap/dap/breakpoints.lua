@@ -8,6 +8,7 @@ local Signal = require("easydap.util.Signal")
 ---@field internal_id   integer   internal stable id (for signs)
 ---@field source        string    absolute file path
 ---@field line          integer
+---@field column        integer?  1-based column (nil = whole line); part of identity
 ---@field condition     string?
 ---@field hit_condition string?
 ---@field log_message   string?
@@ -68,17 +69,28 @@ local function _new_id()
     return id
 end
 
+---Identity test for a source breakpoint. Column is part of identity, so a
+---whole-line breakpoint (column == nil) is distinct from a column breakpoint.
+---@param bp     easydap.dap.SourceBreakpoint
+---@param source string
+---@param line   integer
+---@param column integer?
+---@return boolean
+local function _matches(bp, source, line, column)
+    return bp.source == source and bp.line == line and bp.column == column
+end
+
 -- ── Source breakpoints ─────────────────────────────────────────────────────
 
 ---@param source string
 ---@param line   integer
----@param opts   { condition?: string, hit_condition?: string, log_message?: string, disabled?: boolean }?
+---@param opts   { column?: integer, condition?: string, hit_condition?: string, log_message?: string, disabled?: boolean }?
 ---@return easydap.dap.SourceBreakpoint?
 function M.add(source, line, opts)
     if not require("easydap.store").require_project("breakpoint") then return nil end
     opts = opts or {}
     for _, bp in ipairs(_source_bps) do
-        if bp.source == source and bp.line == line then
+        if _matches(bp, source, line, opts.column) then
             bp.condition     = opts.condition
             bp.hit_condition = opts.hit_condition
             bp.log_message   = opts.log_message
@@ -92,6 +104,7 @@ function M.add(source, line, opts)
         internal_id   = _new_id(),
         source        = source,
         line          = line,
+        column        = opts.column,
         condition     = opts.condition,
         hit_condition = opts.hit_condition,
         log_message   = opts.log_message,
@@ -107,17 +120,18 @@ end
 ---Pass `""` for a string field to clear it.
 ---@param source string
 ---@param line   integer
----@param opts   { condition?: string, hit_condition?: string, log_message?: string, disabled?: boolean }
+---@param opts   { column?: integer, condition?: string, hit_condition?: string, log_message?: string, disabled?: boolean }
 ---@return easydap.dap.SourceBreakpoint?
 function M.patch(source, line, opts)
+    local column = opts.column
     local bp
     for _, b in ipairs(_source_bps) do
-        if b.source == source and b.line == line then bp = b; break end
+        if _matches(b, source, line, column) then bp = b; break end
     end
     if not bp then
         if not require("easydap.store").require_project("breakpoint") then return nil end
         bp = {
-            internal_id = _new_id(), source = source, line = line,
+            internal_id = _new_id(), source = source, line = line, column = column,
             disabled = false,
         }
         _source_bps[#_source_bps + 1] = bp
@@ -132,10 +146,11 @@ end
 
 ---@param source string
 ---@param line   integer
+---@param column integer?  identity column (nil = the whole-line breakpoint)
 ---@return boolean
-function M.remove(source, line)
+function M.remove(source, line, column)
     for i, bp in ipairs(_source_bps) do
-        if bp.source == source and bp.line == line then
+        if _matches(bp, source, line, column) then
             table.remove(_source_bps, i)
             M.on_change:emit("source")
             return true
@@ -146,11 +161,12 @@ end
 
 ---@param source string
 ---@param line   integer
----@param opts   { condition?: string, hit_condition?: string, log_message?: string, disabled?: boolean }?
+---@param opts   { column?: integer, condition?: string, hit_condition?: string, log_message?: string, disabled?: boolean }?
 ---@return easydap.dap.SourceBreakpoint?
 function M.toggle(source, line, opts)
+    opts = opts or {}
     for i, bp in ipairs(_source_bps) do
-        if bp.source == source and bp.line == line then
+        if _matches(bp, source, line, opts.column) then
             table.remove(_source_bps, i)
             M.on_change:emit("source")
             return nil

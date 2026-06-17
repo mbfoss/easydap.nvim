@@ -1,7 +1,6 @@
 ---@brief Singleton that shows the current execution position as a sign + line highlight.
 ---Tracks the active session; clears/moves the sign on stopped/continued/terminated.
 
-local signs      = require("easydap.ui.signs")
 local extmarks   = require("easydap.ui.extmarks")
 local manager    = require("easydap.manager")
 local ui_util    = require("easydap.util.ui_util")
@@ -12,8 +11,7 @@ local M          = {}
 
 local _init_done
 
-local _sign_name = "easydap_frame"
----@type easydap.ui.signs.Group?
+---@type easydap.ui.extmarks.GroupFunctions?
 local _sign_group
 ---@type easydap.ui.extmarks.GroupFunctions?
 local _line_group
@@ -36,7 +34,8 @@ local function _show_stopped(sess)
     local src = frame.source
     if not src or not src.path or src.path == "" then return end
     local lnum = (frame.line and frame.line > 0) and frame.line or 1
-    _sign_group.set_file_sign(_sign_id, src.path, lnum, _sign_name, nil)
+    _sign_group.set_file_extmark(_sign_id, src.path, lnum, 0,
+        { sign_text = config.signs.debug_frame, sign_hl_group = _SIGN_HL, priority = 20 }, nil)
     _line_group.set_file_extmark(_sign_id, src.path, lnum, 0, { line_hl_group = _LINE_HL, priority = 40 }, nil)
     if sess.state_reason == "function call" then
         return -- spurious stop triggered by gdp
@@ -47,7 +46,7 @@ local function _show_stopped(sess)
 end
 
 local function _remove_marks()
-    if _sign_group then _sign_group.remove_signs() end
+    if _sign_group then _sign_group.remove_extmarks() end
     if _line_group then _line_group.remove_extmarks() end
 end
 
@@ -77,10 +76,8 @@ function M.init()
     if _init_done then return end
     _init_done = true
 
-    _sign_group = signs.define_group("easydap_framesign", { priority = 20 })
-    _sign_group.define_sign(_sign_name, config.signs.debug_frame, _SIGN_HL)
-
-    _line_group = extmarks.define_group("easydap_frameline", { priority = 20 })
+    _sign_group = extmarks.define_group("framesign", { priority = 20 })
+    _line_group = extmarks.define_group("frameline", { priority = 20 })
 
     manager.on_active_changed:subscribe(function(_, sess)
         _clear()

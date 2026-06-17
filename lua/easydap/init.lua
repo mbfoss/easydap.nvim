@@ -36,7 +36,7 @@ local function _register_user_commands()
     local usercmd  = require("easydap.util.usercmd")
 
     local _bp_subs = {
-        "toggle", "add", "remove",
+        "toggle", "add", "remove", "column",
         "clear_file", "clear_all", "clear_fn",
         "enable", "disable", "enable_all", "disable_all",
         "condition", "logpoint",
@@ -57,6 +57,8 @@ local function _register_user_commands()
             cmd.breakpoint.add(args[2])
         elseif sub == "remove" then
             cmd.breakpoint.remove()
+        elseif sub == "column" then
+            cmd.breakpoint.column()
         elseif sub == "clear_file" then
             cmd.breakpoint.clear_file()
         elseif sub == "clear_all" then

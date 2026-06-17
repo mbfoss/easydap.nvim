@@ -215,9 +215,12 @@ M.breakpoint = {}
 local function _existing_bp_line(file, row)
     local bps = require("easydap.dap.breakpoints")
     for _, bp in ipairs(bps.for_source(file)) do
-        local st    = M.bp_status(bp.internal_id)
-        local shown = (st and st.line) or bp.line
-        if shown == row or bp.line == row then return bp.line end
+        -- Column breakpoints are managed by their own command, not the line toggle.
+        if bp.column == nil then
+            local st    = M.bp_status(bp.internal_id)
+            local shown = (st and st.line) or bp.line
+            if shown == row or bp.line == row then return bp.line end
+        end
     end
 end
 
@@ -234,6 +237,65 @@ function M.breakpoint.toggle()
         bps.add(file, row)
     end
     _sync_bp(file)
+end
+
+---Add or remove a column breakpoint at (file, row, column).
+---@param file   string
+---@param row    integer
+---@param column integer
+local function _toggle_column_bp(file, row, column)
+    local bps    = require("easydap.dap.breakpoints")
+    local exists = false
+    for _, bp in ipairs(bps.for_source(file)) do
+        if bp.line == row and bp.column == column then exists = true; break end
+    end
+    if exists then
+        bps.remove(file, row, column)
+    else
+        bps.add(file, row, { column = column })
+    end
+    _sync_bp(file)
+end
+
+---Set a column breakpoint on the current line. With a running session that
+---supports breakpointLocations, prompts to pick among the valid column
+---positions on the line; otherwise sets one at the cursor column.
+function M.breakpoint.column()
+    local file, row = _cursor_location()
+    if not file then return end
+    local bufnr      = vim.api.nvim_get_current_buf()
+    local cursor_col = vim.api.nvim_win_get_cursor(0)[2] + 1
+    local sess       = M.session()
+    if not (sess and sess:capable("supportsBreakpointLocationsRequest")) then
+        _toggle_column_bp(file, row, cursor_col)
+        return
+    end
+    ---@type easydap.dap.proto.Source
+    local source = { path = file, name = vim.fn.fnamemodify(file, ":t") }
+    sess:breakpoint_locations(source, row, nil, function(locations, _)
+        local cols, seen = {}, {}
+        for _, loc in ipairs(locations or {}) do
+            local c = loc.column
+            if c and (loc.line == nil or loc.line == row) and not seen[c] then
+                seen[c] = true
+                cols[#cols + 1] = c
+            end
+        end
+        table.sort(cols)
+        if #cols == 0 then _toggle_column_bp(file, row, cursor_col); return end
+        if #cols == 1 then _toggle_column_bp(file, row, cols[1]);    return end
+        local linetext = vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1] or ""
+        select(cols, {
+            prompt      = "Column breakpoint",
+            format_item = function(c)
+                local snippet = vim.trim(linetext:sub(c))
+                if #snippet > 40 then snippet = snippet:sub(1, 40) .. "…" end
+                return "col " .. c .. (snippet ~= "" and ("  " .. snippet) or "")
+            end,
+        }, function(c)
+            if c then _toggle_column_bp(file, row, c) end
+        end)
+    end)
 end
 
 ---@param condition? string
@@ -261,14 +323,14 @@ function M.breakpoint.clear_file()
     local file, _ = _cursor_location()
     if not file then return end
     local bps = require("easydap.dap.breakpoints")
-    for _, bp in ipairs(bps.for_source(file)) do bps.remove(file, bp.line) end
+    for _, bp in ipairs(bps.for_source(file)) do bps.remove(file, bp.line, bp.column) end
     _sync_bp(file)
 end
 
 function M.breakpoint.clear_all()
     local bps  = require("easydap.dap.breakpoints")
     local file = vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
-    for _, bp in ipairs(bps.for_source(file)) do bps.remove(file, bp.line) end
+    for _, bp in ipairs(bps.for_source(file)) do bps.remove(file, bp.line, bp.column) end
     for _, bp in ipairs(bps.function_breakpoints()) do bps.remove_function(bp.name) end
     _sync_bp(file)
 end
@@ -445,6 +507,7 @@ function M.breakpoint.list()
                 or (bp.condition or bp.hit_condition) and "■"
                 or "●"
             local label = icon .. " " .. vim.fn.fnamemodify(bp.source, ":~:.") .. ":" .. bp.line
+            if bp.column then label = label .. ":" .. bp.column end
             if bp.condition     then label = label .. "  [" .. bp.condition .. "]" end
             if bp.hit_condition then label = label .. "  [hits:" .. bp.hit_condition .. "]" end
             if bp.log_message   then label = label .. "  [log: " .. bp.log_message .. "]" end
