@@ -53,6 +53,27 @@ local function _norm(path)
     return vim.fn.fnamemodify(path, ":p")
 end
 
+---Drop sentinel rows the adapter pads a `disassemble` reply with when the
+---requested range overruns disassemblable memory: address "-1" (or any negative
+---value), an empty/absent address, or an empty instruction string. These poison
+---paging — the edge address handed to the next fetch is garbage, and the splice
+---counts lines that carry no real instruction — so they must be stripped before
+---the list is indexed into `_instrs`/`_rows`.
+---@param instrs easydap.dap.proto.DisassembledInstruction[]
+---@return easydap.dap.proto.DisassembledInstruction[]
+local function _valid_instrs(instrs)
+    local out = {} ---@type easydap.dap.proto.DisassembledInstruction[]
+    for _, ins in ipairs(instrs) do
+        local addr = ins.address
+        local n    = addr and tonumber(addr)
+        if addr and addr ~= "" and (n == nil or n >= 0)
+            and ins.instruction and ins.instruction ~= "" then
+            out[#out + 1] = ins
+        end
+    end
+    return out
+end
+
 ---First line in a row table whose instruction matches `addr`.
 ---@param rows table<integer, easydap.DisassemblyView.Row>
 ---@param addr string?
@@ -311,6 +332,11 @@ function DisassemblyView:_load(focus)
         vim.schedule(function()
             if err or not instrs then
                 vim.notify("[dap] disassemble failed: " .. (err or "no instructions"), vim.log.levels.WARN)
+                return
+            end
+            instrs = _valid_instrs(instrs)
+            if #instrs == 0 then
+                if focus then vim.notify("[dap] no instructions to disassemble", vim.log.levels.WARN) end
                 return
             end
             self:_ensure_win()
@@ -646,11 +672,18 @@ function DisassemblyView:_page(dir)
             self._paging = false
             if not self:_is_open() then return end
             -- Past the edge of disassemblable memory the adapter either returns
-            -- nothing or fails the whole request (e.g. crossing below a program's
-            -- text start: "Failed to disassemble memory at 0x..."). Either way
-            -- there is no more to fetch this way, so mark the edge exhausted and
-            -- stop probing it. _maybe_page re-arms it once the cursor steps off.
-            if err or not new or #new == 0 then
+            -- nothing, fails the whole request (e.g. crossing below a program's
+            -- text start: "Failed to disassemble memory at 0x..."), or pads the
+            -- reply with sentinel rows that _valid_instrs strips. Once nothing
+            -- real is left there is no more to fetch this way, so mark the edge
+            -- exhausted and stop probing it. _maybe_page re-arms it once the
+            -- cursor steps off.
+            if err or not new then
+                self._exhausted[dir] = true
+                return
+            end
+            new = _valid_instrs(new)
+            if #new == 0 then
                 self._exhausted[dir] = true
                 return
             end
