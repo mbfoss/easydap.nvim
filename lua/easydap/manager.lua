@@ -239,6 +239,20 @@ function M.breakpoint.toggle()
     _sync_bp(file)
 end
 
+---Snap a 1-based column to the start of the word under it.
+---Returns col unchanged if the character is not a word character.
+---@param line string
+---@param col  integer  1-based
+---@return integer
+local function _word_start(line, col)
+    if not line:sub(col, col):match("[%w_]") then return col end
+    local i = col
+    while i > 1 and line:sub(i - 1, i - 1):match("[%w_]") do
+        i = i - 1
+    end
+    return i
+end
+
 ---Add or remove a column breakpoint at (file, row, column).
 ---@param file   string
 ---@param row    integer
@@ -267,7 +281,8 @@ function M.breakpoint.column()
     local cursor_col = vim.api.nvim_win_get_cursor(0)[2] + 1
     local sess       = M.session()
     if not (sess and sess:capable("supportsBreakpointLocationsRequest")) then
-        _toggle_column_bp(file, row, cursor_col)
+        local linetext = vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1] or ""
+        _toggle_column_bp(file, row, _word_start(linetext, cursor_col))
         return
     end
     ---@type easydap.dap.proto.Source
