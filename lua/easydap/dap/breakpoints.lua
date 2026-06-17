@@ -365,27 +365,29 @@ function M.find_by_internal_id(id)
     for _, bp in ipairs(_function_bps) do if bp.internal_id == id then return bp end end
 end
 
----Update the stored line (and column, for column breakpoints) of a source
----breakpoint identified by its internal id. Emits on_change when anything moved.
----`extmark_col` is the 0-based extmark column from the UI layer; it is converted
----to 1-based and written to bp.column only when the breakpoint is already a
----column breakpoint (preserves nil for line breakpoints).
----@param id          integer
----@param new_line    integer
----@param extmark_col integer  0-based column from the extmark
----@return boolean  true if the breakpoint was found and its position changed
-function M.relocate(id, new_line, extmark_col)
+---@class easydap.dap.BreakpointPosition
+---@field lnum integer   1-based line
+---@field col  integer   0-based extmark column
+
+---Update stored positions for a set of source breakpoints in one pass.
+---`positions` maps internal_id → {lnum, col} (0-based col from extmarks).
+---col is converted to 1-based and applied only for column breakpoints.
+---Emits on_change at most once if anything moved.
+---@param positions table<integer, easydap.dap.BreakpointPosition>
+function M.relocate_batch(positions)
+    local changed = false
     for _, bp in ipairs(_source_bps) do
-        if bp.internal_id == id then
-            local new_col = bp.column and (extmark_col + 1) or nil
-            if bp.line == new_line and bp.column == new_col then return false end
-            bp.line   = new_line
-            bp.column = new_col
-            M.on_change:emit("source")
-            return true
+        local pos = positions[bp.internal_id]
+        if pos then
+            local new_col = bp.column and (pos.col + 1) or nil
+            if bp.line ~= pos.lnum or bp.column ~= new_col then
+                bp.line   = pos.lnum
+                bp.column = new_col
+                changed   = true
+            end
         end
     end
-    return false
+    if changed then M.on_change:emit("source") end
 end
 
 ---Enable all source breakpoints.

@@ -116,9 +116,13 @@ function M.init()
     manager.on_active_changed:subscribe(function() _refresh() end)
 
     extmarks.on_synced:subscribe(function(file)
-        for _, mark in ipairs(_group.get_file_extmarks(file, false)) do
-            breakpoints.relocate(mark.id, mark.lnum, mark.col)
+        local marks = _group.get_file_extmarks(file, false)
+        if #marks == 0 then return end
+        local positions = {}
+        for _, mark in ipairs(marks) do
+            positions[mark.id] = { lnum = mark.lnum, col = mark.col }
         end
+        breakpoints.relocate_batch(positions)
     end)
 
     _refresh()
