@@ -115,7 +115,7 @@ end
 ---@param chunks easydap.DebugView.Chunk[]
 local function _fmt_variable(data, chunks)
     local base_hl = data.greyout and "NonText" or nil
-    chunks[#chunks + 1] = { data.name, base_hl or "@variable" }
+    chunks[#chunks + 1] = { data.name, base_hl }
     chunks[#chunks + 1] = { ": ", base_hl or "NonText" }
     local val = str_util.crop_for_ui(tostring(data.value or ""):gsub("\n", "⏎"), config.debug_value_max_len)
     chunks[#chunks + 1] = { val, base_hl or "@string" }
@@ -124,7 +124,7 @@ end
 ---@param data easydap.DebugView.ItemData
 ---@param chunks easydap.DebugView.Chunk[]
 local function _fmt_expression(data, chunks)
-    chunks[#chunks + 1] = { data.name, "@function" }
+    chunks[#chunks + 1] = { data.name}
     chunks[#chunks + 1] = { " = ", "NonText" }
     local val = str_util.crop_for_ui(tostring(data.value or ""):gsub("\n", "⏎"), config.debug_value_max_len)
     chunks[#chunks + 1] = { val, (data.is_na or data.greyout) and "NonText" or "@string" }
@@ -135,7 +135,7 @@ end
 local function _fmt_breakpoint(data, chunks)
     local icon, hl
     if data.disabled then
-        icon, hl = "○", "NonText"
+        icon, hl = "ø", "NonText"
     elseif data.bp_kind == "exception_type" and data.unsupported then
         icon, hl = "✗", "DiagnosticError"
     elseif data.bp_kind == "exception_filter" or data.bp_kind == "exception_type" then
@@ -144,11 +144,12 @@ local function _fmt_breakpoint(data, chunks)
         icon, hl = (data.verified == false) and "◌" or "◉",
             (data.verified == false) and "DiagnosticWarn" or "DiagnosticInfo"
     elseif data.log_message then
-        icon, hl = "◆", "DiagnosticHint"
+        icon, hl = (data.verified == false) and "◇" or "◆",
+            (data.verified == false) and "DiagnosticWarn" or "DiagnosticHint"
     elseif data.condition or data.hit_condition then
-        icon, hl = "■", "DiagnosticWarn"
+        icon, hl = (data.verified == false) and "□" or "■", "DiagnosticWarn"
     elseif data.verified == false then
-        icon, hl = "◌", "DiagnosticWarn"
+        icon, hl = "○", "DiagnosticWarn"
     else
         icon, hl = "●", "DiagnosticOk"
     end
