@@ -53,10 +53,14 @@ local function _split_command(task)
 end
 
 ---Resolve task.env, merging with the process environment unless task.clear_env is set.
+---Returns nil when neither task.env nor task.clear_env was provided, so adapters
+---don't stamp the full process environment into request_args unprompted.
 ---@param task table
 ---@return table<string,string>|nil
 local function _resolve_env(task)
-    return task.clear_env and task.env or vim.tbl_extend("force", vim.fn.environ(), task.env or {})
+    if task.clear_env then return task.env end
+    if task.env == nil then return nil end
+    return vim.tbl_extend("force", vim.fn.environ(), task.env)
 end
 
 -- ── Utilities ─────────────────────────────────────────────────────────────
@@ -124,13 +128,14 @@ M.debugpy = {
             type            = "python",
             program         = program,
             args            = extra_args,
-            cwd             = task.cwd or vim.fn.getcwd(),
             justMyCode      = false,
             console         = "integratedTerminal",
             stopOnEntry     = false,
             showReturnValue = true,
         }
-        args.env = _resolve_env(task)
+        if task.cwd ~= nil then args.cwd = task.cwd end
+        local env = _resolve_env(task)
+        if env then args.env = env end
         if task.run_in_terminal ~= nil then args.runInTerminal = task.run_in_terminal end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -156,12 +161,13 @@ M["debugpy-module"] = {
             type        = "python",
             module      = module_name,
             args        = extra_args,
-            cwd         = task.cwd or vim.fn.getcwd(),
             justMyCode  = false,
             console     = "integratedTerminal",
             stopOnEntry = false,
         }
-        args.env = _resolve_env(task)
+        if task.cwd ~= nil then args.cwd = task.cwd end
+        local env = _resolve_env(task)
+        if env then args.env = env end
         if task.run_in_terminal ~= nil then args.runInTerminal = task.run_in_terminal end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -205,10 +211,11 @@ M.codelldb = {
             type        = "lldb",
             program     = program,
             args        = extra_args,
-            cwd         = task.cwd or vim.fn.getcwd(),
             stopOnEntry = false,
         }
-        args.env = _resolve_env(task)
+        if task.cwd ~= nil then args.cwd = task.cwd end
+        local env = _resolve_env(task)
+        if env then args.env = env end
         if task.run_in_terminal ~= nil then args.runInTerminal = task.run_in_terminal end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -231,9 +238,10 @@ M["lldb-dap"] = {
             type    = "lldb-dap",
             program = program,
             args    = extra_args,
-            cwd     = task.cwd or ".",
         }
-        args.env = _resolve_env(task)
+        if task.cwd ~= nil then args.cwd = task.cwd end
+        local env = _resolve_env(task)
+        if env then args.env = env end
         if task.run_in_terminal ~= nil then args.runInTerminal = task.run_in_terminal end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -257,7 +265,8 @@ M.gdb = {
             args                            = extra_args,
         }
         if task.cwd ~= nil then args.cwd = task.cwd end
-        args.env = _resolve_env(task)
+        local env = _resolve_env(task)
+        if env then args.env = env end
         if task.run_in_terminal ~= nil then args.runInTerminal = task.run_in_terminal end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -280,10 +289,11 @@ M.netcoredbg = {
         local args = {
             program     = program,
             args        = extra_args,
-            cwd         = task.cwd or vim.fn.getcwd(),
             stopAtEntry = false,
         }
-        args.env = _resolve_env(task)
+        if task.cwd ~= nil then args.cwd = task.cwd end
+        local env = _resolve_env(task)
+        if env then args.env = env end
         if task.run_in_terminal ~= nil then args.runInTerminal = task.run_in_terminal end
         if task.stop_on_entry ~= nil then args.stopAtEntry = task.stop_on_entry end
         return args
@@ -329,11 +339,12 @@ M.lldb = {
             type          = "lldb",
             program       = program,
             args          = extra_args,
-            cwd           = task.cwd or vim.fn.getcwd(),
             stopOnEntry   = false,
             runInTerminal = true,
         }
-        args.env = _resolve_env(task)
+        if task.cwd ~= nil then args.cwd = task.cwd end
+        local env = _resolve_env(task)
+        if env then args.env = env end
         if task.run_in_terminal ~= nil then args.runInTerminal = task.run_in_terminal end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -363,9 +374,10 @@ M.delve = {
             mode    = "debug",
             program = program,
             args    = extra_args,
-            cwd     = task.cwd or vim.fn.getcwd(),
         }
-        args.env = _resolve_env(task)
+        if task.cwd ~= nil then args.cwd = task.cwd end
+        local env = _resolve_env(task)
+        if env then args.env = env end
         if task.run_in_terminal ~= nil then args.runInTerminal = task.run_in_terminal end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -443,10 +455,11 @@ M["js-debug"] = {
             type              = "pwa-node",
             program           = program,
             args              = extra_args,
-            cwd               = task.cwd or vim.fn.getcwd(),
             runtimeExecutable = "node",
         }
-        args.env = _resolve_env(task)
+        if task.cwd ~= nil then args.cwd = task.cwd end
+        local env = _resolve_env(task)
+        if env then args.env = env end
         if task.run_in_terminal ~= nil then args.runInTerminal = task.run_in_terminal end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -473,7 +486,6 @@ M["bash-debug-adapter"] = {
             name          = "Launch Bash Script",
             program       = program,
             args          = extra_args,
-            cwd           = task.cwd or vim.fn.getcwd(),
             pathBash      = "bash",
             pathBashdb    = vim.fn.filereadable(bashdb_path) == 1 and bashdb_path or "bashdb",
             pathBashdbLib = vim.fs.joinpath(data_dir, "mason", "packages", "bash-debug-adapter"),
@@ -482,7 +494,9 @@ M["bash-debug-adapter"] = {
             pathPkill     = "pkill",
             terminalKind  = "integrated",
         }
-        args.env                  = _resolve_env(task)
+        if task.cwd ~= nil then args.cwd = task.cwd end
+        local env = _resolve_env(task)
+        if env then args.env = env end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
     end,
