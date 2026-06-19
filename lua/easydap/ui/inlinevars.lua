@@ -16,11 +16,15 @@ local _unsub_var
 local _mark_id     = 0
 local _clear_timer = nil
 
-vim.api.nvim_set_hl(0, "EasydapPill", { link = "Visual", default = true })
+ui_util.define_themed_hl("EasydapPill", function()
+	return { link = "Visual", default = true }
+end)
+
 ui_util.define_themed_hl("EasydapPillSep", function()
+	vim.api.nvim_set_hl(0, "EasydapPill", { link = "Visual", default = true })
 	local hl = vim.api.nvim_get_hl(0, { name = "EasydapPill", link = false })
 	return {
-		fg = hl and hl.bg or nil,
+		fg = hl.bg or hl.fg,
 		bg = "NONE",
 	}
 end)
