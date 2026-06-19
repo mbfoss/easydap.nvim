@@ -197,9 +197,15 @@ local function _cursor_location()
     return file, vim.api.nvim_win_get_cursor(0)[1]
 end
 
-local function _sync_bp(file)
+---@param file string
+---@param cb   fun()?
+local function _sync_bp(file, cb)
     local sess = M.session()
-    if sess then sess:sync_breakpoints(file) end
+    if sess then
+        sess:sync_breakpoints(file, cb)
+    elseif cb then
+        cb()
+    end
 end
 
 -- ── Breakpoints ───────────────────────────────────────────────────────────
@@ -241,6 +247,19 @@ local function _moved_bp_target(file, row)
     end
 end
 
+---Follow the cursor to where `bp` actually ended up after a sync, if the
+---adapter relocated it and the window is still sitting on the same buffer.
+---@param file string
+---@param bp   easydap.dap.SourceBreakpoint
+local function _follow_if_moved(file, bp)
+    local st = M.bp_status(bp.internal_id)
+    if not (st and st.line and st.line ~= bp.line) then return end
+    local win = vim.api.nvim_get_current_win()
+    if vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)) ~= file then return end
+    local col = vim.api.nvim_win_get_cursor(win)[2]
+    vim.api.nvim_win_set_cursor(win, { st.line, col })
+end
+
 function M.breakpoint.toggle()
     local file, row = _cursor_location()
     if not file then return end
@@ -250,6 +269,7 @@ function M.breakpoint.toggle()
     local existing = _existing_bp_line(file, row)
     if existing then
         bps.remove(file, existing)
+        _sync_bp(file)
     else
         -- This line is the stored origin of a breakpoint the adapter relocated
         -- elsewhere; adding here would just be relocated to the same spot, so
@@ -260,9 +280,11 @@ function M.breakpoint.toggle()
             vim.api.nvim_win_set_cursor(0, { moved_to, col })
             return
         end
-        bps.add(file, row)
+        local bp = bps.add(file, row)
+        _sync_bp(file, function()
+            if bp then _follow_if_moved(file, bp) end
+        end)
     end
-    _sync_bp(file)
 end
 
 ---Snap a 1-based column to the start of the word under it.
