@@ -37,7 +37,6 @@ end
 
 ---@return string|nil root
 local function _find_root()
-    local config  = require("easydap.config")
     local markers = config.root_markers
     if not markers or #markers == 0 then return nil end
     local cwd = vim.fn.getcwd() --[[@as string]]
