@@ -21,7 +21,7 @@
 local M = {
 	data_filename = ".easydap.json",
 	antiflicker_delay   = 200,
-	debug_value_max_len = 30,
+	debug_value_max_len = 70,
 	root_markers        = { ".git" },
 	signs = {
 		debug_frame              = "▶",
