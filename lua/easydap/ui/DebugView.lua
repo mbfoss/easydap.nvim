@@ -5,7 +5,7 @@ local expressions = require("easydap.ui.expressions")
 local breakpoints = require("easydap.dap.breakpoints")
 local str_util    = require("easydap.util.str_util")
 local inputwin    = require("easydap.util.inputwin")
-local select      = require("easydap.util.select").select
+local select      = require("easydap.util.select")
 local timer       = require("easydap.util.timer")
 local floatwin    = require("easydap.util.floatwin")
 
@@ -1098,7 +1098,7 @@ function DebugView:_toggle_data_breakpoint(cur)
         end
         local types = body.accessTypes or {}
         if #types > 1 then
-            select(types, { prompt = "Access type for `" .. d.name .. "`: " }, function(t)
+            select.open({ prompt = "Access type for `" .. d.name .. "`: ", items = types }, function(t)
                 if t then add(t) end
             end)
         else
@@ -1208,9 +1208,11 @@ function DebugView:_setup_keymaps(bufnr)
             end
             local _types = { "read", "write", "readWrite" }
             local cur_at = d.access_type
-            select(_types, {
-                prompt      = "Access type for " .. d.name .. ": ",
-                format_item = function(t) return (t == cur_at and "● " or "  ") .. t end,
+            select.open({
+                prompt = "Access type for " .. d.name .. ": ",
+                items  = vim.tbl_map(function(t)
+                    return { label = (t == cur_at and "● " or "  ") .. t, data = t }
+                end, _types),
             }, function(at)
                 if not at then return end
                 sess:add_data_breakpoint({ data_id = d.bp_data_id, name = d.name, access_type = at })
@@ -1229,9 +1231,11 @@ function DebugView:_setup_keymaps(bufnr)
         elseif d.kind == "breakpoint" and d.bp_kind == "exception_type" and d.bp_ex_name then
             local _modes = { "always", "unhandled", "userUnhandled", "never" }
             local cur_mode = d.break_mode
-            select(_modes, {
-                prompt      = "Break mode for " .. d.bp_ex_name .. ": ",
-                format_item = function(m) return (m == cur_mode and "● " or "  ") .. m end,
+            select.open({
+                prompt = "Break mode for " .. d.bp_ex_name .. ": ",
+                items  = vim.tbl_map(function(m)
+                    return { label = (m == cur_mode and "● " or "  ") .. m, data = m }
+                end, _modes),
             }, function(mode)
                 if not mode then return end
                 breakpoints.add_exception_name(d.bp_ex_name, mode)

@@ -3,7 +3,7 @@
 ---The DAP client (dap/client.lua) is session-id-explicit; this module wraps it
 ---with the active-session notion that keymaps and UI subscribe to.
 
-local select  = require("easydap.util.select").select
+local select  = require("easydap.util.select")
 local client   = require("easydap.dap.client")
 local Signal   = require("easydap.util.Signal")
 local inputwin   = require("easydap.util.inputwin")
@@ -509,9 +509,11 @@ function M.breakpoint.exception_filter()
         vim.notify("[dap] no exception filters available (start a session first)", vim.log.levels.WARN)
         return
     end
-    select(all, {
-        prompt      = "Toggle exception breakpoint",
-        format_item = function(bp) return (bp.disabled and "○ " or "● ") .. bp.label end,
+    select.open({
+        prompt = "Toggle exception breakpoint",
+        items  = vim.tbl_map(function(bp)
+            return { label = (bp.disabled and "○ " or "● ") .. bp.label, data = bp }
+        end, all),
     }, function(bp)
         if not bp then return end
         bps.set_exception_enabled(bp.filter, bp.disabled)
@@ -536,7 +538,7 @@ function M.breakpoint.exception_type(name, break_mode)
         if sess then sess:sync_exception_breakpoints() end
     end
     local function _pick_mode(n)
-        select(_modes, { prompt = "Break mode for " .. n .. ": " }, function(mode)
+        select.open({ prompt = "Break mode for " .. n .. ": ", items = _modes }, function(mode)
             if mode then _toggle(n, mode) end
         end)
     end
@@ -564,27 +566,25 @@ function M.breakpoint.list()
     local bps   = require("easydap.dap.breakpoints")
     local items = vim.tbl_map(function(bp)
         ---@cast bp easydap.dap.SourceBreakpoint
-        return { bp = bp, preview = { filepath = bp.source, lnum = bp.line } }
+        local icon = bp.disabled and "○"
+            or bp.log_message and "◆"
+            or (bp.condition or bp.hit_condition) and "■"
+            or "●"
+        local label = icon .. " " .. vim.fn.fnamemodify(bp.source, ":~:.") .. ":" .. bp.line
+        if bp.column then label = label .. ":" .. bp.column end
+        if bp.condition     then label = label .. "  [" .. bp.condition .. "]" end
+        if bp.hit_condition then label = label .. "  [hits:" .. bp.hit_condition .. "]" end
+        if bp.log_message   then label = label .. "  [log: " .. bp.log_message .. "]" end
+        return { label = label, data = { filepath = bp.source, lnum = bp.line, bp = bp } }
     end, bps.all())
     if #items == 0 then vim.notify("[dap] no breakpoints", vim.log.levels.INFO); return end
-    select(items, {
-        prompt      = "Go to breakpoint",
-        format_item = function(item)
-            local bp   = item.bp
-            local icon = bp.disabled and "○"
-                or bp.log_message and "◆"
-                or (bp.condition or bp.hit_condition) and "■"
-                or "●"
-            local label = icon .. " " .. vim.fn.fnamemodify(bp.source, ":~:.") .. ":" .. bp.line
-            if bp.column then label = label .. ":" .. bp.column end
-            if bp.condition     then label = label .. "  [" .. bp.condition .. "]" end
-            if bp.hit_condition then label = label .. "  [hits:" .. bp.hit_condition .. "]" end
-            if bp.log_message   then label = label .. "  [log: " .. bp.log_message .. "]" end
-            return label
-        end,
-    }, function(item)
-        if not item then return end
-        require("easydap.util.ui_util").smart_open_file(item.bp.source, item.bp.line)
+    select.open({
+        prompt         = "Go to breakpoint",
+        enable_preview = true,
+        items          = items,
+    }, function(data)
+        if not data then return end
+        require("easydap.util.ui_util").smart_open_file(data.bp.source, data.bp.line)
     end)
 end
 
@@ -617,7 +617,7 @@ local function _toggle_data_bp(sess, name, variables_reference)
         end
         local types = body.accessTypes or {}
         if #types > 1 then
-            select(types, { prompt = "Access type for " .. name .. ": " }, function(t)
+            select.open({ prompt = "Access type for " .. name .. ": ", items = types }, function(t)
                 if t then add(t) end
             end)
         else
@@ -659,13 +659,13 @@ function M.breakpoint.data_list()
     if not sess then vim.notify("[dap] no active session", vim.log.levels.WARN); return end
     local bps = sess:data_breakpoints()
     if #bps == 0 then vim.notify("[dap] no data breakpoints", vim.log.levels.INFO); return end
-    select(bps, {
-        prompt      = "Remove data breakpoint",
-        format_item = function(bp)
+    select.open({
+        prompt = "Remove data breakpoint",
+        items  = vim.tbl_map(function(bp)
             local icon = bp.verified == false and "◌" or "◉"
             local at   = bp.access_type and ("  [" .. bp.access_type .. "]") or ""
-            return icon .. " " .. bp.name .. at
-        end,
+            return { label = icon .. " " .. bp.name .. at, data = bp }
+        end, bps),
     }, function(bp)
         if bp then sess:remove_data_breakpoint(bp.data_id) end
     end)
@@ -702,9 +702,9 @@ function M.debug.step_into_targets()
             client.step_in(_active_id, M.granularity(), targets[1].id)
             return
         end
-        select(targets, {
-            prompt      = "Step into",
-            format_item = function(t) return t.label end,
+        select.open({
+            prompt = "Step into",
+            items  = vim.tbl_map(function(t) return { label = t.label, data = t } end, targets),
         }, function(t)
             if t then client.step_in(_active_id, M.granularity(), t.id) end
         end)
@@ -730,9 +730,11 @@ function M.debug.jump_to_cursor()
                 client.set_next_statement(id, targets[1].id)
                 return
             end
-            select(targets, {
-                prompt      = "Jump to",
-                format_item = function(t) return t.label .. (t.line and ("  :" .. t.line) or "") end,
+            select.open({
+                prompt = "Jump to",
+                items  = vim.tbl_map(function(t)
+                    return { label = t.label .. (t.line and ("  :" .. t.line) or ""), data = t }
+                end, targets),
             }, function(t)
                 if t then client.set_next_statement(id, t.id) end
             end)
@@ -828,14 +830,14 @@ function M.debug.session()
     if #ids == 0 then vim.notify("[dap] no active sessions", vim.log.levels.WARN); return end
     table.sort(ids)
     local active = _active_id
-    select(ids, {
-        prompt      = "Select session",
-        format_item = function(id)
+    select.open({
+        prompt = "Select session",
+        items  = vim.tbl_map(function(id)
             local s     = sessions[id]
             local label = (s.config.adapter or "session") .. "  [" .. s.state .. "]"
             if id == active then label = label .. "  *" end
-            return label
-        end,
+            return { label = label, data = id }
+        end, ids),
     }, function(id)
         if id then M.select_session(id) end
     end)
@@ -846,9 +848,11 @@ function M.debug.thread()
     if not sess then vim.notify("[dap] no active session", vim.log.levels.WARN); return end
     local threads = sess.threads
     if #threads == 0 then vim.notify("[dap] no threads available", vim.log.levels.WARN); return end
-    select(threads, {
-        prompt      = "Select thread",
-        format_item = function(t) return t.id .. ": " .. t.name .. "  [" .. t.status .. "]" end,
+    select.open({
+        prompt = "Select thread",
+        items  = vim.tbl_map(function(t)
+            return { label = t.id .. ": " .. t.name .. "  [" .. t.status .. "]", data = t }
+        end, threads),
     }, function(t)
         if t then M.select_thread(t.id) end
     end)
@@ -859,9 +863,11 @@ function M.debug.terminate_thread()
     _with_capability("supportsTerminateThreadsRequest", "terminate thread", function(sess, id)
         local threads = sess.threads
         if #threads == 0 then vim.notify("[dap] no threads available", vim.log.levels.WARN); return end
-        select(threads, {
-            prompt      = "Terminate thread",
-            format_item = function(t) return t.id .. ": " .. t.name .. "  [" .. t.status .. "]" end,
+        select.open({
+            prompt = "Terminate thread",
+            items  = vim.tbl_map(function(t)
+                return { label = t.id .. ": " .. t.name .. "  [" .. t.status .. "]", data = t }
+            end, threads),
         }, function(t)
             if t then client.terminate_threads(id, { t.id }) end
         end)
@@ -877,24 +883,23 @@ function M.debug.frame()
     if #frames == 0 then vim.notify("[dap] no stack frames available", vim.log.levels.WARN); return end
     local cur_frame = sess:current_stack_frame()
     local items = vim.tbl_map(function(f)
-        return {
-            frame   = f,
-            preview = f.source and f.source.path
-                and { filepath = f.source.path, lnum = f.line } or nil,
-        }
+        local loc    = f.source and f.source.path
+            and ("  " .. vim.fn.fnamemodify(f.source.path, ":~:.") .. ":" .. (f.line or "?"))
+            or  ""
+        local marker = (cur_frame and f.id == cur_frame.id) and "  *" or ""
+        local data   = { frame = f }
+        if f.source and f.source.path then
+            data.filepath = f.source.path
+            data.lnum     = f.line
+        end
+        return { label = f.name .. loc .. marker, data = data }
     end, frames)
-    select(items, {
-        prompt      = "Select frame",
-        format_item = function(item)
-            local f      = item.frame
-            local loc    = f.source and f.source.path
-                and ("  " .. vim.fn.fnamemodify(f.source.path, ":~:.") .. ":" .. (f.line or "?"))
-                or  ""
-            local marker = (cur_frame and f.id == cur_frame.id) and "  *" or ""
-            return f.name .. loc .. marker
-        end,
-    }, function(item)
-        if item then M.select_frame(item.frame.id) end
+    select.open({
+        prompt         = "Select frame",
+        enable_preview = true,
+        items          = items,
+    }, function(data)
+        if data then M.select_frame(data.frame.id) end
     end)
 end
 
