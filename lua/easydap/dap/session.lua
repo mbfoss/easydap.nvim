@@ -131,16 +131,7 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field _on_continued            fun(self: easydap.dap.Session, body: easydap.dap.proto.ContinuedEventBody)
 ---@field _on_close                fun(self: easydap.dap.Session)
 ---@field _bp_unsub                (fun())?                       unsubscribe from breakpoints.on_change
----@field _bp_sync_pending         easydap.dap.BpSyncPending?     coalesced pending breakpoint syncs
 ---@field _on_breakpoints_changed  fun(self: easydap.dap.Session, kind: easydap.dap.BreakpointChangeKind, path: string?)
----@field _flush_bp_sync           fun(self: easydap.dap.Session)
-
----Coalesced set of breakpoint syncs queued for the next tick.
----@class easydap.dap.BpSyncPending
----@field sources     table<string, true>   per-file source syncs
----@field all_sources boolean               sync every source (overrides `sources`)
----@field fn          boolean               re-sync function breakpoints
----@field exc         boolean               re-sync exception breakpoints
 
 local M = {}
 
@@ -175,7 +166,6 @@ function M.new(conn, config)
         _stop_cb              = nil,
         _stopping             = false,
         _bp_unsub             = nil,
-        _bp_sync_pending      = nil,
         report                = function(_, msg) vim.notify(msg, vim.log.levels.WARN) end,
     }, Session)
 
@@ -1652,44 +1642,25 @@ function Session:completions(arguments, cb)
     end)
 end
 
----React to a change in the global breakpoint registry by queueing a re-sync.
----Bursts (e.g. clear-all, project restore) are coalesced into a single flush on
----the next tick. Ignored until the session is initialized — the handshake does
----the initial push, and the adapter is not ready for setBreakpoints before then.
+---React to a change in the global breakpoint registry by pushing it to the
+---adapter. on_change is already coalesced and deferred by the registry, so this
+---dispatches directly. Ignored until the session is initialized — the handshake
+---does the initial push, and the adapter is not ready for setBreakpoints before.
 ---@param kind easydap.dap.BreakpointChangeKind
 ---@param path string?   affected source file for "source" changes (nil = all)
 function Session:_on_breakpoints_changed(kind, path)
     if not self._initialized then return end
-    local p = self._bp_sync_pending
-    if not p then
-        p = { sources = {}, all_sources = false, fn = false, exc = false }
-        self._bp_sync_pending = p
-        vim.schedule(function() self:_flush_bp_sync() end)
-    end
     if kind == "source" then
-        if path then p.sources[path] = true else p.all_sources = true end
+        self:sync_breakpoints(path)
     elseif kind == "function" then
-        p.fn = true
+        self:sync_function_breakpoints()
     elseif kind == "exception_filter" or kind == "exception_type" then
-        p.exc = true
+        self:sync_exception_breakpoints()
     elseif kind == "restore" then
-        p.all_sources, p.fn, p.exc = true, true, true
-    end
-end
-
----Flush the coalesced breakpoint syncs queued by _on_breakpoints_changed.
----@return nil
-function Session:_flush_bp_sync()
-    local p = self._bp_sync_pending
-    self._bp_sync_pending = nil
-    if not p then return end
-    if p.all_sources then
         self:sync_breakpoints()
-    else
-        for path in pairs(p.sources) do self:sync_breakpoints(path) end
+        self:sync_function_breakpoints()
+        self:sync_exception_breakpoints()
     end
-    if p.fn  then self:sync_function_breakpoints() end
-    if p.exc then self:sync_exception_breakpoints() end
 end
 
 ---Re-sync breakpoints for a specific source (or all sources) to the adapter.

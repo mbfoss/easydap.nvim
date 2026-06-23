@@ -56,7 +56,49 @@ local M = {}
 ---Fires when the desired breakpoint set changes and adapters must re-sync.
 ---`path` is the affected source file for "source" changes (nil = all sources;
 ---not applicable to function/exception/restore kinds).
+---
+---Emits are routed through `_emit_change`, which coalesces and defers them to the
+---next tick — a batch of mutations in one cycle (clearing a file, restoring a
+---project) notifies each subscriber once per affected file/kind, not once per
+---breakpoint.
 M.on_change = Signal.new() ---@type easydap.util.Signal<fun(kind: easydap.dap.BreakpointChangeKind, path: string?)>
+
+---Pending coalesced changes for the next tick, or nil when none are queued.
+---@type { sources: table<string,true>, all_sources: boolean, kinds: table<string,true> }?
+local _pending_change
+
+local function _flush_changes()
+    local p = _pending_change
+    _pending_change = nil
+    if not p then return end
+    if p.all_sources then
+        M.on_change:emit("source")
+    else
+        for path in pairs(p.sources) do M.on_change:emit("source", path) end
+    end
+    for kind in pairs(p.kinds) do M.on_change:emit(kind) end
+end
+
+---Queue an on_change notification, deduplicated within and deferred to the end
+---of the current event-loop cycle. A whole-file ("source", nil) change subsumes
+---any per-file ones queued in the same cycle.
+---@param kind easydap.dap.BreakpointChangeKind
+---@param path string?   affected source file ("source" kind only; nil = all)
+local function _emit_change(kind, path)
+    if not _pending_change then
+        _pending_change = { sources = {}, all_sources = false, kinds = {} }
+        vim.schedule(_flush_changes)
+    end
+    if kind == "source" then
+        if path then
+            _pending_change.sources[path] = true
+        else
+            _pending_change.all_sources = true
+        end
+    else
+        _pending_change.kinds[kind] = true
+    end
+end
 
 ---@type easydap.dap.SourceBreakpoint[]
 local _source_bps = {}
@@ -102,7 +144,7 @@ function M.add(source, line, opts)
             bp.hit_condition = opts.hit_condition
             bp.log_message   = opts.log_message
             bp.disabled      = opts.disabled or false
-            M.on_change:emit("source", source)
+            _emit_change("source", source)
             return bp
         end
     end
@@ -118,7 +160,7 @@ function M.add(source, line, opts)
         disabled      = opts.disabled or false,
     }
     _source_bps[#_source_bps + 1] = bp
-    M.on_change:emit("source", source)
+    _emit_change("source", source)
     return bp
 end
 
@@ -147,7 +189,7 @@ function M.patch(source, line, opts)
     if opts.hit_condition ~= nil then bp.hit_condition = opts.hit_condition ~= "" and opts.hit_condition or nil end
     if opts.log_message   ~= nil then bp.log_message   = opts.log_message   ~= "" and opts.log_message   or nil end
     if opts.disabled      ~= nil then bp.disabled      = opts.disabled                                          end
-    M.on_change:emit("source", source)
+    _emit_change("source", source)
     return bp
 end
 
@@ -159,7 +201,7 @@ function M.remove(source, line, column)
     for i, bp in ipairs(_source_bps) do
         if _matches(bp, source, line, column) then
             table.remove(_source_bps, i)
-            M.on_change:emit("source", source)
+            _emit_change("source", source)
             return true
         end
     end
@@ -175,7 +217,7 @@ function M.toggle(source, line, opts)
     for i, bp in ipairs(_source_bps) do
         if _matches(bp, source, line, opts.column) then
             table.remove(_source_bps, i)
-            M.on_change:emit("source", source)
+            _emit_change("source", source)
             return nil
         end
     end
@@ -220,13 +262,13 @@ function M.add_function(name, opts)
     for _, bp in ipairs(_function_bps) do
         if bp.name == name then
             bp.disabled = opts.disabled or false
-            M.on_change:emit("function")
+            _emit_change("function")
             return bp
         end
     end
     local bp = { internal_id = _new_id(), name = name, disabled = opts.disabled or false }
     _function_bps[#_function_bps + 1] = bp
-    M.on_change:emit("function")
+    _emit_change("function")
     return bp
 end
 
@@ -236,7 +278,7 @@ function M.remove_function(name)
     for i, bp in ipairs(_function_bps) do
         if bp.name == name then
             table.remove(_function_bps, i)
-            M.on_change:emit("function")
+            _emit_change("function")
             return true
         end
     end
@@ -272,7 +314,7 @@ function M.set_exception_filters(filter_defs)
             disabled = disabled,
         }
     end
-    M.on_change:emit("exception_filter")
+    _emit_change("exception_filter")
 end
 
 ---@return easydap.dap.ExceptionBreakpoint[]
@@ -287,7 +329,7 @@ function M.set_exception_enabled(filter, enabled)
     for _, bp in ipairs(_exception_bps) do
         if bp.filter == filter then
             bp.disabled = not enabled
-            M.on_change:emit("exception_filter")
+            _emit_change("exception_filter")
             return true
         end
     end
@@ -306,13 +348,13 @@ function M.add_exception_name(name, break_mode)
         if bp.name == name then
             bp.break_mode = break_mode
             bp.disabled   = false
-            M.on_change:emit("exception_type")
+            _emit_change("exception_type")
             return bp
         end
     end
     local bp = { internal_id = _new_id(), name = name, break_mode = break_mode, disabled = false }
     _exception_name_bps[#_exception_name_bps + 1] = bp
-    M.on_change:emit("exception_type")
+    _emit_change("exception_type")
     return bp
 end
 
@@ -322,7 +364,7 @@ function M.remove_exception_name(name)
     for i, bp in ipairs(_exception_name_bps) do
         if bp.name == name then
             table.remove(_exception_name_bps, i)
-            M.on_change:emit("exception_type")
+            _emit_change("exception_type")
             return true
         end
     end
@@ -337,7 +379,7 @@ function M.toggle_exception_name(name, break_mode)
     for i, bp in ipairs(_exception_name_bps) do
         if bp.name == name then
             table.remove(_exception_name_bps, i)
-            M.on_change:emit("exception_type")
+            _emit_change("exception_type")
             return nil
         end
     end
@@ -356,7 +398,7 @@ function M.set_exception_name_enabled(name, enabled)
     for _, bp in ipairs(_exception_name_bps) do
         if bp.name == name then
             bp.disabled = not enabled
-            M.on_change:emit("exception_type")
+            _emit_change("exception_type")
             return true
         end
     end
@@ -394,7 +436,7 @@ function M.relocate_batch(positions)
             end
         end
     end
-    if changed then M.on_change:emit("source") end
+    if changed then _emit_change("source") end
 end
 
 ---Enable all source breakpoints.
@@ -403,7 +445,7 @@ function M.enable_all()
     for _, bp in ipairs(_source_bps) do
         if bp.disabled then bp.disabled = false; changed = true end
     end
-    if changed then M.on_change:emit("source") end
+    if changed then _emit_change("source") end
 end
 
 ---Disable all source breakpoints.
@@ -412,7 +454,7 @@ function M.disable_all()
     for _, bp in ipairs(_source_bps) do
         if not bp.disabled then bp.disabled = true; changed = true end
     end
-    if changed then M.on_change:emit("source") end
+    if changed then _emit_change("source") end
 end
 
 -- ── Persistence ────────────────────────────────────────────────────────────
@@ -444,7 +486,7 @@ function M.restore(data)
     for _, bp in ipairs(_source_bps)         do if not bp.internal_id then bp.internal_id = _new_id() end end
     for _, bp in ipairs(_function_bps)       do if not bp.internal_id then bp.internal_id = _new_id() end end
     for _, bp in ipairs(_exception_name_bps) do if not bp.internal_id then bp.internal_id = _new_id() end end
-    M.on_change:emit("restore")
+    _emit_change("restore")
 end
 
 return M
