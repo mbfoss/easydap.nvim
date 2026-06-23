@@ -1,5 +1,5 @@
 ---@class easydap.TaskCallback
----@field add_bufnr  fun(bufnr: integer, label?: string, priority?: integer)
+---@field add_bufnr  fun(bufnr: integer, label?: string, priority?: integer, autoscroll?: boolean)
 ---@field report     fun(message: string)
 ---@field on_done    fun(ok: boolean)
 ---@
@@ -122,8 +122,7 @@ M.start     = function(task, callbacks)
             vim.api.nvim_buf_set_name(out_buf,
                 _unique_buf_name("easydap://" .. run_key .. "/output"))
 
-            vim.api.nvim_buf_set_var(out_buf, "easytasks_autoscroll", true)
-            add_bufnr(out_buf, "Output")
+            add_bufnr(out_buf, "Output", 0, true)
         end
         if not vim.api.nvim_buf_is_valid(out_buf) then return end
         vim.bo[out_buf].modifiable = true
@@ -189,8 +188,7 @@ M.start     = function(task, callbacks)
                     vim.bo[buf].modifiable = false
                     vim.api.nvim_buf_set_name(buf,
                         _unique_buf_name("easydap://" .. run_key .. "/dap-messages"))
-                    vim.api.nvim_buf_set_var(buf, "easytasks_autoscroll", true)
-                    add_bufnr(buf, "DAP Messages", -3)
+                    add_bufnr(buf, "DAP Messages", -3, true)
 
                     unsub = manager.on_raw_message:subscribe(function(sid, direction, msg)
                         if sid ~= id then return end

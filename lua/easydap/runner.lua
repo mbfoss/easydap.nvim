@@ -51,60 +51,20 @@ local function _is_task(v)
     return type(v) == "table" and type(v.adapter) == "string"
 end
 
--- ── Report window ──────────────────────────────────────────────────────────
--- Adapter/run progress goes to a dedicated split rather than vim.notify, which
--- is spammy during setup. The buffer accumulates across runs (each prefixed
--- with a banner); lines autoscroll while the window is visible. Pre-flight
--- errors (bad path, etc.) stay on vim.notify — they happen before any run.
+-- ── Run panel ──────────────────────────────────────────────────────────────
+-- A single bottom split (easydap.ui.Panel) hosts every buffer a run registers —
+-- the report, REPL, output, terminal and DAP-message buffers — and pages between
+-- them via a winbar. Adapter/run progress goes to the report page rather than
+-- vim.notify, which is spammy during setup. Pre-flight errors (bad path, etc.)
+-- stay on vim.notify — they happen before any run, hence before any panel.
 
 local _report_buf  ---@type integer?
-local _report_win  ---@type integer?
-local _panel_wins  = {} ---@type integer[]  -- run-panel windows, left-to-right insertion order
+local _panel       ---@type easydap.ui.Panel?
 
----Surviving panel windows, in insertion order (prunes ones the user closed).
----@return integer[]
-local function _panel_valid()
-    local out = {}
-    for _, w in ipairs(_panel_wins) do
-        if vim.api.nvim_win_is_valid(w) then out[#out + 1] = w end
-    end
-    _panel_wins = out
-    return out
-end
-
----Show `bufnr` in the run panel without stealing focus. The first panel buffer
----opens a horizontal split at the bottom; subsequent ones open a vertical split
----to the right of the last pane, tiling the bottom row in insertion order.
----`height` applies only to the initial horizontal split. Reuses any window
----already showing `bufnr`.
----@param bufnr integer
----@param height integer?
----@return integer win
-local function _panel_show(bufnr, height)
-    for _, w in ipairs(vim.api.nvim_list_wins()) do
-        if vim.api.nvim_win_get_buf(w) == bufnr then return w end
-    end
-
-    local cur   = vim.api.nvim_get_current_win()
-    local valid = _panel_valid()
-    local win
-    if #valid > 0 then
-        vim.api.nvim_set_current_win(valid[#valid]) -- split the last pane → new one on its right
-        vim.cmd("rightbelow vsplit")
-        win = vim.api.nvim_get_current_win()
-        vim.api.nvim_win_set_buf(win, bufnr)
-    else
-        vim.cmd("botright " .. (height and (height .. "split") or "split"))
-        win = vim.api.nvim_get_current_win()
-        vim.api.nvim_win_set_buf(win, bufnr)
-    end
-    _panel_wins[#_panel_wins + 1] = win
-
-    vim.wo[win].number         = false
-    vim.wo[win].relativenumber = false
-    vim.wo[win].winfixheight   = true
-    if vim.api.nvim_win_is_valid(cur) then vim.api.nvim_set_current_win(cur) end
-    return win
+---@return easydap.ui.Panel
+local function _get_panel()
+    if not _panel then _panel = require("easydap.ui.Panel").new() end
+    return _panel
 end
 
 ---@return integer
@@ -119,22 +79,15 @@ local function _report_bufnr()
     return _report_buf
 end
 
----@return boolean
-local function _report_visible()
-    return _report_win ~= nil
-        and vim.api.nvim_win_is_valid(_report_win)
-        and vim.api.nvim_win_get_buf(_report_win) == _report_buf
-end
-
----Open the report window in a bottom split without stealing focus. Reuses an
----existing window already showing the buffer.
+---Show the report page in the run panel. Priority -1 keeps it visible during
+---setup (REPL/adapter-log pages do not outrank it) while real program output
+---(Output 0, Terminal 10) surfaces over it once it arrives.
 local function _report_open()
-    if _report_visible() then return end
-    _report_win            = _panel_show(_report_bufnr(), 8)
-    vim.wo[_report_win].wrap = false
+    _get_panel():add(_report_bufnr(), "Report", -1, true)
 end
 
----Append timestamped lines to the report buffer; autoscroll if visible.
+---Append timestamped lines to the report buffer. The panel autoscrolls the page
+---while it is the active one.
 ---@param msg string
 local function _report(msg)
     local stamp = os.date("%H:%M:%S")
@@ -149,22 +102,6 @@ local function _report(msg)
     vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, empty and 0 or -1, -1, false, lines)
     vim.bo[buf].modifiable = false
-
-    if _report_visible() then
-        pcall(vim.api.nvim_win_set_cursor, _report_win, { vim.api.nvim_buf_line_count(buf), 0 })
-    end
-end
-
----Surface a spawned run buffer. The DebugView and REPL open on their own (the
----DebugView on session start, the REPL is created up front), so only the
----Output and Terminal buffers need a window; tile them into the run panel
----(vertical splits beside the report window) without stealing focus.
----@param bufnr integer
----@param label string?
-local function _present(bufnr, label)
-    if label ~= "Output" and label ~= "Terminal" then return end
-    if not vim.api.nvim_buf_is_valid(bufnr) then return end
-    _panel_show(bufnr)
 end
 
 ---Run a single debug task. Cancels the previous active run first. The returned
@@ -182,6 +119,7 @@ function M.run(task)
     task      = vim.deepcopy(task)
     task.name = task.name or "debug"
 
+    _get_panel():reset()
     _report_open()
     _report("▶ " .. task.name)
 
@@ -189,9 +127,9 @@ function M.run(task)
     local run = { name = task.name, cancel = function() end, bufnrs = {} }
 
     local cancel = require("easydap.task").start(task, {
-        add_bufnr = function(bufnr, label, _)
+        add_bufnr = function(bufnr, label, priority, autoscroll)
             run.bufnrs[#run.bufnrs + 1] = bufnr
-            _present(bufnr, label)
+            _get_panel():add(bufnr, label, priority, autoscroll)
         end,
         report    = _report,
         on_done   = function(ok)

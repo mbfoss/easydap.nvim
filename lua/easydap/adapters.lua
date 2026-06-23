@@ -15,7 +15,7 @@ local M = {}
 ---Context passed to `config.setup()` so the adapter can report progress and
 ---register terminal buffers with the task runner.
 ---@class easydap.AdapterSetupCtx
----@field add_bufnr fun(bufnr: integer, label?: string, priority?: integer)
+---@field add_bufnr fun(bufnr: integer, label?: string, priority?: integer, autoscroll?: boolean)
 ---@field report    fun(message: string)
 
 ---@class easydap.dap.Config
