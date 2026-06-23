@@ -90,15 +90,15 @@ function Panel:open()
     if self:is_open() then return end
     local cur = vim.api.nvim_get_current_win()
     vim.cmd("botright " .. self._height .. "split")
-    self._win = vim.api.nvim_get_current_win()
+    self._win                        = vim.api.nvim_get_current_win()
 
     vim.wo[self._win].number         = false
     vim.wo[self._win].relativenumber = false
     vim.wo[self._win].winfixheight   = true
     vim.wo[self._win].wrap           = false
 
-    local display = self:_display()
-    local first   = self._active or (display[1] and display[1].bufnr)
+    local display                    = self:_display()
+    local first                      = self._active or (display[1] and display[1].bufnr)
     self:_set_buf(first or vim.api.nvim_create_buf(false, true))
     _click_target = self
     if vim.api.nvim_win_is_valid(cur) then vim.api.nvim_set_current_win(cur) end
@@ -238,10 +238,11 @@ function Panel:_render_winbar()
                 parts[#parts + 1] = ("%%#Title# %s %%*"):format(self:_group_label(e.group) or "")
             end
         end
-        local hl = e.bufnr == self._active and "%#TabLineSel#" or "%#TabLine#"
-        parts[#parts + 1] = ("%%%d@v:lua.EasydapPanelClick@%s %s %%X"):format(i, hl, e.label)
+        local hl = e.bufnr == self._active and "%#Title#" or "%#Winbar#"
+        -- Leading number is the index `:Debug panel jump <n>` expects.
+        parts[#parts + 1] = ("%%%d@v:lua.EasydapPanelClick@%s %d %s %%X"):format(i, hl, i, e.label)
     end
-    vim.wo[self._win].winbar = table.concat(parts) .. "%#TabLineFill#"
+    vim.wo[self._win].winbar = table.concat(parts) .. "%#Winbar#"
 end
 
 -- ── Public API ─────────────────────────────────────────────────────────────
@@ -273,12 +274,13 @@ function Panel:add(bufnr, opts)
             seq        = self._seq,
         }
         vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
-            buffer = bufnr, once = true,
+            buffer = bufnr,
+            once = true,
             callback = function() self:remove(bufnr) end,
         })
     end
 
-    local was_open  = self:is_open()
+    local was_open = self:is_open()
     self:open()
     -- Surface the new buffer when nothing meaningful is shown yet (fresh panel /
     -- empty scratch) or when it outranks the current page; otherwise just list it.
@@ -292,12 +294,43 @@ function Panel:add(bufnr, opts)
     end
 end
 
----Show the i-th entry in display order. Used by the winbar click handler.
+---Number of tabs currently shown.
+---@return integer
+function Panel:tab_count()
+    return #self:_display()
+end
+
+---Show the i-th entry in display order, opening the panel if hidden. Used by the
+---winbar click handler and `:Debug panel jump`.
 ---@param i integer
 function Panel:show_index(i)
+    self:open()
     local e = self:_display()[i]
     if e then self:_set_buf(e.bufnr) end
 end
+
+---Show the tab `delta` steps from the active one, wrapping; opens if hidden.
+---@param delta integer
+function Panel:_step(delta)
+    self:open()
+    local order = self:_display()
+    if #order == 0 then return end
+    local idx = 1
+    for i, e in ipairs(order) do
+        if e.bufnr == self._active then
+            idx = i
+            break
+        end
+    end
+    idx = (idx - 1 + delta) % #order + 1
+    self:_set_buf(order[idx].bufnr)
+end
+
+---Show the next tab, wrapping.
+function Panel:next() self:_step(1) end
+
+---Show the previous tab, wrapping.
+function Panel:prev() self:_step(-1) end
 
 ---Show the panel away from a removed buffer, falling back to the next entry or
 ---an empty scratch when nothing is left.

@@ -190,7 +190,19 @@ local function _register_user_commands()
         elseif sub == "project" then
             M.project_info()
         elseif sub == "panel" then
-            require("easydap.runner").toggle_panel()
+            local runner = require("easydap.runner")
+            local action = args[2]
+            if action == nil or action == "" or action == "toggle" then
+                runner.panel_toggle()
+            elseif action == "jump" then
+                runner.panel_jump(tonumber(args[3]))
+            elseif action == "next" then
+                runner.panel_next()
+            elseif action == "previous" or action == "prev" then
+                runner.panel_prev()
+            else
+                vim.notify("[easydap] unknown panel command: " .. tostring(action), vim.log.levels.WARN)
+            end
         elseif sub == "breakpoint" then
             local def = usercmd.get_subcommand("breakpoint")
             if def then def.run("breakpoint", { unpack(args, 2) }, {}) end
@@ -207,6 +219,12 @@ local function _register_user_commands()
             end
             if rest[1] == "run" and #rest == 1 then
                 return vim.fn.getcompletion(arg_lead, "file")
+            end
+            if rest[1] == "panel" and #rest == 1 then
+                return { "toggle", "jump", "next", "previous" }
+            end
+            if rest[1] == "panel" and rest[2] == "jump" and #rest == 2 then
+                return require("easydap.runner").panel_tab_numbers()
             end
             return {}
         end,

@@ -279,15 +279,54 @@ function M.active()
     return nil
 end
 
----Show or hide the run panel. Hosted buffers persist while hidden, so toggling
----it back restores the same tabs. No-op (with a hint) before the first run, when
----there is no panel yet.
-function M.toggle_panel()
+---The run panel, or nil (with a hint) before the first run when none exists yet.
+---@return easydap.ui.Panel?
+local function _panel_or_warn()
     if not _panel then
         _warn("run panel: nothing to show yet (run a task first)")
+        return nil
+    end
+    return _panel
+end
+
+---Show or hide the run panel. Hosted buffers persist while hidden, so toggling
+---it back restores the same tabs.
+function M.panel_toggle()
+    local p = _panel_or_warn()
+    if p then p:toggle() end
+end
+
+---Jump to the n-th panel tab (1-based, matching the numbers shown in the winbar).
+---@param n integer?
+function M.panel_jump(n)
+    local p = _panel_or_warn()
+    if not p then return end
+    if type(n) ~= "number" then
+        _warn("panel jump: expected a tab number, e.g. :Debug panel jump 2")
         return
     end
-    _panel:toggle()
+    p:show_index(n)
+end
+
+---Show the next panel tab, wrapping.
+function M.panel_next()
+    local p = _panel_or_warn()
+    if p then p:next() end
+end
+
+---Show the previous panel tab, wrapping.
+function M.panel_prev()
+    local p = _panel_or_warn()
+    if p then p:prev() end
+end
+
+---Tab numbers as strings, for `:Debug panel jump` completion. Empty when no panel.
+---@return string[]
+function M.panel_tab_numbers()
+    if not _panel then return {} end
+    local out = {}
+    for i = 1, _panel:tab_count() do out[i] = tostring(i) end
+    return out
 end
 
 return M
