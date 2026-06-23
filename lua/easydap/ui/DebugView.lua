@@ -486,7 +486,7 @@ function DebugView:_show_hover(data)
     if kind == "variable" or kind == "expression" then
         if not sess or not sess:current_stack_frame() then return end
         local expr = (kind == "variable") and (data.evaluateName or data.name) or data.name
-        sess:evaluate(expr, "hover", function(body, err)
+        sess:evaluate({ expression = expr, context = "hover" }, function(body, err)
             if err or not body then
                 _float({ err or "not available" }, data.name)
                 return
@@ -851,7 +851,7 @@ function DebugView:_eval_expression(ctx, expr_obj)
     local sess = self._active_sess
     if not sess or not sess:current_stack_frame() then return end
 
-    sess:evaluate(expr_obj.expr, "watch", function(body, err)
+    sess:evaluate({ expression = expr_obj.expr, context = "watch" }, function(body, err)
         if ctx ~= self._query_ctx then return end
         if not self._tree:have_item(item_id) then return end
         local item = self._tree:get_item(item_id)
@@ -1081,7 +1081,7 @@ function DebugView:_toggle_data_breakpoint(cur)
     local d          = cur.data
     local parent     = self._tree:get_parent_item(cur.id)
     local parent_ref = parent and parent.data and parent.data.variablesReference
-    sess:data_breakpoint_info(d.name, parent_ref, function(body, err)
+    sess:data_breakpoint_info({ name = d.name, variablesReference = parent_ref }, function(body, err)
         if err or not body or not body.dataId then
             local why = err or (body and body.description) or "not available"
             vim.notify("[dap] cannot watch '" .. d.name .. "': " .. why, vim.log.levels.WARN)

@@ -347,7 +347,7 @@ function M.breakpoint.column()
     end
     ---@type easydap.dap.proto.Source
     local source = { path = file, name = vim.fn.fnamemodify(file, ":t") }
-    sess:breakpoint_locations(source, row, nil, function(locations, _)
+    sess:breakpoint_locations({ source = source, line = row }, function(locations, _)
         local cols, seen = {}, {}
         for _, loc in ipairs(locations or {}) do
             local c = loc.column
@@ -605,7 +605,7 @@ end
 ---@param name string
 ---@param variables_reference integer?
 local function _toggle_data_bp(sess, name, variables_reference)
-    sess:data_breakpoint_info(name, variables_reference, function(body, err)
+    sess:data_breakpoint_info({ name = name, variablesReference = variables_reference }, function(body, err)
         if err or not body or not body.dataId then
             local why = err or (body and body.description) or "not available"
             vim.notify("[dap] cannot watch '" .. name .. "': " .. why, vim.log.levels.WARN)

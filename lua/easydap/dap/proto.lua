@@ -457,41 +457,48 @@ assert(false, "should not require() a meta file")
 ---@class easydap.dap.proto.SetInstructionBreakpointsArguments
 ---@field breakpoints easydap.dap.proto.InstructionBreakpoint[]
 
+-- For the execution-control requests below, `threadId` is required on the wire
+-- but optional here: the easydap Session methods fill it from the active thread
+-- when omitted (see session.lua).
+
 ---@class easydap.dap.proto.ContinueArguments
----@field threadId      integer
+---@field threadId?     integer
 ---@field singleThread? boolean
 
 ---@class easydap.dap.proto.NextArguments
----@field threadId      integer
+---@field threadId?     integer
 ---@field singleThread? boolean
 ---@field granularity?  easydap.dap.proto.SteppingGranularity
 
 ---@class easydap.dap.proto.StepInArguments
----@field threadId      integer
+---@field threadId?     integer
 ---@field singleThread? boolean
 ---@field targetId?     integer
 ---@field granularity?  easydap.dap.proto.SteppingGranularity
 
 ---@class easydap.dap.proto.StepOutArguments
----@field threadId      integer
+---@field threadId?     integer
 ---@field singleThread? boolean
 ---@field granularity?  easydap.dap.proto.SteppingGranularity
 
 ---@class easydap.dap.proto.StepBackArguments
----@field threadId      integer
+---@field threadId?     integer
 ---@field singleThread? boolean
 ---@field granularity?  easydap.dap.proto.SteppingGranularity
 
 ---@class easydap.dap.proto.ReverseContinueArguments
----@field threadId      integer
+---@field threadId?     integer
 ---@field singleThread? boolean
 
 ---@class easydap.dap.proto.GotoArguments
----@field threadId integer
----@field targetId integer
+---@field threadId? integer
+---@field targetId  integer
+
+---@class easydap.dap.proto.RestartFrameArguments
+---@field frameId integer
 
 ---@class easydap.dap.proto.PauseArguments
----@field threadId integer
+---@field threadId? integer
 
 ---@class easydap.dap.proto.StackTraceArguments
 ---@field threadId    integer
@@ -553,7 +560,7 @@ assert(false, "should not require() a meta file")
 ---@field line?    integer
 
 ---@class easydap.dap.proto.ExceptionInfoArguments
----@field threadId integer
+---@field threadId? integer  -- required on the wire; easydap defaults it to the active thread
 
 ---@class easydap.dap.proto.ReadMemoryArguments
 ---@field memoryReference string

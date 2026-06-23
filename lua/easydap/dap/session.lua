@@ -73,27 +73,27 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field stop          fun(self: easydap.dap.Session, cb: fun()?)
 ---@field terminate     fun(self: easydap.dap.Session, cb: fun(err: string?)?)
 ---@field disconnect    fun(self: easydap.dap.Session, cb: fun()?)
----@field continue      fun(self: easydap.dap.Session, thread_id: integer?)
----@field next          fun(self: easydap.dap.Session, thread_id: integer?, granularity: easydap.dap.proto.SteppingGranularity?)
----@field step_in       fun(self: easydap.dap.Session, thread_id: integer?, granularity: easydap.dap.proto.SteppingGranularity?, target_id: integer?)
----@field step_out      fun(self: easydap.dap.Session, thread_id: integer?, granularity: easydap.dap.proto.SteppingGranularity?)
----@field pause         fun(self: easydap.dap.Session, thread_id: integer?)
----@field terminate_threads  fun(self: easydap.dap.Session, thread_ids: integer[], cb: fun(err: string?)?)
----@field step_back     fun(self: easydap.dap.Session, thread_id: integer?, granularity: easydap.dap.proto.SteppingGranularity?)
----@field reverse_continue   fun(self: easydap.dap.Session, thread_id: integer?)
----@field step_in_targets    fun(self: easydap.dap.Session, frame_id: integer, cb: fun(targets: easydap.dap.proto.StepInTarget[]?, err: string?))
----@field goto_targets       fun(self: easydap.dap.Session, source: easydap.dap.proto.Source, line: integer, cb: fun(targets: easydap.dap.proto.GotoTarget[]?, err: string?))
----@field set_next_statement fun(self: easydap.dap.Session, target_id: integer, thread_id: integer?)
----@field restart_frame      fun(self: easydap.dap.Session, frame_id: integer)
----@field exception_info     fun(self: easydap.dap.Session, thread_id: integer?, cb: fun(body: easydap.dap.proto.ExceptionInfoResponseBody?, err: string?))
+---@field continue      fun(self: easydap.dap.Session, arguments: easydap.dap.proto.ContinueArguments?)
+---@field next          fun(self: easydap.dap.Session, arguments: easydap.dap.proto.NextArguments?)
+---@field step_in       fun(self: easydap.dap.Session, arguments: easydap.dap.proto.StepInArguments?)
+---@field step_out      fun(self: easydap.dap.Session, arguments: easydap.dap.proto.StepOutArguments?)
+---@field pause         fun(self: easydap.dap.Session, arguments: easydap.dap.proto.PauseArguments?)
+---@field terminate_threads  fun(self: easydap.dap.Session, arguments: easydap.dap.proto.TerminateThreadsArguments, cb: fun(err: string?)?)
+---@field step_back     fun(self: easydap.dap.Session, arguments: easydap.dap.proto.StepBackArguments?)
+---@field reverse_continue   fun(self: easydap.dap.Session, arguments: easydap.dap.proto.ReverseContinueArguments?)
+---@field step_in_targets    fun(self: easydap.dap.Session, arguments: easydap.dap.proto.StepInTargetsArguments, cb: fun(targets: easydap.dap.proto.StepInTarget[]?, err: string?))
+---@field goto_targets       fun(self: easydap.dap.Session, arguments: easydap.dap.proto.GotoTargetsArguments, cb: fun(targets: easydap.dap.proto.GotoTarget[]?, err: string?))
+---@field set_next_statement fun(self: easydap.dap.Session, arguments: easydap.dap.proto.GotoArguments)
+---@field restart_frame      fun(self: easydap.dap.Session, arguments: easydap.dap.proto.RestartFrameArguments)
+---@field exception_info     fun(self: easydap.dap.Session, arguments: easydap.dap.proto.ExceptionInfoArguments?, cb: fun(body: easydap.dap.proto.ExceptionInfoResponseBody?, err: string?))
 ---@field restart       fun(self: easydap.dap.Session)
----@field evaluate      fun(self: easydap.dap.Session, expr: string, context: string, cb: fun(body: easydap.dap.proto.EvaluateResponseBody?, err: string?))
----@field disassemble   fun(self: easydap.dap.Session, ref: string, count: integer, offset: integer?, cb: fun(instructions: easydap.dap.proto.DisassembledInstruction[]?, err: string?))
+---@field evaluate      fun(self: easydap.dap.Session, arguments: easydap.dap.proto.EvaluateArguments, cb: fun(body: easydap.dap.proto.EvaluateResponseBody?, err: string?))
+---@field disassemble   fun(self: easydap.dap.Session, arguments: easydap.dap.proto.DisassembleArguments, cb: fun(instructions: easydap.dap.proto.DisassembledInstruction[]?, err: string?))
 ---@field instruction_breakpoints        fun(self: easydap.dap.Session): table<string, easydap.dap.BpStatus>
 ---@field toggle_instruction_breakpoint  fun(self: easydap.dap.Session, ref: string, cb: fun(err: string?)?)
 ---@field _instr_bps                     table<string, easydap.dap.BpStatus>
 ---@field data_breakpoints               fun(self: easydap.dap.Session): easydap.dap.DataBreakpoint[]
----@field data_breakpoint_info           fun(self: easydap.dap.Session, name: string, variables_reference: integer?, cb: fun(body: easydap.dap.proto.DataBreakpointInfoResponseBody?, err: string?))
+---@field data_breakpoint_info           fun(self: easydap.dap.Session, arguments: easydap.dap.proto.DataBreakpointInfoArguments, cb: fun(body: easydap.dap.proto.DataBreakpointInfoResponseBody?, err: string?))
 ---@field add_data_breakpoint            fun(self: easydap.dap.Session, entry: { data_id: string, name: string, access_type?: easydap.dap.proto.DataBreakpointAccessType, condition?: string, hit_condition?: string }, cb: fun(err: string?)?)
 ---@field remove_data_breakpoint         fun(self: easydap.dap.Session, data_id: string, cb: fun(err: string?)?)
 ---@field set_data_breakpoint_enabled    fun(self: easydap.dap.Session, data_id: string, enabled: boolean, cb: fun(err: string?)?)
@@ -110,18 +110,18 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field fetch_modules       fun(self: easydap.dap.Session, cb: fun(modules: easydap.dap.proto.Module[]?, err: string?)?)
 ---@field fetch_loaded_sources fun(self: easydap.dap.Session, cb: fun(sources: easydap.dap.proto.Source[]?, err: string?)?)
 ---@field set_variable        fun(self: easydap.dap.Session, reference: integer?, variable: easydap.dap.Variable, value: string, cb: fun(body: table?, err: string?)?)
----@field get_source_buffer   fun(self: easydap.dap.Session, ref: integer, cb: fun(bufnr: integer?, err: string?))
+---@field get_source_buffer   fun(self: easydap.dap.Session, arguments: easydap.dap.proto.SourceArguments, cb: fun(bufnr: integer?, err: string?))
 ---@field _bp_status      table<integer, easydap.dap.BpStatus>
 ---@field _adapter_id_map table<integer, integer>
 ---@field sync_breakpoints              fun(self: easydap.dap.Session, source: string|nil, cb: fun()?)
 ---@field sync_function_breakpoints    fun(self: easydap.dap.Session, cb: fun()?)
 ---@field sync_exception_breakpoints   fun(self: easydap.dap.Session, cb: fun()?)
 ---@field bp_status                    fun(self: easydap.dap.Session, bp_id: integer): easydap.dap.BpStatus?
----@field completions                  fun(self: easydap.dap.Session, text: string, column: integer, frame_id: integer?, cb: fun(targets: easydap.dap.proto.CompletionItem[]))
----@field cancel                       fun(self: easydap.dap.Session, request_id: integer, cb: fun(err: string?)?)
----@field read_memory                  fun(self: easydap.dap.Session, ref: string, offset: integer, count: integer, cb: fun(body: table?, err: string?))
----@field write_memory                 fun(self: easydap.dap.Session, ref: string, offset: integer, data: string, cb: fun(body: table?, err: string?))
----@field breakpoint_locations         fun(self: easydap.dap.Session, source: easydap.dap.proto.Source, line: integer, end_line: integer?, cb: fun(locations: table[]?, err: string?))
+---@field completions                  fun(self: easydap.dap.Session, arguments: easydap.dap.proto.CompletionsArguments, cb: fun(targets: easydap.dap.proto.CompletionItem[]))
+---@field cancel                       fun(self: easydap.dap.Session, arguments: easydap.dap.proto.CancelArguments, cb: fun(err: string?)?)
+---@field read_memory                  fun(self: easydap.dap.Session, arguments: easydap.dap.proto.ReadMemoryArguments, cb: fun(body: table?, err: string?))
+---@field write_memory                 fun(self: easydap.dap.Session, arguments: easydap.dap.proto.WriteMemoryArguments, cb: fun(body: table?, err: string?))
+---@field breakpoint_locations         fun(self: easydap.dap.Session, arguments: easydap.dap.proto.BreakpointLocationsArguments, cb: fun(locations: table[]?, err: string?))
 ---@field select_thread                fun(self: easydap.dap.Session, thread_id: integer)
 ---@field select_frame                 fun(self: easydap.dap.Session, frame_id: integer)
 ---@field report                  fun(self: easydap.dap.Session, msg: string)
@@ -980,15 +980,16 @@ function Session:terminate_debuggee(cb)
     end)
 end
 
----Cancel an in-flight request by its sequence number.
----@param request_id integer  seq of the request to cancel
----@param cb         fun(err: string?)?
-function Session:cancel(request_id, cb)
+---Cancel an in-flight request by its sequence number (CancelArguments.requestId)
+---and/or a progress sequence (CancelArguments.progressId).
+---@param arguments easydap.dap.proto.CancelArguments
+---@param cb        fun(err: string?)?
+function Session:cancel(arguments, cb)
     if not self:capable("supportsCancelRequest") then
         if cb then cb("adapter does not support cancel") end
         return
     end
-    self:request("cancel", { requestId = request_id }, function(_, err)
+    self:request("cancel", arguments, function(_, err)
         if cb then cb(err) end
     end)
 end
@@ -1004,135 +1005,134 @@ end
 
 -- ── Control flow ───────────────────────────────────────────────────────────
 
----@param self        easydap.dap.Session
----@param command     string
----@param thread_id   integer?
----@param granularity easydap.dap.proto.SteppingGranularity?  defaults to "line"
----@param target_id   integer?  step-in target (stepIn only), from step_in_targets
-local function _step_like(self, command, thread_id, granularity, target_id)
-    thread_id = thread_id or self._thread_id
-    local args = { threadId = thread_id }
+---Shared body for the stepping requests (next/stepIn/stepOut/stepBack). Fills in
+---`threadId` (current thread) and `granularity` ("line") defaults, and strips
+---`granularity` when the adapter does not advertise the capability.
+---@param self      easydap.dap.Session
+---@param command   string
+---@param arguments easydap.dap.proto.NextArguments|easydap.dap.proto.StepInArguments|easydap.dap.proto.StepOutArguments|easydap.dap.proto.StepBackArguments|nil
+local function _step_like(self, command, arguments)
+    local args = vim.deepcopy(arguments or {})
+    args.threadId = args.threadId or self._thread_id
     if self:capable("supportsSteppingGranularity") then
-        args.granularity = granularity or "line"
+        args.granularity = args.granularity or "line"
+    else
+        args.granularity = nil
     end
-    if target_id then args.targetId = target_id end
     self:request(command, args, function(_, err)
         if err then
             self:report(("[dap] %s failed: %s"):format(command, err))
             return
         end
-        self:_on_continued({ threadId = thread_id --[[@as integer]], allThreadsContinued = false })
+        self:_on_continued({ threadId = args.threadId --[[@as integer]], allThreadsContinued = false })
     end)
 end
 
----@param thread_id integer?
-function Session:continue(thread_id)
-    thread_id = thread_id or self._thread_id
-    self:request("continue", { threadId = thread_id }, function(body, err)
+---@param arguments easydap.dap.proto.ContinueArguments?
+function Session:continue(arguments)
+    local args = vim.deepcopy(arguments or {})
+    args.threadId = args.threadId or self._thread_id
+    self:request("continue", args, function(body, err)
         if err then
             self:report("[dap] continue failed: " .. err)
             return
         end
         local all = (body and body.allThreadsContinued)
         if all == nil then all = true end
-        self:_on_continued({ threadId = thread_id, allThreadsContinued = all })
+        self:_on_continued({ threadId = args.threadId, allThreadsContinued = all })
     end)
 end
 
----@param thread_id integer?
----@param granularity easydap.dap.proto.SteppingGranularity?
-function Session:next(thread_id, granularity) _step_like(self, "next", thread_id, granularity) end
+---@param arguments easydap.dap.proto.NextArguments?
+function Session:next(arguments) _step_like(self, "next", arguments) end
 
----@param thread_id integer?
----@param granularity easydap.dap.proto.SteppingGranularity?
----@param target_id integer?  a StepInTarget id from step_in_targets
-function Session:step_in(thread_id, granularity, target_id)
-    _step_like(self, "stepIn", thread_id, granularity, target_id)
+---@param arguments easydap.dap.proto.StepInArguments?  set `targetId` from step_in_targets
+function Session:step_in(arguments)
+    _step_like(self, "stepIn", arguments)
 end
 
----@param thread_id integer?
----@param granularity easydap.dap.proto.SteppingGranularity?
-function Session:step_out(thread_id, granularity) _step_like(self, "stepOut", thread_id, granularity) end
+---@param arguments easydap.dap.proto.StepOutArguments?
+function Session:step_out(arguments) _step_like(self, "stepOut", arguments) end
 
----@param thread_id integer?
----@param granularity easydap.dap.proto.SteppingGranularity?
-function Session:step_back(thread_id, granularity)
+---@param arguments easydap.dap.proto.StepBackArguments?
+function Session:step_back(arguments)
     if not self:capable("supportsStepBack") then
         self:report("[dap] adapter does not support step back")
         return
     end
-    _step_like(self, "stepBack", thread_id, granularity)
+    _step_like(self, "stepBack", arguments)
 end
 
 ---Resume reverse execution until a breakpoint is hit (time-travel debugging).
 ---Gated by the same capability as step_back.
----@param thread_id integer?
-function Session:reverse_continue(thread_id)
+---@param arguments easydap.dap.proto.ReverseContinueArguments?
+function Session:reverse_continue(arguments)
     if not self:capable("supportsStepBack") then
         self:report("[dap] adapter does not support reverse continue")
         return
     end
-    thread_id = thread_id or self._thread_id
-    self:request("reverseContinue", { threadId = thread_id }, function(_, err)
+    local args = vim.deepcopy(arguments or {})
+    args.threadId = args.threadId or self._thread_id
+    self:request("reverseContinue", args, function(_, err)
         if err then
             self:report("[dap] reverse continue failed: " .. err)
             return
         end
-        self:_on_continued({ threadId = thread_id --[[@as integer]], allThreadsContinued = false })
+        self:_on_continued({ threadId = args.threadId --[[@as integer]], allThreadsContinued = false })
     end)
 end
 
 ---Query the possible step-in targets for a stack frame, for use with
 ---`step_in(..., target_id)` to pick which call on the line to step into.
----@param frame_id integer
+---@param arguments easydap.dap.proto.StepInTargetsArguments
 ---@param cb fun(targets: easydap.dap.proto.StepInTarget[]?, err: string?)
-function Session:step_in_targets(frame_id, cb)
+function Session:step_in_targets(arguments, cb)
     if not self:capable("supportsStepInTargetsRequest") then
         return cb(nil, "adapter does not support step-in targets")
     end
-    self:request("stepInTargets", { frameId = frame_id }, function(body, err)
+    self:request("stepInTargets", arguments, function(body, err)
         cb(body and body.targets, err)
     end)
 end
 
 ---Query the valid jump-to-cursor targets at a source line.
----@param source easydap.dap.proto.Source
----@param line   integer
+---@param arguments easydap.dap.proto.GotoTargetsArguments
 ---@param cb     fun(targets: easydap.dap.proto.GotoTarget[]?, err: string?)
-function Session:goto_targets(source, line, cb)
+function Session:goto_targets(arguments, cb)
     if not self:capable("supportsGotoTargetsRequest") then
         return cb(nil, "adapter does not support goto targets")
     end
-    self:request("gotoTargets", { source = source, line = line }, function(body, err)
+    self:request("gotoTargets", arguments, function(body, err)
         cb(body and body.targets, err)
     end)
 end
 
 ---Set the next statement to execute (jump-to-cursor). The code between the
 ---current location and the target is skipped, not executed. The adapter sends
----a stopped event once the jump completes.
----@param target_id integer  a GotoTarget id from goto_targets
----@param thread_id integer?
-function Session:set_next_statement(target_id, thread_id)
-    thread_id = thread_id or self._thread_id
-    self:request("goto", { threadId = thread_id, targetId = target_id }, function(_, err)
+---a stopped event once the jump completes. `targetId` comes from goto_targets;
+---`threadId` defaults to the current thread.
+---@param arguments easydap.dap.proto.GotoArguments
+function Session:set_next_statement(arguments)
+    local args = vim.deepcopy(arguments or {})
+    args.threadId = args.threadId or self._thread_id
+    self:request("goto", args, function(_, err)
         if err then
             self:report("[dap] goto failed: " .. err)
             return
         end
-        self:_on_continued({ threadId = thread_id --[[@as integer]], allThreadsContinued = false })
+        self:_on_continued({ threadId = args.threadId --[[@as integer]], allThreadsContinued = false })
     end)
 end
 
 ---Restart execution of a single stack frame. The adapter sends a stopped event
 ---(reason "restart") once the frame has been re-entered.
----@param frame_id integer
-function Session:restart_frame(frame_id)
+---@param arguments easydap.dap.proto.RestartFrameArguments
+function Session:restart_frame(arguments)
     if not self:capable("supportsRestartFrame") then
         self:report("[dap] adapter does not support restart frame")
         return
     end
-    self:request("restartFrame", { frameId = frame_id }, function(_, err)
+    self:request("restartFrame", arguments, function(_, err)
         if err then
             self:report("[dap] restart frame failed: " .. err)
             return
@@ -1143,33 +1143,35 @@ end
 
 ---Fetch detailed information about the exception that caused the current stop.
 ---Only meaningful while stopped with reason "exception".
----@param thread_id integer?
+---@param arguments easydap.dap.proto.ExceptionInfoArguments?
 ---@param cb fun(body: easydap.dap.proto.ExceptionInfoResponseBody?, err: string?)
-function Session:exception_info(thread_id, cb)
+function Session:exception_info(arguments, cb)
     if not self:capable("supportsExceptionInfoRequest") then
         return cb(nil, "adapter does not support exception info")
     end
-    thread_id = thread_id or self._thread_id
-    self:request("exceptionInfo", { threadId = thread_id }, cb)
+    local args = vim.deepcopy(arguments or {})
+    args.threadId = args.threadId or self._thread_id
+    self:request("exceptionInfo", args, cb)
 end
 
----@param thread_id integer?
-function Session:pause(thread_id)
-    thread_id = thread_id or self._thread_id or 0
-    self:request("pause", { threadId = thread_id }, function(_, err)
+---@param arguments easydap.dap.proto.PauseArguments?
+function Session:pause(arguments)
+    local args = vim.deepcopy(arguments or {})
+    args.threadId = args.threadId or self._thread_id or 0
+    self:request("pause", args, function(_, err)
         if err then self:report("[dap] pause failed: " .. err) end
     end)
 end
 
 ---Terminate one or more threads (requires supportsTerminateThreadsRequest).
----@param thread_ids integer[]
----@param cb         fun(err: string?)?
-function Session:terminate_threads(thread_ids, cb)
+---@param arguments easydap.dap.proto.TerminateThreadsArguments
+---@param cb        fun(err: string?)?
+function Session:terminate_threads(arguments, cb)
     if not self:capable("supportsTerminateThreadsRequest") then
         if cb then cb("adapter does not support terminate threads") end
         return
     end
-    self:request("terminateThreads", { threadIds = thread_ids }, function(_, err)
+    self:request("terminateThreads", arguments, function(_, err)
         if err then self:report("[dap] terminateThreads failed: " .. err) end
         if cb then cb(err) end
     end)
@@ -1193,68 +1195,48 @@ end
 
 ---Disassemble instructions around a memory reference.
 ---Stateless: disassembly is a query, not cached session state.
----@param ref    string   memoryReference (e.g. frame.instructionPointerReference)
----@param count  integer  instructionCount
----@param offset integer? instructionOffset (may be negative to fetch before ref)
+---`resolveSymbols` defaults to true when not set in `arguments`.
+---@param arguments easydap.dap.proto.DisassembleArguments
 ---@param cb     fun(instructions: easydap.dap.proto.DisassembledInstruction[]?, err: string?)
-function Session:disassemble(ref, count, offset, cb)
+function Session:disassemble(arguments, cb)
     if not self:capable("supportsDisassembleRequest") then
         return cb(nil, "adapter does not support disassemble")
     end
-    self:request("disassemble", {
-        memoryReference   = ref,
-        instructionCount  = count,
-        instructionOffset = offset,
-        resolveSymbols    = true,
-    }, function(body, err)
+    local args = vim.deepcopy(arguments or {})
+    if args.resolveSymbols == nil then args.resolveSymbols = true end
+    self:request("disassemble", args, function(body, err)
         cb(body and body.instructions, err)
     end)
 end
 
 ---Read bytes from an adapter memory reference.
----@param ref    string   memoryReference (from a variable or frame)
----@param offset integer  byte offset from ref
----@param count  integer  number of bytes to read
+---@param arguments easydap.dap.proto.ReadMemoryArguments
 ---@param cb     fun(body: table?, err: string?)
-function Session:read_memory(ref, offset, count, cb)
+function Session:read_memory(arguments, cb)
     if not self:capable("supportsReadMemoryRequest") then
         return cb(nil, "adapter does not support readMemory")
     end
-    self:request("readMemory", {
-        memoryReference = ref,
-        offset          = offset,
-        count           = count,
-    }, cb)
+    self:request("readMemory", arguments, cb)
 end
 
 ---Write bytes to an adapter memory reference.
----@param ref    string   memoryReference
----@param offset integer  byte offset from ref
----@param data   string   base64-encoded bytes to write
+---@param arguments easydap.dap.proto.WriteMemoryArguments
 ---@param cb     fun(body: table?, err: string?)
-function Session:write_memory(ref, offset, data, cb)
+function Session:write_memory(arguments, cb)
     if not self:capable("supportsWriteMemoryRequest") then
         return cb(nil, "adapter does not support writeMemory")
     end
-    self:request("writeMemory", {
-        memoryReference = ref,
-        offset          = offset,
-        data            = data,
-    }, cb)
+    self:request("writeMemory", arguments, cb)
 end
 
 ---Query valid breakpoint locations within a source range.
----@param source   easydap.dap.proto.Source
----@param line     integer
----@param end_line integer?
+---@param arguments easydap.dap.proto.BreakpointLocationsArguments
 ---@param cb       fun(locations: table[]?, err: string?)
-function Session:breakpoint_locations(source, line, end_line, cb)
+function Session:breakpoint_locations(arguments, cb)
     if not self:capable("supportsBreakpointLocationsRequest") then
         return cb(nil, "adapter does not support breakpointLocations")
     end
-    local args = { source = source, line = line }
-    if end_line then args.endLine = end_line end
-    self:request("breakpointLocations", args, function(body, err)
+    self:request("breakpointLocations", arguments, function(body, err)
         cb(body and body.breakpoints, err)
     end)
 end
@@ -1325,21 +1307,22 @@ function Session:data_breakpoints()
 end
 
 ---Resolve the dataId and supported access types for a data breakpoint on a
----variable or expression. Must be called while stopped (it scopes to the
----current frame when no container reference is given).
----@param name string                       variable name, or an expression
----@param variables_reference integer?       parent container reference (nil = expression in current frame)
+---variable or expression. Must be called while stopped: when no usable
+---`variablesReference` is given it scopes to the current frame (filling in
+---`frameId`), so `arguments.name` is treated as an expression.
+---@param arguments easydap.dap.proto.DataBreakpointInfoArguments
 ---@param cb fun(body: easydap.dap.proto.DataBreakpointInfoResponseBody?, err: string?)
-function Session:data_breakpoint_info(name, variables_reference, cb)
+function Session:data_breakpoint_info(arguments, cb)
     if not self:capable("supportsDataBreakpoints") then
         return cb(nil, "adapter does not support data breakpoints")
     end
-    local args = { name = name }
-    if variables_reference and variables_reference > 0 then
-        args.variablesReference = variables_reference
-    else
-        local frame = self:current_stack_frame()
-        if frame then args.frameId = frame.id end
+    local args = vim.deepcopy(arguments or {})
+    if not (args.variablesReference and args.variablesReference > 0) then
+        args.variablesReference = nil
+        if args.frameId == nil then
+            local frame = self:current_stack_frame()
+            if frame then args.frameId = frame.id end
+        end
     end
     self:request("dataBreakpointInfo", args, cb)
 end
@@ -1451,17 +1434,21 @@ end
 
 -- ── Data fetching ──────────────────────────────────────────────────────────
 
----Evaluate an expression in the current frame.
----@param expr    string
----@param context easydap.dap.proto.EvaluateContext
+---Evaluate an expression. When `arguments.frameId` is omitted it defaults to the
+---current frame (if any thread is stopped); a "clipboard" context falls back to
+---"hover" when the adapter lacks supportsClipboardContext.
+---@param arguments easydap.dap.proto.EvaluateArguments
 ---@param cb      fun(body: easydap.dap.proto.EvaluateResponseBody?, err: string?)
-function Session:evaluate(expr, context, cb)
-    local frame = self:current_stack_frame()
-    local actual_context = (context == "clipboard" and not self:capable("supportsClipboardContext"))
-        and "hover" or context
-    local args = { expression = expr, context = actual_context }
-    if frame and #self:stopped_threads() > 0 then
-        args.frameId = frame.id
+function Session:evaluate(arguments, cb)
+    local args = vim.deepcopy(arguments or {})
+    if args.context == "clipboard" and not self:capable("supportsClipboardContext") then
+        args.context = "hover"
+    end
+    if args.frameId == nil then
+        local frame = self:current_stack_frame()
+        if frame and #self:stopped_threads() > 0 then
+            args.frameId = frame.id
+        end
     end
     self:request("evaluate", args, cb)
 end
@@ -1611,18 +1598,16 @@ function Session:set_variable(reference, variable, value, cb)
 end
 
 ---Retrieve a virtual source by reference, returning a buffer number.
----The buffer is created once and cached.
----@param ref integer  sourceReference
+---The buffer is created once and cached, keyed by `arguments.sourceReference`.
+---@param arguments easydap.dap.proto.SourceArguments
 ---@param cb  fun(bufnr: integer?, err: string?)
-function Session:get_source_buffer(ref, cb)
+function Session:get_source_buffer(arguments, cb)
+    local ref = arguments.sourceReference
     local existing = self._source_buffers[ref]
     if existing and vim.api.nvim_buf_is_valid(existing) then
         return cb(existing)
     end
-    self:request("source", {
-        source          = { sourceReference = ref },
-        sourceReference = ref,
-    }, function(body, err)
+    self:request("source", arguments, function(body, err)
         if err or not body then return cb(nil, err) end
         local buf   = vim.api.nvim_create_buf(false, true)
         local lines = vim.split(body.content or "", "\n", { plain = true })
@@ -1637,18 +1622,14 @@ function Session:get_source_buffer(ref, cb)
 end
 
 ---Request REPL completions from the adapter for the given text.
----@param text     string
----@param column   integer   1-based cursor column
----@param frame_id integer?
+---@param arguments easydap.dap.proto.CompletionsArguments
 ---@param cb       fun(targets: easydap.dap.proto.CompletionItem[])
-function Session:completions(text, column, frame_id, cb)
+function Session:completions(arguments, cb)
     if not self:capable("supportsCompletionsRequest") then
         cb({})
         return
     end
-    local args = { text = text, column = column }
-    if frame_id then args.frameId = frame_id end
-    self:request("completions", args, function(body, err)
+    self:request("completions", arguments, function(body, err)
         cb(not err and body and body.targets or {})
     end)
 end

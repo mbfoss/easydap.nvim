@@ -325,26 +325,26 @@ end
 ---@param id number
 ---@param granularity easydap.dap.proto.SteppingGranularity?
 function M.next(id, granularity)
-    local s = _sessions[id]; if s then s:next(nil, granularity) end
+    local s = _sessions[id]; if s then s:next({ granularity = granularity }) end
 end
 
 ---@param id number
 ---@param granularity easydap.dap.proto.SteppingGranularity?
 ---@param target_id integer?  a StepInTarget id from step_in_targets
 function M.step_in(id, granularity, target_id)
-    local s = _sessions[id]; if s then s:step_in(nil, granularity, target_id) end
+    local s = _sessions[id]; if s then s:step_in({ granularity = granularity, targetId = target_id }) end
 end
 
 ---@param id number
 ---@param granularity easydap.dap.proto.SteppingGranularity?
 function M.step_out(id, granularity)
-    local s = _sessions[id]; if s then s:step_out(nil, granularity) end
+    local s = _sessions[id]; if s then s:step_out({ granularity = granularity }) end
 end
 
 ---@param id number
 ---@param granularity easydap.dap.proto.SteppingGranularity?
 function M.step_back(id, granularity)
-    local s = _sessions[id]; if s then s:step_back(nil, granularity) end
+    local s = _sessions[id]; if s then s:step_back({ granularity = granularity }) end
 end
 
 ---@param id number
@@ -357,7 +357,7 @@ end
 ---@param cb       fun(targets: easydap.dap.proto.StepInTarget[]?, err: string?)
 function M.step_in_targets(id, frame_id, cb)
     local s = _sessions[id]
-    if s then s:step_in_targets(frame_id, cb) else cb(nil, "no session") end
+    if s then s:step_in_targets({ frameId = frame_id }, cb) else cb(nil, "no session") end
 end
 
 ---@param id     number
@@ -366,19 +366,19 @@ end
 ---@param cb     fun(targets: easydap.dap.proto.GotoTarget[]?, err: string?)
 function M.goto_targets(id, source, line, cb)
     local s = _sessions[id]
-    if s then s:goto_targets(source, line, cb) else cb(nil, "no session") end
+    if s then s:goto_targets({ source = source, line = line }, cb) else cb(nil, "no session") end
 end
 
 ---@param id        number
 ---@param target_id integer
 function M.set_next_statement(id, target_id)
-    local s = _sessions[id]; if s then s:set_next_statement(target_id) end
+    local s = _sessions[id]; if s then s:set_next_statement({ targetId = target_id }) end
 end
 
 ---@param id       number
 ---@param frame_id integer
 function M.restart_frame(id, frame_id)
-    local s = _sessions[id]; if s then s:restart_frame(frame_id) end
+    local s = _sessions[id]; if s then s:restart_frame({ frameId = frame_id }) end
 end
 
 ---@param id number
@@ -398,7 +398,7 @@ end
 ---@param cb         fun(err: string?)?
 function M.terminate_threads(id, thread_ids, cb)
     local s = _sessions[id]
-    if s then s:terminate_threads(thread_ids, cb) elseif cb then cb("no session") end
+    if s then s:terminate_threads({ threadIds = thread_ids }, cb) elseif cb then cb("no session") end
 end
 
 ---@param id number
@@ -435,7 +435,7 @@ function M.complete(id, text, column, cb)
     local sess = _sessions[id]
     if not sess then cb({}); return end
     local frame = sess:current_stack_frame()
-    sess:completions(text, column, frame and frame.id, cb)
+    sess:completions({ text = text, column = column, frameId = frame and frame.id }, cb)
 end
 
 ---@param id      number
@@ -445,7 +445,7 @@ end
 function M.evaluate(id, expr, context, cb)
     local sess = _sessions[id]
     if sess then
-        sess:evaluate(expr, context, cb)
+        sess:evaluate({ expression = expr, context = context }, cb)
     else
         cb(nil, "no session")
     end

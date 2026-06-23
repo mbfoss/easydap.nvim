@@ -319,7 +319,7 @@ function DisassemblyView:_load(focus)
 
     local count  = self:_page_size()
     local offset = -math.floor(count / 2)
-    sess:disassemble(ref, count, offset, function(instrs, err)
+    sess:disassemble({ memoryReference = ref, instructionCount = count, instructionOffset = offset }, function(instrs, err)
         vim.schedule(function()
             if err or not instrs then
                 vim.notify("[dap] disassemble failed: " .. (err or "no instructions"), vim.log.levels.WARN)
@@ -627,7 +627,7 @@ function DisassemblyView:_page(dir)
     local offset = dir == "down" and 1 or -page
 
     local gen = self._gen
-    sess:disassemble(edge_addr, page, offset, function(new, err)
+    sess:disassemble({ memoryReference = edge_addr, instructionCount = page, instructionOffset = offset }, function(new, err)
         if gen ~= self._gen then return end
         vim.schedule(function()
             if gen ~= self._gen then return end
