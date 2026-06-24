@@ -2,10 +2,10 @@
 ---Manages session spawning, adapter connections, and session-level events.
 ---Active session selection is handled by manager.lua.
 
-local connection       = require("easydap.dap.connection")
-local session_mod      = require("easydap.dap.session")
-local adapters         = require("easydap.adapters")
-local Signal           = require("easydap.util.Signal")
+local connection  = require("easydap.dap.connection")
+local session_mod = require("easydap.dap.session")
+local adapters    = require("easydap.adapters")
+local Signal      = require("easydap.util.Signal")
 
 -- ── Config evaluation ──────────────────────────────────────────────────────
 
@@ -36,7 +36,7 @@ local function _eval_config(config)
     return result
 end
 
-local M                = {}
+local M                 = {}
 
 ---@class easydap.client.SessionInfo
 ---@field id number
@@ -54,28 +54,28 @@ local M                = {}
 -- ── Signals ────────────────────────────────────────────────────────────────
 
 ---Fires when a session is registered: (id, sess, info)
-M.on_session_added     = Signal.new() ---@type easydap.util.Signal<fun(id:number, sess:easydap.dap.Session, info:easydap.client.SessionInfo)>
+M.on_session_added      = Signal.new() ---@type easydap.util.Signal<fun(id:number, sess:easydap.dap.Session, info:easydap.client.SessionInfo)>
 ---Fires when a session terminates: (id)
-M.on_session_removed   = Signal.new() ---@type easydap.util.Signal<fun(id:number)>
+M.on_session_removed    = Signal.new() ---@type easydap.util.Signal<fun(id:number)>
 ---Fires when a session's state changes: (id, info)
-M.on_session_updated   = Signal.new() ---@type easydap.util.Signal<fun(id:number, info:easydap.client.SessionInfo)>
+M.on_session_updated    = Signal.new() ---@type easydap.util.Signal<fun(id:number, info:easydap.client.SessionInfo)>
 ---Fires once per stop, after threads and stack frames have been fetched: (id, info)
-M.on_session_stopped   = Signal.new() ---@type easydap.util.Signal<fun(id:number, info:easydap.client.SessionInfo)>
+M.on_session_stopped    = Signal.new() ---@type easydap.util.Signal<fun(id:number, info:easydap.client.SessionInfo)>
 ---Fires for every raw DAP message: (id, direction, msg)
-M.on_raw_message       = Signal.new() ---@type easydap.util.Signal<fun(id:number, direction:"in"|"out", msg:table)>
+M.on_raw_message        = Signal.new() ---@type easydap.util.Signal<fun(id:number, direction:"in"|"out", msg:table)>
 ---Fires when thread or frame selection changes in any session: (id, sess)
-M.on_selection_changed = Signal.new() ---@type easydap.util.Signal<fun(id:number, sess:easydap.dap.Session)>
+M.on_selection_changed  = Signal.new() ---@type easydap.util.Signal<fun(id:number, sess:easydap.dap.Session)>
 ---Fires after a variable value is successfully changed by the user: (id, sess)
-M.on_variable_changed  = Signal.new() ---@type easydap.util.Signal<fun(id:number, sess:easydap.dap.Session)>
+M.on_variable_changed   = Signal.new() ---@type easydap.util.Signal<fun(id:number, sess:easydap.dap.Session)>
 ---Fires when a breakpoint's adapter-verified status changes: (id, bp, status)
 M.on_breakpoint_updated = Signal.new() ---@type easydap.util.Signal<fun(id:number, bp:table, status:easydap.dap.BpStatus)>
 
 -- ── Session registry ───────────────────────────────────────────────────────
 
 ---@type table<number, easydap.dap.Session>
-local _sessions        = {}
-local _next_id         = 1
-local _start_counter   = 0
+local _sessions         = {}
+local _next_id          = 1
+local _start_counter    = 0
 
 ---@param id number
 ---@param sess easydap.dap.Session
@@ -254,7 +254,7 @@ function M._start_stdio(config, opts, progress)
     -- throw a raw Lua error (and leaving the run uncleaned because on_fail never
     -- fires).
     if vim.fn.executable(cmd[1]) == 0 then
-        local msg = ("adapter executable not found: %s — install it (see :checkhealth easydap) "
+        local msg = ("adapter executable not found: %s"
             .. "or override its `command` in require('easydap.adapters')"):format(cmd[1])
         vim.notify("[dap] " .. msg, vim.log.levels.ERROR)
         progress("[dap] " .. msg)
@@ -459,7 +459,9 @@ end
 ---@param cb     fun(targets: table[])
 function M.complete(id, text, column, cb)
     local sess = _sessions[id]
-    if not sess then cb({}); return end
+    if not sess then
+        cb({}); return
+    end
     local frame = sess:current_stack_frame()
     sess:completions({ text = text, column = column, frameId = frame and frame.id }, cb)
 end
