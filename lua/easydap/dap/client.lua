@@ -248,11 +248,32 @@ function M._start_stdio(config, opts, progress)
     local cmd = type(config.command) == "table"
         and config.command --[[@as string[] ]]
         or { config.command --[[@as string]] }
+
+    -- Pre-flight: the most common first-run failure is a missing adapter binary.
+    -- Catch it here with a friendly message instead of letting connection.stdio
+    -- throw a raw Lua error (and leaving the run uncleaned because on_fail never
+    -- fires).
+    if vim.fn.executable(cmd[1]) == 0 then
+        local msg = ("adapter executable not found: %s — install it (see :checkhealth easydap) "
+            .. "or override its `command` in require('easydap.adapters')"):format(cmd[1])
+        vim.notify("[dap] " .. msg, vim.log.levels.ERROR)
+        progress("[dap] " .. msg)
+        if opts.on_fail then opts.on_fail() end
+        return
+    end
+
     progress("starting adapter: " .. cmd[1])
-    local conn = connection.stdio(cmd, {
+    local ok, conn = pcall(connection.stdio, cmd, {
         cwd = config.command_cwd or vim.fn.getcwd(),
         env = config.command_env,
     })
+    if not ok or not conn then
+        local msg = "failed to start adapter: " .. table.concat(cmd, " ")
+        vim.notify("[dap] " .. msg, vim.log.levels.ERROR)
+        progress("[dap] " .. msg)
+        if opts.on_fail then opts.on_fail() end
+        return
+    end
 
     local sess = session_mod.new(conn, config)
     _register_session(sess, opts, progress)
