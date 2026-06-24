@@ -144,10 +144,9 @@ Built-in adapter definitions live in
 | `java-debug-server` | Java (external debug server, e.g. nvim-jdtls) |
 | `remote` | Generic TCP attach to a running DAP server |
 
-Most adapters expect their binary on your `PATH` (`codelldb`, `delve`,
-`netcoredbg`, `gdb`, `bash-debug-adapter`, …). The Node-script adapters
-(`js-debug`, `local-lua-debugger`) have no standard executable, so point their
-`command` at the script — see [Adding or overriding adapters](#adding-or-overriding-adapters).
+Several adapters resolve their binaries from a [Mason](https://github.com/mason-org/mason.nvim)
+install (`stdpath("data")/mason/packages/...`) and otherwise fall back to the
+system `PATH`.
 
 ### Adding or overriding adapters
 
@@ -166,11 +165,6 @@ adapters.myadapter = {
 
 -- Override a built-in field
 adapters.codelldb.command = "/opt/codelldb/codelldb"
-
--- Node-script adapters: point `command` at the script (no PATH binary exists)
-adapters["js-debug"].command = { "node", "/path/to/js-debug/src/dapDebugServer.js" }
-adapters["local-lua-debugger"].command     = { "node", "/path/to/extension/debugAdapter.js" }
-adapters["local-lua-debugger"].command_env = { LUA_PATH = "/path/to/debugger/?.lua;;" }
 ```
 
 Key adapter-config fields: `command` (string or argv), `host`/`port` (for TCP
