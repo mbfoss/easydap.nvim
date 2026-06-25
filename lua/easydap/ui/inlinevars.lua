@@ -104,18 +104,20 @@ local function _render_variables(frame, variables)
 
 	local target_row = (frame.line or 1) - 1
 
+	-- the locals query defines scope boundaries; without it we cannot tell a
+	-- local variable from an unrelated identifier, so skip rather than guess
+	local locals_query = vim.treesitter.query.get(lang, "locals")
+	if not locals_query then return end
+
 	-- narrow to the innermost scope containing the frame line
 	local scope_node = root
-	local locals_query = vim.treesitter.query.get(lang, "locals")
-	if locals_query then
-		for id, node in locals_query:iter_captures(root, bufnr) do
-			if locals_query.captures[id] == "scope" then
-				local sr, _, er, _ = node:range()
-				if sr <= target_row and target_row <= er then
-					local cur_sr, _, cur_er, _ = scope_node:range()
-					if (er - sr) < (cur_er - cur_sr) then
-						scope_node = node
-					end
+	for id, node in locals_query:iter_captures(root, bufnr) do
+		if locals_query.captures[id] == "scope" then
+			local sr, _, er, _ = node:range()
+			if sr <= target_row and target_row <= er then
+				local cur_sr, _, cur_er, _ = scope_node:range()
+				if (er - sr) < (cur_er - cur_sr) then
+					scope_node = node
 				end
 			end
 		end
@@ -123,11 +125,9 @@ local function _render_variables(frame, variables)
 
 	-- pre-collect direct child scopes so the walk does not descend into them
 	local _child_scopes = {}
-	if locals_query then
-		for id, node in locals_query:iter_captures(scope_node, bufnr) do
-			if locals_query.captures[id] == "scope" and node ~= scope_node then
-				_child_scopes[node:id()] = true
-			end
+	for id, node in locals_query:iter_captures(scope_node, bufnr) do
+		if locals_query.captures[id] == "scope" and node ~= scope_node then
+			_child_scopes[node:id()] = true
 		end
 	end
 
@@ -173,6 +173,21 @@ local function _render_variables(frame, variables)
 	end
 end
 
+-- Inline annotations should reflect what is in lexical scope at the current
+-- frame, so restrict to the locals/arguments scopes and skip globals,
+-- statics, registers, etc. Prefer the adapter's presentationHint and fall
+-- back to the scope name when it is omitted.
+---@param scope easydap.dap.proto.Scope
+---@return boolean
+local function _is_local_scope(scope)
+	local hint = scope.presentationHint
+	if hint then
+		return hint == "locals" or hint == "arguments"
+	end
+	local name = (scope.name or ""):lower()
+	return name:find("local", 1, true) ~= nil or name:find("argument", 1, true) ~= nil
+end
+
 ---@param session easydap.dap.Session
 ---@param frame table
 ---@param cb function
@@ -188,7 +203,7 @@ local function _collect_variables(session, frame, cb)
 	local pending = 0
 
 	for _, scope in ipairs(scopes) do
-		if scope.variablesReference and scope.variablesReference ~= 0 then
+		if _is_local_scope(scope) and scope.variablesReference and scope.variablesReference ~= 0 then
 			pending = pending + 1
 
 			session:fetch_variables(scope, function()
