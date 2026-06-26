@@ -135,8 +135,6 @@ local function _place_from_tree(root, ctx)
 	local bufnr, path, locals_query, dbg, target_row =
 		ctx.bufnr, ctx.path, ctx.locals_query, ctx.dbg, ctx.target_row
 
-	if not vim.api.nvim_buf_is_valid(bufnr) then return end
-
 	-- narrow to the innermost scope containing the frame line
 	local scope_node = root
 	for id, node in locals_query:iter_captures(root, bufnr) do
@@ -274,6 +272,8 @@ local function _render_variables(frame, variables)
 	local placed = false
 	local function place(trees)
 		if placed or seq ~= _seq then return end
+		if not vim.api.nvim_buf_is_valid(bufnr) then return end
+
 		local tree = trees and trees[1]
 		if not tree then return end
 		placed = true
