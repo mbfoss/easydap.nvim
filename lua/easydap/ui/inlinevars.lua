@@ -1,23 +1,23 @@
-local M            = {}
+local M              = {}
 
-local str_util     = require("easydap.util.str_util")
-local manager      = require("easydap.manager")
-local config       = require("easydap.config")
-local extmarks     = require("easydap.ui.extmarks")
-local ui_util      = require("easydap.util.ui_util")
+local str_util       = require("easydap.util.str_util")
+local manager        = require("easydap.manager")
+local config         = require("easydap.config")
+local extmarks       = require("easydap.ui.extmarks")
+local ui_util        = require("easydap.util.ui_util")
 
-local _group       = extmarks.define_group("inlinevars", { priority = 100 })
-local _seq         = 0
-local _max_size    = 30
+local _group         = extmarks.define_group("inlinevars", { priority = 100 })
+local _seq           = 0
+local _max_size      = 30
 -- "eol" pills carry the variable name too, so they get a larger budget; the
 -- name is cropped to a third of it, the value to the rest.
 local _line_max_size = 45
-local _enabled     = true
-local _gen         = 0
+local _enabled       = true
+local _gen           = 0
 local _unsub
 local _unsub_var
-local _mark_id     = 0
-local _clear_timer = nil
+local _mark_id       = 0
+local _clear_timer   = nil
 
 ui_util.define_themed_hl("EasydapPill", function()
 	return { link = "Visual", default = true }
@@ -128,39 +128,14 @@ local function _set_line_extmark(file, row, items, pos)
 	}, nil)
 end
 
-local function _render_variables(frame, variables)
-	if not frame or not frame.source or not frame.source.path then return end
+---Place the inline annotations for a frame using an already-parsed tree.
+---@param root TSNode
+---@param ctx { bufnr:integer, path:string, locals_query:vim.treesitter.Query, dbg:table<string,string>, target_row:integer }
+local function _place_from_tree(root, ctx)
+	local bufnr, path, locals_query, dbg, target_row =
+		ctx.bufnr, ctx.path, ctx.locals_query, ctx.dbg, ctx.target_row
 
-	local path = frame.source.path
-	local bufnr = vim.fn.bufnr(path)
-	if bufnr == -1 or not vim.api.nvim_buf_is_loaded(bufnr) then return end
-
-	local lang = vim.treesitter.language.get_lang(vim.bo[bufnr].filetype)
-	if not lang then return end
-
-	local parser_ok, parser = pcall(vim.treesitter.get_parser, bufnr, lang)
-	if not (parser_ok and parser) then return end
-
-	local tree = parser:parse()[1]
-	if not tree then return end
-
-	local root = tree:root()
-
-	local dbg = {}
-	for _, v in ipairs(variables or {}) do
-		if v.name and v.value then
-			dbg[v.name] = vim.trim(v.value)
-		end
-	end
-
-	if vim.tbl_isempty(dbg) then return end
-
-	local target_row = (frame.line or 1) - 1
-
-	-- the locals query defines scope boundaries; without it we cannot tell a
-	-- local variable from an unrelated identifier, so skip rather than guess
-	local locals_query = vim.treesitter.query.get(lang, "locals")
-	if not locals_query then return end
+	if not vim.api.nvim_buf_is_valid(bufnr) then return end
 
 	-- narrow to the innermost scope containing the frame line
 	local scope_node = root
@@ -259,6 +234,54 @@ local function _render_variables(frame, variables)
 		table.sort(items, function(a, b) return a.col < b.col end)
 		_set_line_extmark(path, row, items, mode)
 	end
+end
+
+local function _render_variables(frame, variables)
+	if not frame or not frame.source or not frame.source.path then return end
+
+	local path = frame.source.path
+	local bufnr = vim.fn.bufnr(path)
+	if bufnr == -1 or not vim.api.nvim_buf_is_loaded(bufnr) then return end
+
+	local lang = vim.treesitter.language.get_lang(vim.bo[bufnr].filetype)
+	if not lang then return end
+
+	local dbg = {}
+	for _, v in ipairs(variables or {}) do
+		if v.name and v.value then
+			dbg[v.name] = vim.trim(v.value)
+		end
+	end
+	if vim.tbl_isempty(dbg) then return end
+
+	-- the locals query defines scope boundaries; without it we cannot tell a
+	-- local variable from an unrelated identifier, so skip rather than guess
+	local locals_query = vim.treesitter.query.get(lang, "locals")
+	if not locals_query then return end
+
+	local parser_ok, parser = pcall(vim.treesitter.get_parser, bufnr, lang)
+	if not (parser_ok and parser) then return end
+
+	local ctx = {
+		bufnr = bufnr,
+		path = path,
+		locals_query = locals_query,
+		dbg = dbg,
+		target_row = (frame.line or 1) - 1,
+	}
+
+	local seq = _seq
+	local placed = false
+	local function place(trees)
+		if placed or seq ~= _seq then return end
+		local tree = trees and trees[1]
+		if not tree then return end
+		placed = true
+		_place_from_tree(tree:root(), ctx)
+	end
+
+	local trees = parser:parse(nil, place)
+	if trees then place(trees) end
 end
 
 -- Inline annotations should reflect what is in lexical scope at the current
