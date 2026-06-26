@@ -6,6 +6,7 @@ local connection  = require("easydap.dap.connection")
 local session_mod = require("easydap.dap.session")
 local adapters    = require("easydap.adapters")
 local Signal      = require("easydap.util.Signal")
+local str_util    = require("easydap.util.str_util")
 
 -- ── Config evaluation ──────────────────────────────────────────────────────
 
@@ -245,9 +246,11 @@ function M._start_stdio(config, opts, progress)
         return
     end
 
+    -- A string command may carry args (e.g. "python3 -m debugpy"); split it on
+    -- shell whitespace so the first token is the executable and the rest are args.
     local cmd = type(config.command) == "table"
         and config.command --[[@as string[] ]]
-        or { config.command --[[@as string]] }
+        or str_util.split_shell_args(config.command --[[@as string]])
 
     -- Pre-flight: the most common first-run failure is a missing adapter binary.
     -- Catch it here with a friendly message instead of letting connection.stdio

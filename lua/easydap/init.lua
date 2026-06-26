@@ -1,5 +1,15 @@
 local M = {}
 
+setmetatable(M, {
+    __index = function(t, k)
+        if k == "adapters" then
+            local adapters = require("easydap.adapters")
+            rawset(t, k, adapters)
+            return adapters
+        end
+    end,
+})
+
 ---@type easydap.DebugView?
 local _debug_view
 ---@type easydap.DisassemblyView?
@@ -273,6 +283,10 @@ local function _init()
         vim.schedule(function() M.debug_view():show() end)
     end)
 end
+
+-- adapters table is Lazily loaded on first access
+---@type table<string, easydap.dap.Config>
+M.adapters = nil
 
 ---Return the singleton DebugView, creating it on first call.
 ---@return easydap.DebugView
