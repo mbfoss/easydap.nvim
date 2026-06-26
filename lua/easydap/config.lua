@@ -10,11 +10,21 @@
 ---@field disabled_cond_breakpoint string  conditional breakpoint, disabled
 ---@field disabled_logpoint        string  logpoint, disabled
 
+---Where to render inline variable values while stopped. Names other than "off"
+---map directly to a `virt_text_pos` (see `:h nvim_buf_set_extmark`):
+---  • "inline"          — a pill right after each variable occurrence (default)
+---  • "eol"             — one `name: value` pill per line, after the line text
+---  • "eol_right_align" — one pill per line, right-aligned after the line text
+---  • "right_align"     — one pill per line, right-aligned at the window edge
+---  • "off"             — do not render inline values
+---@alias easydap.InlineVarsMode "inline"|"eol"|"eol_right_align"|"right_align"|"off"
+
 ---@class easydap.Config
 ---@field root_markers         string[]  filenames/dirs whose presence identifies a project root
 ---@field data_filename string
 ---@field debug_value_max_len  integer   max characters shown for variable/expression values in DebugView before truncating
 ---@field antiflicker_delay    integer   milliseconds to wait before clearing stale UI (inline vars, DebugView) to avoid flicker during step-through
+---@field inline_vars          easydap.InlineVarsMode  placement of inline variable values
 ---@field signs easydap.Signs
 
 ---@type easydap.Config
@@ -23,6 +33,7 @@ local M = {
 	data_filename = ".easydap.json",
 	debug_value_max_len = 70,
 	antiflicker_delay   = 200,
+	inline_vars         = "inline",
 	signs = {
 		debug_frame              = "▶",
 		active_breakpoint        = "●",

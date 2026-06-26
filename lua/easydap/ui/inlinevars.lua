@@ -9,6 +9,9 @@ local ui_util      = require("easydap.util.ui_util")
 local _group       = extmarks.define_group("inlinevars", { priority = 100 })
 local _seq         = 0
 local _max_size    = 30
+-- "eol" pills carry the variable name too, so they get a larger budget; the
+-- name is cropped to a third of it, the value to the rest.
+local _line_max_size = 45
 local _enabled     = true
 local _gen         = 0
 local _unsub
@@ -28,6 +31,19 @@ ui_util.define_themed_hl("EasydapPillSep", function()
 		bg = "NONE",
 	}
 end)
+
+---Configured placement of inline values; defaults to "inline".
+---@return easydap.InlineVarsMode
+local function _mode()
+	return config.inline_vars or "inline"
+end
+
+---Whether inline values should currently be rendered (runtime toggle on, and
+---placement not set to "off").
+---@return boolean
+local function _active()
+	return _enabled and _mode() ~= "off"
+end
 
 local function _cancel_clear_timer()
 	if _clear_timer then
@@ -55,22 +71,59 @@ local function _deferred_clear(delay_ms)
 	end))
 end
 
+---Build the `virt_text` chunks for one value pill: ` ◖text◗`.
+---@param text string
+---@return table[]
+local function _pill(text)
+	return {
+		{ " " },
+		{ "\u{E0B6}", "EasydapPillSep" },
+		{ text,       "EasydapPill" },
+		{ "\u{E0B4}", "EasydapPillSep" },
+	}
+end
+
+---Place a value pill inline, right after a variable occurrence. The pill shows
+---only the value since the name is already in the source at that column.
 ---@param file string
 ---@param row number  -- 0-based
 ---@param col number  -- 0-based
 ---@param text string
-local function _set_extmark(file, row, col, text)
+local function _set_inline_extmark(file, row, col, text)
 	text = vim.trim(text)
 	if text == "" then return end
 	_mark_id = _mark_id + 1
 	_group.set_file_extmark(_mark_id, file, row + 1, col, {
-		virt_text = {
-			{ " " },
-			{ "\u{E0B6}", "EasydapPillSep" },
-			{ text,       "EasydapPill" },
-			{ "\u{E0B4}", "EasydapPillSep" },
-		},
+		virt_text = _pill(text),
 		virt_text_pos = "inline",
+		hl_mode = "combine",
+	}, nil)
+end
+
+---Place one detached annotation for a whole line (the "eol"/"eol_right_align"/
+---"right_align" modes). Each item becomes a `name: value` pill; since the pills
+---are detached from the source they carry the name too.
+---@param file string
+---@param row number  -- 0-based
+---@param items {col:number, name:string, value:string}[]
+---@param pos "eol"|"eol_right_align"|"right_align"  -- virt_text_pos
+local function _set_line_extmark(file, row, items, pos)
+	local name_max = math.floor(_line_max_size / 3)
+	local value_max = _line_max_size - name_max
+	local virt_text = {}
+	for _, item in ipairs(items) do
+		local value = vim.trim(tostring(item.value))
+		if value ~= "" then
+			local name = str_util.crop_for_ui(item.name, name_max)
+			value = str_util.crop_for_ui(value, value_max)
+			vim.list_extend(virt_text, _pill(name .. ": " .. value))
+		end
+	end
+	if #virt_text == 0 then return end
+	_mark_id = _mark_id + 1
+	_group.set_file_extmark(_mark_id, file, row + 1, 0, {
+		virt_text = virt_text,
+		virt_text_pos = pos,
 		hl_mode = "combine",
 	}, nil)
 end
@@ -156,20 +209,64 @@ local function _render_variables(frame, variables)
 
 	walk(scope_node)
 
-	-- place each annotation on the occurrence closest to the current execution line
+	-- pick one occurrence per variable: prefer the closest one at or before the
+	-- execution line (it has actually run, so its value is meaningful there), and
+	-- only fall back to the nearest occurrence after the line when none precedes.
+	---@type table<string, {sr:number, ec:number}>
+	local best_by_name = {}
 	for name, positions in pairs(occurrences) do
-		local best, best_dist = nil, math.huge
+		local before, before_dist = nil, math.huge
+		local after, after_dist = nil, math.huge
 		for _, pos in ipairs(positions) do
-			local dist = math.abs(pos.sr - target_row)
-			if dist < best_dist then
-				best_dist = dist
-				best = pos
+			if pos.sr <= target_row then
+				local dist = target_row - pos.sr
+				if dist < before_dist then
+					before_dist = dist
+					before = pos
+				end
+			else
+				local dist = pos.sr - target_row
+				if dist < after_dist then
+					after_dist = dist
+					after = pos
+				end
 			end
 		end
-		if best then
+		local best = before or after
+		if best then best_by_name[name] = best end
+	end
+
+	local mode = _mode()
+	if mode == "inline" then
+		for name, best in pairs(best_by_name) do
 			local text = str_util.crop_for_ui(tostring(dbg[name]), _max_size)
-			_set_extmark(path, best.sr, best.ec, text)
+			_set_inline_extmark(path, best.sr, best.ec, text)
 		end
+		return
+	end
+	-- "off" is filtered out upstream by _active(); only detached modes remain
+	---@cast mode "eol"|"eol_right_align"|"right_align"
+
+	-- detached modes: one annotation per line, with the mode used directly as the
+	-- virt_text_pos. Multiple eol/right-aligned marks on the same line would stack
+	-- or overlap, so group the variables chosen for each line into a single
+	-- extmark, ordered by column.
+	---@type table<number, {col:number, name:string, value:string}[]>
+	local by_line = {}
+	for name, best in pairs(best_by_name) do
+		by_line[best.sr] = by_line[best.sr] or {}
+		local items = by_line[best.sr]
+		-- value is cropped (with the line-mode budget) in _set_line_extmark
+		items[#items + 1] = {
+			col = best.ec,
+			name = name,
+			value = dbg[name],
+		}
+	end
+
+	for row, items in pairs(by_line) do
+		table.sort(items, function(a, b) return a.col < b.col end)
+		_set_line_extmark(path, row, items, mode)
 	end
 end
 
@@ -225,7 +322,7 @@ local function _collect_variables(session, frame, cb)
 end
 
 local function _update(session, frame)
-	if not _enabled then return end
+	if not _active() then return end
 	if not frame or not frame.source or not frame.source.path then return end
 
 	_seq = _seq + 1
@@ -292,6 +389,24 @@ function M.enable(v)
 			_unsub_var(); _unsub_var = nil
 		end
 	end
+end
+
+---Re-render inline values for the active session's current frame, honouring the
+---current placement mode. Clears when inactive or the session is not stopped.
+function M.refresh()
+	_clear()
+	if not _active() then return end
+	local sess = manager.session()
+	if sess and sess.state == "stopped" then
+		_update(sess, sess:current_stack_frame())
+	end
+end
+
+---Change where inline values are rendered at runtime and re-render immediately.
+---@param mode easydap.InlineVarsMode
+function M.set_mode(mode)
+	config.inline_vars = mode
+	M.refresh()
 end
 
 return M

@@ -243,6 +243,7 @@ require("easydap").setup({
   data_filename       = ".easydap.json",
   debug_value_max_len = 70,           -- truncate variable/expression values past this
   antiflicker_delay   = 200,          -- ms before clearing stale UI during step-through
+  inline_vars         = "inline",     -- value placement: "inline" | "eol" | "eol_right_align" | "right_align" | "off"
   signs = {
     debug_frame              = "▶",
     active_breakpoint        = "●",
