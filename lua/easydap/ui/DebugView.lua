@@ -1070,7 +1070,7 @@ function DebugView:_open(focus)
     end
     local prev_win = vim.api.nvim_get_current_win()
     local bufnr = self:get_bufnr(function() end)
-    vim.cmd("vsplit")
+    vim.cmd("botright vsplit")
     local win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(win, bufnr)
     vim.api.nvim_win_set_width(win, math.ceil(vim.o.columns * 0.2))
