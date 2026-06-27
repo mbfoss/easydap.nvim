@@ -1,4 +1,4 @@
-local ui_util      = require "easydap.util.ui_util"
+local OutputBuffer = require "easydap.ui.OutputBuffer"
 local _config      = require "easydap.config"
 ---Presentation options for a buffer registered with the run host.
 ---@class easydap.AddBufOpts
@@ -114,28 +114,21 @@ M.start = function(task, callbacks)
     add_bufnr(repl:bufnr(), { label = "REPL", priority = -1 })
 
     -- Output buffer: created on first non-console output event.
-    local out_buf = nil ---@type integer?
+    local out_buf = nil ---@type easydap.OutputBuffer?
 
     local function append_output(text)
         local lines = vim.split(text, "\n", { plain = true })
         if lines[#lines] == "" then table.remove(lines) end
         if #lines == 0 then return end
         if not out_buf then
-            out_buf                    = vim.api.nvim_create_buf(true, true)
-            vim.bo[out_buf].buftype    = "nofile"
-            vim.bo[out_buf].swapfile   = false
-            vim.bo[out_buf].buflisted  = true
-            vim.bo[out_buf].bufhidden  = "hide"
-            vim.bo[out_buf].modifiable = false
-            vim.api.nvim_buf_set_name(out_buf,
-                _unique_buf_name("easydap://" .. run_key .. "/output"))
-
-            add_bufnr(out_buf, { label = "Output", priority = 0, autoscroll = true })
+            out_buf = OutputBuffer.new({
+                name      = _unique_buf_name("easydap://" .. run_key .. "/output"),
+                max_lines = _config.output_max_lines,
+            })
+            local buf = assert(out_buf:bufnr())
+            add_bufnr(buf, { label = "Output", priority = 0, autoscroll = true })
         end
-        if not vim.api.nvim_buf_is_valid(out_buf) then return end
-        vim.bo[out_buf].modifiable = true
-        vim.api.nvim_buf_set_lines(out_buf, -1, -1, false, lines)
-        vim.bo[out_buf].modifiable = false
+        out_buf:append(lines)
     end
 
     local _sessions     = {} ---@type table<integer, easydap.dap.Session>
@@ -188,25 +181,15 @@ M.start = function(task, callbacks)
 
                 local unsub
                 if task.raw_messages then
-                    local max_lines = _config.raw_messages_max_lines or 10000
-                    local buf
-                    buf = ui_util.create_scratch_buffer(true, {
-                            buftype = "nofile",
-                            swapfile = false,
-                            buflisted = true,
-                            bufhidden = "hide",
-                            modifiable = false,
-                        },
-                        function()
-                            buf = nil
-                        end)
-
-                    vim.api.nvim_buf_set_name(buf,
-                        _unique_buf_name("easydap://" .. run_key .. "/dap-messages"))
+                    local out ---@type easydap.OutputBuffer?
+                    out = OutputBuffer.new({
+                        name      = _unique_buf_name("easydap://" .. run_key .. "/dap-messages"),
+                        max_lines = _config.output_max_lines,
+                    })
+                    local buf = assert(out:bufnr())
                     add_bufnr(buf, { label = "DAP Messages", priority = -3, autoscroll = true })
-
                     unsub = manager.on_raw_message:subscribe(function(sid, direction, msg)
-                        if sid ~= id or not buf or not vim.api.nvim_buf_is_valid(buf) then
+                        if sid ~= id or not out:is_valid() then
                             unsub()
                             return
                         end
@@ -215,16 +198,7 @@ M.start = function(task, callbacks)
                         local header = ("%s [%s] %s"):format(arrow, msg.type or "?", name)
                         if msg.seq then header = header .. " #" .. msg.seq end
                         local ok, json = pcall(vim.json.encode, msg)
-                        vim.bo[buf].modifiable = true
-                        vim.api.nvim_buf_set_lines(buf, -1, -1, false,
-                            { header, ok and json or tostring(msg), "" })
-                        if max_lines > 0 then
-                            local excess = vim.api.nvim_buf_line_count(buf) - max_lines
-                            if excess > 0 then
-                                vim.api.nvim_buf_set_lines(buf, 0, excess, false, {})
-                            end
-                        end
-                        vim.bo[buf].modifiable = false
+                        out:append({ header, ok and json or tostring(msg), "" })
                     end)
                 end
 
