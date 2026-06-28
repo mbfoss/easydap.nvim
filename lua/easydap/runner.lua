@@ -20,13 +20,14 @@ local M = {}
 ---@field request?         "launch"|"attach"
 ---@field host?            string                  attach only
 ---@field port?            integer                 attach only (required for the `remote` adapter)
+---@field process_id?      integer                 attach only — target process id (PID) to attach to
 ---@field command?         string|string[]         program to debug ([program, arg1, …] shorthand allowed)
 ---@field cwd?             string
 ---@field env?             table<string,string>
 ---@field clear_env?       boolean                 pass `env` verbatim without merging the process environment
 ---@field run_in_terminal? boolean
 ---@field stop_on_entry?   boolean
----@field request_args?    table                   sent verbatim in the launch/attach request (overrides the generic fields)
+---@field request_args?    table                   raw DAP launch/attach body; deep-merged over the derived args and wins on conflicts. Uses the adapter's NATIVE DAP keys (e.g. `stopAtEntry` for netcoredbg, `pid` vs `processId`), which may not line up with the generic fields above — a mismatched key is added, not a substitute for the generic one.
 ---@field raw_messages?    boolean                 capture raw DAP protocol messages in a dedicated buffer
 
 ---A run: a unique id (used as its panel group), the task name, a cancel

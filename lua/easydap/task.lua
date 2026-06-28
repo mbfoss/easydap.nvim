@@ -54,11 +54,13 @@ M.start = function(task, callbacks)
     local manager  = require("easydap.manager")
     local adapters = require("easydap.adapters")
 
-    -- Resolve named adapter config and build request_args via one of two paths:
-    --   1. task.request_args is set  → use verbatim as the DAP launch/attach arguments
-    --   2. task.request_args absent  → call config.derive_request_args(config, task, request)
-    --      to derive args from the generic task fields (command, args, cwd, env, …)
-    -- Fallback when neither is available: use the adapter's base launch/attach args.
+    -- Resolve the named adapter config and build request_args:
+    --   1. Derive a base body from the generic task fields (command, cwd, env, …) by
+    --      calling the adapter's derive_launch_args(task) or derive_attach_args(task),
+    --      whichever matches `request`. Adapters that don't support a request omit it.
+    --   2. Deep-merge task.request_args on top — it uses the adapter's NATIVE DAP keys
+    --      and wins on conflicts (see easydap.Task.request_args).
+    -- An adapter with neither a derive fn nor task.request_args sends an empty body.
     local base     = adapters[task.adapter]
     if not base then
         report("unknown DAP adapter: " .. tostring(task.adapter))
@@ -89,7 +91,7 @@ M.start = function(task, callbacks)
         config.request_args = result
     end
 
-    -- override  with user provided args
+    -- Deep-merge the user-supplied raw args over the derived body; native keys win.
     config.request_args = vim.tbl_deep_extend("force", config.request_args or {}, task.request_args or {})
 
     -- Adapters with setup manage config.host/port themselves (e.g. debugpy picks a

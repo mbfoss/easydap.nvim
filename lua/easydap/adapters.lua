@@ -142,7 +142,7 @@ M.debugpy = {
     end,
 
     derive_attach_args = function(task)
-        local args = { processId = 0 }
+        local args = { processId = task.process_id }
         if task.cwd ~= nil then args.cwd = task.cwd end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -174,7 +174,7 @@ M["debugpy-module"] = {
     end,
 
     derive_attach_args = function(task)
-        local args = { processId = 0 }
+        local args = { processId = task.process_id }
         if task.cwd ~= nil then args.cwd = task.cwd end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -205,7 +205,6 @@ M["debugpy-remote"] = {
 M.codelldb = {
     command            = "codelldb",
     derive_launch_args = function(task)
-
         local program, extra_args = _split_command(task)
         local args = {
             type        = "lldb",
@@ -222,7 +221,7 @@ M.codelldb = {
     end,
 
     derive_attach_args = function(task)
-        local args = { type = "lldb", pid = 0 }
+        local args = { type = "lldb", pid = task.process_id }
         if task.cwd ~= nil then args.cwd = task.cwd end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -234,9 +233,9 @@ M.gdb = {
     derive_launch_args = function(task)
         local program, extra_args = _split_command(task)
         local args = {
-            request                         = "launch",
-            program                         = program,
-            args                            = extra_args,
+            request = "launch",
+            program = program,
+            args    = extra_args,
         }
         if task.cwd ~= nil then args.cwd = task.cwd end
         local env = _resolve_env(task)
@@ -247,7 +246,7 @@ M.gdb = {
     end,
 
     derive_attach_args = function(task)
-        local args = { pid = 0 }
+        local args = { pid = task.process_id }
         if task.cwd ~= nil then args.cwd = task.cwd end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -274,7 +273,7 @@ M.netcoredbg = {
     end,
 
     derive_attach_args = function(task)
-        local args = { processId = 0 }
+        local args = { processId = task.process_id }
         if task.cwd ~= nil then args.cwd = task.cwd end
         if task.stop_on_entry ~= nil then args.stopAtEntry = task.stop_on_entry end
         return args
@@ -325,7 +324,7 @@ M.lldb = {
     end,
 
     derive_attach_args = function(task)
-        local args = { type = "lldb", pid = 0 }
+        local args = { type = "lldb", pid = task.process_id }
         if task.cwd ~= nil then args.cwd = task.cwd end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
@@ -358,7 +357,7 @@ M.delve = {
     end,
 
     derive_attach_args = function(task)
-        local args = { mode = "local", processId = 0 }
+        local args = { mode = "local", processId = task.process_id }
         if task.cwd ~= nil then args.cwd = task.cwd end
         if task.stop_on_entry ~= nil then args.stopOnEntry = task.stop_on_entry end
         return args
