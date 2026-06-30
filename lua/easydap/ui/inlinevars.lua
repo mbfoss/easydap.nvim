@@ -18,9 +18,6 @@ local _unsub
 local _unsub_var
 local _mark_id       = 0
 local _clear_timer   = nil
--- languages we've already warned about lacking a locals query, so the notice
--- fires once per language rather than on every stop
-local _warned_langs  = {}
 
 ui_util.define_themed_hl("EasydapPill", function()
 	return { link = "Visual", default = true }
@@ -257,15 +254,8 @@ local function _render_variables(frame, variables)
 
 	-- the locals query defines scope boundaries; without it we cannot tell a
 	-- local variable from an unrelated identifier, so skip rather than guess
-	local locals_query = vim.treesitter.query.get(lang, "locals")
-	if not locals_query then
-		if not _warned_langs[lang] then
-			_warned_langs[lang] = true
-			vim.notify(
-				("[easydap] inline values unavailable for '%s': no treesitter 'locals' query installed")
-				:format(lang),
-				vim.log.levels.WARN)
-		end
+	local locals_query_ok, locals_query = pcall(vim.treesitter.query.get, lang, "locals")
+	if not locals_query_ok or not locals_query then
 		return
 	end
 
