@@ -137,9 +137,9 @@ local function _fmt_breakpoint(data, chunks)
     if data.disabled then
         icon, hl = "ø", "NonText"
     elseif data.bp_kind == "exception_type" and data.unsupported then
-        icon, hl = "✗", "DiagnosticError"
+        icon, hl = config.signs.exception_breakpoint_unsupported, "DiagnosticError"
     elseif data.bp_kind == "exception_filter" or data.bp_kind == "exception_type" then
-        icon, hl = "⚡", "DiagnosticInfo"
+        icon, hl = config.signs.exception_breakpoint, "DiagnosticInfo"
     elseif data.bp_kind == "data" then
         icon, hl = (data.verified == false) and "◌" or "◉",
             (data.verified == false) and "DiagnosticWarn" or "DiagnosticInfo"
