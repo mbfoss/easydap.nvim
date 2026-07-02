@@ -1,6 +1,6 @@
 local Tree = require("easydap.util.Tree")
 local ui_util = require("easydap.util.ui_util")
-local Signal = require("easydap.neotoolkit.Signal")
+local Signal = require("easydap.tk.Signal")
 
 ---@class easydap.ui.TreeBuffer.Item
 ---@field id any
@@ -41,8 +41,8 @@ local _ns_id = vim.api.nvim_create_namespace('nvtoolkitTreeBuffer')
 ---@field private _indent_string string
 ---@field private _expand_padding string
 ---@field private _indent_cache table<integer, string>
----@field private _on_selection easydap.neotoolkit.Signal<fun(id:any,data:any)>
----@field private _on_toggle easydap.neotoolkit.Signal<fun(id:any,data:any,expanded:boolean)>
+---@field private _on_selection easydap.tk.Signal<fun(id:any,data:any)>
+---@field private _on_toggle easydap.tk.Signal<fun(id:any,data:any,expanded:boolean)>
 ---@field private _bufnr integer
 ---@field private _tree easydap.util.Tree
 ---@field private _flat_ids any[]
@@ -69,8 +69,8 @@ function TreeBuffer.new(opts)
         _indent_string  = indent_str,
         _expand_padding = string.rep(" ", vim.fn.strdisplaywidth(expand_char)) .. " ",
         _indent_cache   = indent_cache,
-        _on_selection   = Signal.new(), ---@type easydap.neotoolkit.Signal<fun(id:any,data:any)>
-        _on_toggle      = Signal.new(), ---@type easydap.neotoolkit.Signal<fun(id:any,data:any,expanded:boolean)>
+        _on_selection   = Signal.new(), ---@type easydap.tk.Signal<fun(id:any,data:any)>
+        _on_toggle      = Signal.new(), ---@type easydap.tk.Signal<fun(id:any,data:any,expanded:boolean)>
         _bufnr          = -1,
         _tree           = Tree.new(),
         _flat_ids       = {}, ---@type any[]

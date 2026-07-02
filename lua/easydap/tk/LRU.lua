@@ -1,18 +1,18 @@
----@class easydap.neotoolkit.LRU.Node
+---@class easydap.tk.LRU.Node
 ---@field key any
 ---@field value any
----@field prev easydap.neotoolkit.LRU.Node?
----@field next easydap.neotoolkit.LRU.Node?
+---@field prev easydap.tk.LRU.Node?
+---@field next easydap.tk.LRU.Node?
 
----@class easydap.neotoolkit.LRU
+---@class easydap.tk.LRU
 ---@field _capacity integer
 ---@field _count integer
----@field _map table<any, easydap.neotoolkit.LRU.Node>
----@field _head easydap.neotoolkit.LRU.Node?
----@field _tail easydap.neotoolkit.LRU.Node?
+---@field _map table<any, easydap.tk.LRU.Node>
+---@field _head easydap.tk.LRU.Node?
+---@field _tail easydap.tk.LRU.Node?
 ---@field _on_evict fun(key:any, value:any)? Called ONLY when _capacity is exceeded.
 ---@field _on_removed fun(key:any, value:any)? Called for EVERY removal (eviction, delete, clear).
----@field new fun(self:easydap.neotoolkit.LRU, capacity:integer, opts?:{on_evict?:fun(key:any, value:any), on_removed?:fun(key:any, value:any)}):easydap.neotoolkit.LRU
+---@field new fun(self:easydap.tk.LRU, capacity:integer, opts?:{on_evict?:fun(key:any, value:any), on_removed?:fun(key:any, value:any)}):easydap.tk.LRU
 local LRU = {}
 LRU.__index = LRU
 

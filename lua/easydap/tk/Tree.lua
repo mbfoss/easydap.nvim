@@ -1,13 +1,13 @@
----@class easydap.neotoolkit.Tree.Item
+---@class easydap.tk.Tree.Item
 ---@field id any
 ---@field data any
 
----@class easydap.neotoolkit.Tree.ItemUpdate
+---@class easydap.tk.Tree.ItemUpdate
 ---@field id any
 ---@field data any
 ---@field keep_children boolean?
 
----@class easydap.neotoolkit.Tree.Node
+---@class easydap.tk.Tree.Node
 ---@field parent_id any|nil
 ---@field data any
 ---@field first_child any|nil
@@ -15,14 +15,14 @@
 ---@field next_sibling any|nil
 ---@field prev_sibling any|nil
 
----@class easydap.neotoolkit.Tree.FlatNode
+---@class easydap.tk.Tree.FlatNode
 ---@field id any
 ---@field data any
 ---@field depth integer
 
 ---@generic T
----@class easydap.neotoolkit.Tree
----@field _nodes table<any, easydap.neotoolkit.Tree.Node>
+---@class easydap.tk.Tree
+---@field _nodes table<any, easydap.tk.Tree.Node>
 ---@field _root_first any|nil
 ---@field _root_last any|nil
 local Tree = {}
@@ -36,7 +36,7 @@ end
 
 ---@private
 function Tree:_init()
-	---@type table<any, easydap.neotoolkit.Tree.Node>
+	---@type table<any, easydap.tk.Tree.Node>
 	self._nodes = {}
 
 	---@type any|nil
@@ -208,7 +208,7 @@ end
 
 ---@generic T
 ---@param parent_id any|nil
----@param items easydap.neotoolkit.Tree.Item[]
+---@param items easydap.tk.Tree.Item[]
 function Tree:set_children(parent_id, items)
 	assert(type(items) == "table")
 	local parent_node = parent_id and self._nodes[parent_id]
@@ -268,7 +268,7 @@ function Tree:set_children(parent_id, items)
 end
 
 ---@param parent_id any|nil
----@param items easydap.neotoolkit.Tree.ItemUpdate[]
+---@param items easydap.tk.Tree.ItemUpdate[]
 function Tree:update_children(parent_id, items)
 	assert(type(items) == "table", "items must be a table")
 	local parent_node = parent_id and self._nodes[parent_id]
@@ -411,7 +411,7 @@ function Tree:is_root(id)
 	return node ~= nil and node.parent_id == nil
 end
 
----@return easydap.neotoolkit.Tree.Item[]
+---@return easydap.tk.Tree.Item[]
 function Tree:get_roots()
 	local items = {}
 	local child_id = self._root_first
@@ -482,7 +482,7 @@ function Tree:get_depth(id)
 	return depth
 end
 
----@return easydap.neotoolkit.Tree.Item[]
+---@return easydap.tk.Tree.Item[]
 function Tree:get_items()
 	local items = {}
 	for id, node in pairs(self._nodes) do
@@ -516,7 +516,7 @@ function Tree:get_children_ids(parent_id)
 end
 
 ---@param parent_id any|nil If nil, returns root nodes.
----@return easydap.neotoolkit.Tree.Item[]
+---@return easydap.tk.Tree.Item[]
 function Tree:get_children(parent_id)
 	assert(parent_id, "id required")
 
@@ -592,7 +592,7 @@ function Tree:remove_item(id)
 end
 
 ---@private
----@param node easydap.neotoolkit.Tree.Node
+---@param node easydap.tk.Tree.Node
 function Tree:_remove_children(node)
 	local child = node.first_child
 	while child do

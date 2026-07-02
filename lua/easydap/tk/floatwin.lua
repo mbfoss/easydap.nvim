@@ -1,15 +1,15 @@
-local uiutil = require "easydap.neotoolkit.ui"
----@class easydap.neotoolkit.floatwin
+local uiutil = require "easydap.tk.ui"
+---@class easydap.tk.floatwin
 ---@field _complete_cache? string[]
 ---@field _complete_buf? integer
 local M = {}
 
----@class easydap.neotoolkit.floatwin.FloatwinOpts
+---@class easydap.tk.floatwin.FloatwinOpts
 ---@field title? string
 ---@field is_markdown boolean?
 
 ---@param text string
----@param opts easydap.neotoolkit.floatwin.FloatwinOpts?
+---@param opts easydap.tk.floatwin.FloatwinOpts?
 function M.open(text, opts)
     opts = opts or {}
     local lines = vim.split(text, "\n", { trimempty = false })

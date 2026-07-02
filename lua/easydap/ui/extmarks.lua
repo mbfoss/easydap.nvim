@@ -1,10 +1,10 @@
-local Signal = require("easydap.neotoolkit.Signal")
+local Signal = require("easydap.tk.Signal")
 
 local M = {}
 
 ---Fired after extmark positions are synced for a file (on BufWritePost / BufUnload).
 ---Subscribers receive the normalised absolute file path.
-M.on_synced = Signal.new() ---@type easydap.neotoolkit.Signal<fun(file: string)>
+M.on_synced = Signal.new() ---@type easydap.tk.Signal<fun(file: string)>
 
 ---@class easydap.ui.extmarks.MarkInfo
 ---@field id number

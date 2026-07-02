@@ -1,4 +1,4 @@
-local base = require("easydap.neotoolkit.ui")
+local base = require("easydap.tk.ui")
 
 local M = setmetatable({}, { __index = base })
 

@@ -4,9 +4,9 @@ local config      = require("easydap.config")
 local expressions = require("easydap.ui.expressions")
 local breakpoints = require("easydap.dap.breakpoints")
 local str_util    = require("easydap.util.str_util")
-local inputwin    = require("easydap.neotoolkit.inputwin")
+local inputwin    = require("easydap.tk.inputwin")
 local select      = require("easydap.util.select")
-local timer       = require("easydap.neotoolkit.timer")
+local timer       = require("easydap.tk.timer")
 local floatwin    = require("easydap.util.floatwin")
 
 ---@alias easydap.DebugView.ItemKind

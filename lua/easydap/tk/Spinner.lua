@@ -1,6 +1,6 @@
-local timer = require('easydap.neotoolkit.timer')
+local timer = require('easydap.tk.timer')
 
----@class easydap.neotoolkit.Spinner
+---@class easydap.tk.Spinner
 ---@field frames string[]
 ---@field interval integer
 ---@diagnostic disable-next-line: undefined-doc-name
@@ -15,10 +15,10 @@ local _default_frames = {
 }
 
 
----@alias easydap.neotoolkit.SpinnerOpts {frames?:string[], interval?:integer, on_update?:fun(frame:string, index:integer)}
+---@alias easydap.tk.SpinnerOpts {frames?:string[], interval?:integer, on_update?:fun(frame:string, index:integer)}
 
----@class easydap.neotoolkit.Spinner
----@field new fun(self:easydap.neotoolkit.Spinner,opts:easydap.neotoolkit.SpinnerOpts):easydap.neotoolkit.Spinner
+---@class easydap.tk.Spinner
+---@field new fun(self:easydap.tk.Spinner,opts:easydap.tk.SpinnerOpts):easydap.tk.Spinner
 local Spinner = {}
 Spinner.__index = Spinner
 
@@ -28,7 +28,7 @@ function Spinner:new(...)
     return obj
 end
 
----@param opts easydap.neotoolkit.SpinnerOpts?
+---@param opts easydap.tk.SpinnerOpts?
 function Spinner:init(opts)
     opts = opts or {}
     self.frames = opts.frames or _default_frames

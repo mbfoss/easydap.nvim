@@ -13,12 +13,12 @@
 
 local ffi = require("ffi")
 local bit = require("bit")
-local LRU = require("easydap.neotoolkit.LRU")
+local LRU = require("easydap.tk.LRU")
 
 local M = {}
 
 -- PCRE2 compile options (subset). See pcre2_compile(3).
----@enum easydap.neotoolkit.regex.opt
+---@enum easydap.tk.regex.opt
 M.opt = {
 	CASELESS = 0x00000008,
 	MULTILINE = 0x00000400,
@@ -32,7 +32,7 @@ M.opt = {
 }
 
 -- PCRE2 match-time options (subset). See pcre2_match(3).
----@enum easydap.neotoolkit.regex.match_opt
+---@enum easydap.tk.regex.match_opt
 M.match_opt = {
 	NOTBOL = 0x00000001,
 	NOTEOL = 0x00000002,
@@ -209,7 +209,7 @@ end
 -- Regex object
 --------------------------------------------------------------------------------
 
----@class easydap.neotoolkit.Regex
+---@class easydap.tk.Regex
 ---@field private _lib ffi.namespace* the loaded libpcre2-8 handle
 ---@field private _code ffi.cdata* compiled pcre2_code_8*
 ---@field private _md ffi.cdata* match data bound to this pattern
@@ -451,7 +451,7 @@ end
 --- Compile a pattern into a reusable `Regex` object.
 ---@param pattern string
 ---@param flags string|integer|nil flag chars ("imsxuUA"), raw option bits, or nil
----@return easydap.neotoolkit.Regex? regex, string? err
+---@return easydap.tk.Regex? regex, string? err
 function M.compile(pattern, flags)
 	local lib, err = _ensure_lib()
 	if not lib then
@@ -481,7 +481,7 @@ function M.compile(pattern, flags)
 
 	-- Assign to a typed local before returning: returning setmetatable() directly
 	-- spreads its (possibly multi-value) result into the second return slot.
-	---@type easydap.neotoolkit.Regex
+	---@type easydap.tk.Regex
 	local re = setmetatable({
 		_lib = lib,
 		_code = code,
@@ -496,7 +496,7 @@ local _cache = LRU:new(128)
 
 ---@param pattern string
 ---@param flags string|integer|nil
----@return easydap.neotoolkit.Regex
+---@return easydap.tk.Regex
 local function _get_cached(pattern, flags)
 	local key = tostring(flags) .. "\31" .. pattern
 	local re = _cache:get(key)
