@@ -1,18 +1,19 @@
----@brief Optional convenience: translate a generic "task" table into native DAP request_args.
+---@brief Optional, standalone convenience for building a task's `parameters`.
 ---
----This module is NOT part of the DAP core. `easydap.adapters` and
----`easydap.dap.Config` stay pure native DAP — they know only the wire protocol.
----`derive` is the higher-level, opt-in layer that turns a portable task
+---easydap does NOT use this module — nothing in the runtime requires it. It is a
+---self-contained helper you can call yourself to turn a portable task
 ---description (command/cwd/env/process_id/…) into an adapter-native launch or
----attach body. Callers that already speak native DAP (`request_args`) never
----touch this module.
+---attach body, then hand that to easydap as the task's `parameters` field. The
+---DAP core, `easydap.adapters`, and `easydap.dap.Config` stay pure native DAP.
 ---
----Usage:
+---Usage — fill `parameters` from generic fields when defining a task:
 ---  local derive = require("easydap.derive")
----  -- one adapter, one request:
----  local args = derive.args("codelldb", "launch", { command = "./a.out", cwd = "/tmp" })
----  -- or resolve a whole generic task into a native one (request_args populated):
----  local native = derive.resolve(task)
+---  return {
+---    name       = "debug app",
+---    adapter    = "codelldb",
+---    request    = "launch",
+---    parameters = derive.args("codelldb", "launch", { command = "./a.out", cwd = "/tmp" }),
+---  }
 ---
 ---Override or add translations directly on the registry, keyed by adapter name:
 ---  derive.adapters.codelldb.launch = function(task) … end
@@ -26,20 +27,17 @@ local M = {}
 
 ---The portable fields the built-in translations understand. A caller supplies
 ---whichever apply; each `launch`/`attach` fn reads the ones it needs and emits a
----native DAP body. `request_args` (native keys) is merged on top by `resolve`.
+---native DAP body (the value you assign to a task's `parameters`).
 ---@class easydap.derive.Task
----@field adapter          string                  name of an entry in `easydap.adapters`
----@field request?         "launch"|"attach"
 ---@field command?         string|string[]         program to debug ([program, arg1, …] shorthand allowed)
 ---@field cwd?             string
 ---@field env?             table<string,string>
 ---@field clear_env?       boolean                 pass `env` verbatim without merging the process environment
 ---@field process_id?      integer                 attach only — target process id (PID) to attach to
----@field host?            string                  attach only
----@field port?            integer                 attach only (required for the `remote` adapter)
+---@field host?            string                  attach only — remote host
+---@field port?            integer                 attach only — remote port
 ---@field run_in_terminal? boolean
 ---@field stop_on_entry?   boolean
----@field request_args?    table                   raw DAP launch/attach body; deep-merged over the derived args and wins on conflicts. Uses the adapter's NATIVE DAP keys (e.g. `stopAtEntry` for netcoredbg, `pid` vs `processId`), which may not line up with the generic fields above — a mismatched key is added, not a substitute for the generic one.
 
 ---A per-adapter pair of translations.
 ---@class easydap.derive.Entry
@@ -371,13 +369,13 @@ M.adapters = {
 
 -- ── Public API ─────────────────────────────────────────────────────────────
 
----Build a native DAP request body for a single adapter/request from a generic task.
----Returns nil when the adapter has no translation for that request (the caller
----should fall back to `task.request_args` alone).
+---Build a native DAP request body (a task's `parameters`) for a single
+---adapter/request from a generic task. Returns nil when the adapter has no
+---translation for that request.
 ---@param adapter string
 ---@param request "launch"|"attach"
 ---@param task easydap.derive.Task
----@return table? request_args
+---@return table? parameters
 ---@return string? err
 function M.args(adapter, request, task)
     local entry = M.adapters[adapter]
@@ -386,29 +384,6 @@ function M.args(adapter, request, task)
     local ok, result = pcall(fn, task)
     if not ok then return nil, tostring(result) end
     return result
-end
-
----Resolve a generic task into a native one, in place: derive a base body from
----the generic fields, then deep-merge the task's own `request_args` on top
----(native keys win). Populates `request` and `request_args` on `task` and
----returns it (or `nil, err` if a translation raised, leaving `task` untouched).
----The result is native DAP, ready for `easydap.task.start`; other fields (host,
----port, name, …) are left as-is. Pass a copy first if you need the original
----generic task preserved.
----@param task easydap.derive.Task
----@return easydap.derive.Task? native  the same table, now native (nil on error)
----@return string? err
-function M.resolve(task)
-    local adapters = require("easydap.adapters")
-    local base     = adapters[task.adapter]
-    local request  = task.request or (base and base.request) or "launch"
-
-    local derived, err = M.args(task.adapter, request, task)
-    if err then return nil, err end
-
-    task.request      = request
-    task.request_args = vim.tbl_deep_extend("force", derived or {}, task.request_args or {})
-    return task
 end
 
 return M

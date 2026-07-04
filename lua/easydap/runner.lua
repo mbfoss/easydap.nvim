@@ -8,17 +8,9 @@
 ---One task per file: a config file returns a single task (or a function
 ---returning one):
 ---  -- debug.lua
----  return { name = "debug app", adapter = "lldb", request = "launch", request_args = { program = "a.out" } }
+---  return { name = "debug app", adapter = "lldb", request = "launch", parameters = { program = "a.out" } }
 
 local M = {}
-
----A debug task: the portable `easydap.derive.Task` fields plus run-presentation
----flags. Generic fields (command/cwd/env/…) are translated into native DAP
----`request_args` by `easydap.derive` before reaching the native `easydap.task`
----core. Mirrors what easytasks sends as `debug.Params`; `name` defaults to "debug".
----@class easydap.Task : easydap.derive.Task
----@field name?            string
----@field raw_messages?    boolean                 capture raw DAP protocol messages in a dedicated buffer
 
 ---A run: a unique id (used as its panel group), the task name, a cancel
 ---function, the buffers it spawned (REPL, Output, Terminal, DAP messages), and
@@ -140,14 +132,6 @@ function M.run(task)
     task      = vim.deepcopy(task)
     task.name = task.name or "debug"
     _last_task = task
-
-    -- Turn the generic task into a native one (request_args populated) via the
-    -- opt-in derive utility; `easydap.task` itself consumes native DAP only.
-    local native, derive_err = require("easydap.derive").resolve(task)
-    if not native then
-        _err("run: " .. tostring(derive_err))
-        return
-    end
 
     _clear_finished(task.name)
 

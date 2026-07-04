@@ -105,29 +105,48 @@ require("easydap").run({ name = "tests", adapter = "delve", request = "launch" }
 
 ## Task fields
 
-A task is a plain table consumed by the runtime; adapters translate these
-generic fields into a DAP `launch`/`attach` request.
+A task is a plain table of **native DAP**. easydap sends `parameters` as the
+launch/attach body unchanged — it never interprets generic fields.
 
-| Field             | Type                     | Notes |
-| ----------------- | ------------------------ | ----- |
-| `name`            | `string`                 | Defaults to `"debug"`; also the run/panel group name. |
-| `adapter`         | `string`                 | **Required.** A key in `require("easydap.adapters")`. |
-| `request`         | `"launch"` \| `"attach"` | Defaults to the adapter's default. |
-| `command`         | `string` \| `string[]`   | Program to debug; `[program, arg1, …]` shorthand allowed. |
-| `cwd`             | `string`                 | Working directory. |
-| `env`             | `table<string,string>`   | Merged into the process environment. |
-| `clear_env`       | `boolean`                | Pass `env` verbatim without merging the process environment. |
-| `host` / `port`   | `string` / `integer`     | Attach targets (required for the `remote` adapter). |
-| `run_in_terminal` | `boolean`                | Use the DAP `runInTerminal` flow. |
-| `stop_on_entry`   | `boolean`                | Break at program entry. |
-| `request_args`    | `table`                  | Sent verbatim in the launch/attach body; overrides the generic fields. |
-| `raw_messages`    | `boolean`                | Capture raw DAP protocol traffic in a dedicated buffer. |
+| Field          | Type                     | Notes |
+| -------------- | ------------------------ | ----- |
+| `name`         | `string`                 | Defaults to `"debug"`; also the run/panel group name. |
+| `adapter`      | `string`                 | **Required.** A key in `require("easydap.adapters")`. |
+| `request`      | `"launch"` \| `"attach"` | Defaults to the adapter's default. |
+| `parameters`   | `table`                  | The adapter's raw DAP launch/attach body, sent verbatim. |
+| `host` / `port`| `string` / `integer`     | Connection target for TCP adapters (required for the `remote` adapter). |
+| `raw_messages` | `boolean`                | Capture raw DAP protocol traffic in a dedicated buffer. |
 
-The generic fields above are a convenience: `require("easydap.derive")`
-translates them into the adapter's native launch/attach body before the task
-runs (the DAP core itself only ever sees native `request_args`). When you need
-full control, set `request_args` directly — it is forwarded unchanged, and it is
-deep-merged over the derived body (native keys win) when both are present.
+```lua
+require("easydap").run({
+  name       = "tests",
+  adapter    = "delve",
+  request    = "launch",
+  parameters = { mode = "test", program = "./..." },
+})
+```
+
+### Building `parameters` from a portable description
+
+Writing `parameters` by hand means knowing each adapter's native keys. The
+optional, standalone [`easydap.derive`](lua/easydap/derive.lua) utility builds
+one for you from generic fields (`command`/`cwd`/`env`/`process_id`/…). Nothing
+in easydap uses it — you call it yourself:
+
+```lua
+local derive = require("easydap.derive")
+
+require("easydap").run({
+  name       = "app",
+  adapter    = "codelldb",
+  request    = "launch",
+  parameters = derive.args("codelldb", "launch", { command = "./a.out", cwd = "/tmp" }),
+})
+```
+
+`derive.args(adapter, request, generic)` returns the native body (or `nil` when
+that adapter has no translation for the request). Add or override a translation
+on its registry — see [Adding or overriding adapters](#adding-or-overriding-adapters).
 
 ## Adapters
 

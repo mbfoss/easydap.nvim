@@ -4,7 +4,6 @@
 
 local connection  = require("easydap.dap.connection")
 local session_mod = require("easydap.dap.session")
-local adapters    = require("easydap.adapters")
 local Signal      = require("easydap.tk.Signal")
 local str_util    = require("easydap.util.str_util")
 
@@ -194,10 +193,12 @@ end
 
 -- ── Session startup ────────────────────────────────────────────────────────
 
----@param config string|table
+---@param config easydap.dap.Config
 ---@param opts? easydap.client.StartOpts
 function M.start(config, opts)
     opts = opts or {}
+    assert(type(config) == "table")
+    assert(type(opts) == "table")
 
     _start_counter = _start_counter + 1
     local start_id = _start_counter
@@ -205,18 +206,7 @@ function M.start(config, opts)
         if opts.on_progress then opts.on_progress(msg) end
     end
 
-    if type(config) == "string" then
-        local named = adapters[config]
-        if not named then
-            progress("[dap] unknown adapter config: " .. config)
-            progress("unknown adapter config: " .. config)
-            if opts.on_fail then opts.on_fail() end
-            return start_id
-        end
-        config = named
-    end
-
-    local cfg = _prepare_config(config --[[@as table]])
+    local cfg = _prepare_config(config)
     if not cfg then
         if opts.on_fail then opts.on_fail() end
         return start_id

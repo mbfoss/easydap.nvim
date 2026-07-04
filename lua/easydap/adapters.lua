@@ -26,11 +26,9 @@ local M = {}
 ---@field command_insert_stderr? boolean
 ---@field host?                  string
 ---@field port?                  integer
----@field modes?                 string[]
 ---@field defer_launch_attach?   boolean
----@field prefix_local?          string
----@field prefix_remote?         string
 ---@field request?               string
+---@field request_args?          table  raw DAP launch/attach body sent with the request (set by the task runner from the task's `parameters`)
 ---@field setup?                 fun(config: easydap.dap.Config, ctx: easydap.AdapterSetupCtx, callback: fun(err?: string, state?: any))
 ---@field teardown?              fun(config: easydap.dap.Config, ctx: any)
 

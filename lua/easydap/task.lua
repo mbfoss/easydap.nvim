@@ -1,5 +1,19 @@
 local OutputBuffer = require "easydap.ui.OutputBuffer"
 local _config      = require "easydap.config"
+
+---A debug task — native DAP, sent as-is. `parameters` is the adapter's raw
+---launch/attach body; easydap does not derive it from generic fields (use the
+---opt-in `easydap.derive` utility yourself if you want that). Mirrors what
+---easytasks sends as `debug.Params`; `name` defaults to "debug".
+---@class easydap.Task
+---@field name?         string                     run/panel group name (defaults to "debug")
+---@field adapter       string                     name of an entry in `easydap.adapters`
+---@field request?      "launch"|"attach"          defaults to the adapter's default
+---@field parameters?   table                      native DAP launch/attach body (the adapter's own keys), sent verbatim
+---@field host?         string                     attach/TCP connection target
+---@field port?         integer                    attach/TCP connection target (required for the `remote` adapter)
+---@field raw_messages? boolean                    capture raw DAP protocol messages in a dedicated buffer
+
 ---Presentation options for a buffer registered with the run host.
 ---@class easydap.AddBufOpts
 ---@field label?      string   tab label (defaults to the buffer name)
@@ -15,11 +29,6 @@ local _config      = require "easydap.config"
 ---@field bufnr    integer
 ---@field label    string
 ---@field priority integer  higher = shown preferentially when added (default 0)
-
----@class easydap.TaskTypeDef
----@field start     fun(task: table, ctx: easydap.TaskCallback): fun()
----@field dispose   (fun(bufnrs: easydap.BufEntry[]))?  optional cleanup called when the run is disposed
----@field schema    table?
 
 ---@class easydap.TaskTypeDef
 local M            = {}
@@ -39,7 +48,7 @@ local function _unique_buf_name(base)
     return name
 end
 
----@param task    easydap.Task  native DAP task (`request_args` holds the raw body; generic fields, if any, are ignored)
+---@param task easydap.Task  native DAP task (name + adapter + request + parameters, plus optional host/port/raw_messages)
 ---@param callbacks easydap.TaskCallback
 ---@return fun()
 M.start = function(task, callbacks)
@@ -54,10 +63,11 @@ M.start = function(task, callbacks)
     local manager  = require("easydap.manager")
     local adapters = require("easydap.adapters")
 
-    -- The task is native DAP: `request_args` holds the adapter's raw launch/attach
-    -- body. Translating a generic task (command/cwd/env/…) into `request_args` is
-    -- the caller's job via the opt-in `easydap.derive` utility — this runner never
-    -- interprets generic fields. An adapter with no `request_args` sends an empty body.
+    -- The task is native DAP: `parameters` is the adapter's raw launch/attach
+    -- body, sent verbatim. easydap does not translate generic fields — building
+    -- `parameters` from a portable description (command/cwd/env/…) is an opt-in
+    -- concern of the standalone `easydap.derive` utility, which nothing here uses.
+    -- A task with no `parameters` sends an empty body.
     local base     = adapters[task.adapter]
     if not base then
         report("unknown DAP adapter: " .. tostring(task.adapter))
@@ -66,9 +76,9 @@ M.start = function(task, callbacks)
     end
 
     local request = task.request or base.request or "launch"
-    local config  = vim.tbl_extend("force", vim.deepcopy(base), { request = request })
+    local config  = vim.tbl_extend("force", vim.deepcopy(base), { request = request }) ---@type easydap.manager.StartConfig
 
-    config.request_args = vim.tbl_deep_extend("force", config.request_args or {}, task.request_args or {})
+    config.request_args = vim.tbl_deep_extend("force", config.request_args or {}, task.parameters or {})
 
     -- Adapters with setup manage config.host/port themselves (e.g. debugpy picks a
     -- free local port during setup). Only propagate task fields for adapters without setup.
