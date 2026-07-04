@@ -7,6 +7,27 @@ local session_mod = require("easydap.dap.session")
 local Signal      = require("easydap.tk.Signal")
 local str_util    = require("easydap.util.str_util")
 
+-- ── Config type ─────────────────────────────────────────────────────────────
+
+---A resolved, per-run DAP config — the thing the dap layer (client → session →
+---connection) actually consumes to spawn/connect and drive the protocol. The
+---task runner builds one from an `easydap.AdapterDef` plus a task: it flattens
+---the adapter's launch/attach fields and adds the run's `request`/`request_args`
+---(and host/port). `setup`/`teardown` are the adapter def's concern and are
+---resolved before this exists, so they are not part of it.
+---@class easydap.dap.Config
+---@field adapter?               string  adapter name (for adapterID / display)
+---@field type?                  string  DAP adapterID override
+---@field command?               string|string[]
+---@field command_cwd?           string
+---@field command_env?           table<string,string>
+---@field command_insert_stderr? boolean
+---@field host?                  string
+---@field port?                  integer
+---@field request?               string
+---@field request_args?          table   raw DAP launch/attach body sent with the request
+---@field defer_launch_attach?   boolean
+
 -- ── Config evaluation ──────────────────────────────────────────────────────
 
 local function _eval_val(v)

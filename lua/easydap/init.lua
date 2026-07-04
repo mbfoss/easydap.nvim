@@ -313,7 +313,7 @@ local function _init()
 end
 
 -- adapters table is Lazily loaded on first access
----@type table<string, easydap.dap.Config>
+---@type table<string, easydap.AdapterDef>
 M.adapters = nil
 
 ---Return the singleton DebugView, creating it on first call.

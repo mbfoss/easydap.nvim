@@ -8,6 +8,7 @@
 ---  local adapters = require("easydap.adapters")
 ---  adapters.myAdapter = { command = "...", request = "launch" }
 
+---@type table<string, easydap.AdapterDef>
 local M = {}
 
 -- ── Type annotations ──────────────────────────────────────────────────────
@@ -18,17 +19,22 @@ local M = {}
 ---@field add_bufnr fun(bufnr: integer, opts?: easydap.AddBufOpts)
 ---@field report    fun(message: string)
 
----@class easydap.dap.Config
----@field adapter?               string
+---A static adapter definition — the launch/attach template for one adapter.
+---Entries of this module are values of this type. It is NOT the per-run config
+---the DAP layer consumes: the task runner resolves an `AdapterDef` + a task into
+---an `easydap.dap.Config` (see [dap/client.lua](dap/client.lua)). No
+---`request_args` here — that is a per-run value carried by the resolved config.
+---`setup`/`teardown` receive that resolved config (setup may mutate host/port).
+---@class easydap.AdapterDef
 ---@field command?               string|string[]
 ---@field command_cwd?           string
 ---@field command_env?           table<string,string>
 ---@field command_insert_stderr? boolean
 ---@field host?                  string
 ---@field port?                  integer
+---@field type?                  string   DAP adapterID override (defaults to the adapter name)
 ---@field defer_launch_attach?   boolean
 ---@field request?               string
----@field request_args?          table  raw DAP launch/attach body sent with the request (set by the task runner from the task's `parameters`)
 ---@field setup?                 fun(config: easydap.dap.Config, ctx: easydap.AdapterSetupCtx, callback: fun(err?: string, state?: any))
 ---@field teardown?              fun(config: easydap.dap.Config, ctx: any)
 

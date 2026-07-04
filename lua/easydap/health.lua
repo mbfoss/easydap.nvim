@@ -57,7 +57,7 @@ end
 
 ---Check a single adapter's local dependencies.
 ---@param name string
----@param cfg  easydap.dap.Config
+---@param cfg  easydap.AdapterDef
 local function _check_adapter(name, cfg)
     local exe = _exe_of(cfg.command)
 

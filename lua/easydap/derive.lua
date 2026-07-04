@@ -54,7 +54,7 @@ local function _split_command(task)
     if not task.command then return end
     local parts = type(task.command) == "table"
         and task.command
-        or str_util.split_shell_args(task.command)
+        or str_util.split_shell_args(task.command --[[@as string]])
     local args = {}
     for i = 2, #parts do args[#args + 1] = parts[i] end
     return parts[1], args

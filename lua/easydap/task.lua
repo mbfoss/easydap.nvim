@@ -76,12 +76,27 @@ M.start = function(task, callbacks)
     end
 
     local request = task.request or base.request or "launch"
-    local config  = vim.tbl_extend("force", vim.deepcopy(base), { request = request }) ---@type easydap.manager.StartConfig
 
-    config.request_args = vim.tbl_deep_extend("force", config.request_args or {}, task.parameters or {})
+    -- Resolve the adapter definition + this task into the per-run dap config.
+    -- setup/teardown stay on the adapter def (`base`); the runtime config carries
+    -- only what the dap layer consumes.
+    ---@type easydap.dap.Config
+    local config = {
+        adapter               = task.adapter,
+        type                  = base.type,
+        command               = base.command,
+        command_cwd           = base.command_cwd,
+        command_env           = base.command_env,
+        command_insert_stderr = base.command_insert_stderr,
+        defer_launch_attach   = base.defer_launch_attach,
+        host                  = base.host,
+        port                  = base.port,
+        request               = request,
+        request_args          = vim.deepcopy(task.parameters or {}),
+    }
 
     -- Adapters with setup manage config.host/port themselves (e.g. debugpy picks a
-    -- free local port during setup). Only propagate task fields for adapters without setup.
+    -- free local port during setup). Only take the task's host/port otherwise.
     if base.setup == nil then
         if task.host ~= nil then config.host = task.host end
         if task.port ~= nil then config.port = task.port end
@@ -127,9 +142,9 @@ M.start = function(task, callbacks)
     local _setup_ctx    = { add_bufnr = add_bufnr, report = report }
 
     local function _run_setup(cb)
-        if not config.setup then return cb(nil) end
+        if not base.setup then return cb(nil) end
         _setup_ctx.report("setup: starting")
-        config.setup(config, _setup_ctx, function(err, state)
+        base.setup(config, _setup_ctx, function(err, state)
             if err then
                 vim.notify("[dap] setup failed: " .. tostring(err), vim.log.levels.ERROR)
                 _setup_ctx.report("setup failed: " .. tostring(err))
@@ -148,9 +163,7 @@ M.start = function(task, callbacks)
             return
         end
 
-        local _teardown = config.teardown
-        config.setup    = nil
-        config.teardown = nil
+        local _teardown = base.teardown
 
         manager.start(config, {
             on_session = function(id, sess)
