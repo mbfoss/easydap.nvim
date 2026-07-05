@@ -1,7 +1,7 @@
 ---@brief Task-file scaffolding for `:Debug new_task`.
 ---
 ---Writes a runnable Lua run_file for an `adapter` + `request`, pre-populating its
----`parameters` from the adapter's launch/attach schema (fixed values, defaults, and
+---`parameters` from the adapter's launch/attach schema (defaults and
 ---type-appropriate placeholders for the rest, each annotated with its description).
 ---It renders the schema — read via `easydap.schema` — into Lua source; the DAP core
 ---and body assembly stay in `easydap.schema`.
@@ -63,11 +63,9 @@ local function _render_params(adapter, request, indent)
                 emit(node, pad .. "    ")
                 lines[#lines + 1] = ("%s},"):format(pad)
             else
-                local val     = (node.fixed or node.default ~= nil) and schema.resolve_default(node)
-                    or _placeholder(node)
+                local val     = (node.default ~= nil) and schema.resolve_default(node) or _placeholder(node)
                 local line    = ("%s%s = %s,"):format(pad, lhs, vim.inspect(val))
                 local comment = node.desc
-                if node.fixed then comment = comment and (comment .. " (fixed)") or "fixed" end
                 if comment then line = line .. "  -- " .. comment end
                 lines[#lines + 1] = line
             end
@@ -78,8 +76,8 @@ local function _render_params(adapter, request, indent)
 end
 
 ---Scaffold a run_file for `adapter` + `request`: write a Lua file that returns a
----task table whose `parameters` are pre-populated from the adapter's schema (fixed
----values, defaults, and type-appropriate placeholders for the rest, each annotated
+---task table whose `parameters` are pre-populated from the adapter's schema (defaults, 
+---and type-appropriate placeholders for the rest, each annotated
 ---with its description), then open it for editing. Run it afterwards with `:Debug
 ---run_file`. `path` defaults to `<project root or cwd>/<adapter>_<request>.lua`,
 ---uniquified so an existing file is never clobbered. Reports a clear error for

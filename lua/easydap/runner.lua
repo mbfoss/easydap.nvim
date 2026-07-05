@@ -293,7 +293,7 @@ function M.run_target(adapter, program, program_args)
     end
 
     -- Fill the target field from `program`, and the args field from the remaining
-    -- args; everything else comes from the schema's fixed values / defaults.
+    -- args; everything else comes from the schema's defaults.
     local values = {}
     local target_spec = schema.spec(adapter, "launch", target_key)
     if not target_spec then

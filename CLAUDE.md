@@ -56,7 +56,7 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   throughout — no portable/generic field vocabulary.
 - [scaffold.lua](lua/easydap/scaffold.lua) — task-file creation behind `:Debug
   new_task`: renders an adapter's schema (via `easydap.schema`) into a runnable Lua
-  run_file, seeded with fixed values/defaults/placeholders, then opens it.
+  run_file, seeded with defaults/placeholders, then opens it.
 
 **Persistence** — [store.lua](lua/easydap/store.lua)
 - A thin path + read/write helper. The project root is the nearest ancestor of

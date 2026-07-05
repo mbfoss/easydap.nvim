@@ -26,8 +26,7 @@ local M = {}
 ---port/list) driving CLI-string coercion, completion and validation (a `kind`
 ---implies its `type`). `role` is an optional *value-meaning* marker (target/args)
 ---tagging the program/arguments fields so `run_target` can find them across
----adapters. A `fixed` entry is not user-settable — it always emits its `default`
----(which may be a function for computed values) — and needs no `type`.
+---adapters.
 ---
 ---A schema is a `table<string, easydap.ParamSpec>`. A value may instead be a nested
 ---group — a ParamSpec with `type = "schema"` holding its children under `fields`
@@ -41,7 +40,6 @@ local M = {}
 ---@field enum?     any[]              allowed values when `kind == "enum"`
 ---@field desc?     string
 ---@field default?  any|fun():any      value used when the caller omits the key
----@field fixed?    boolean            not user-settable; always emits `default`
 ---@field required? boolean
 
 ---A static adapter definition — the launch/attach template for one adapter.
@@ -187,7 +185,7 @@ M.debugpy = {
     setup              = _debugpy_setup,
     teardown           = function(_, ctx) if ctx then ctx.handle.stop() end end,
     launch_schema      = {
-        type            = { fixed = true, default = "python" },
+        type            = { default = "python" },
         program         = _program,
         args            = _args,
         cwd             = _cwd,
@@ -208,7 +206,7 @@ M["debugpy-module"] = {
     setup              = _debugpy_setup,
     teardown           = function(_, ctx) if ctx then ctx.handle.stop() end end,
     launch_schema      = {
-        type          = { fixed = true, default = "python" },
+        type          = { default = "python" },
         module        = { type = "string", role = "target", desc = "python module name" },
         args          = _args,
         cwd           = _cwd,
@@ -234,7 +232,7 @@ M["debugpy-remote"] = {
     -- `connect`, not the task-level connection (the local adapter port is chosen
     -- by _debugpy_setup). Set them as `connect.host` / `connect.port`.
     attach_schema      = {
-        type       = { fixed = true, default = "python" },
+        type       = { default = "python" },
         connect    = {
             type   = "schema",
             fields = {
@@ -249,7 +247,7 @@ M["debugpy-remote"] = {
 M.codelldb = {
     command       = "codelldb",
     launch_schema = {
-        type          = { fixed = true, default = "lldb" },
+        type          = { default = "lldb" },
         program       = _program,
         args          = _args,
         cwd           = _cwd,
@@ -258,7 +256,7 @@ M.codelldb = {
         runInTerminal = _run_in_terminal,
     },
     attach_schema = {
-        type        = { fixed = true, default = "lldb" },
+        type        = { default = "lldb" },
         pid         = { type = "integer", desc = "PID to attach to" },
         cwd         = _cwd,
         stopOnEntry = { type = "boolean", desc = "stop at entry" },
@@ -268,7 +266,7 @@ M.codelldb = {
 M.gdb = {
     command       = { "gdb", "--interpreter=dap" },
     launch_schema = {
-        request       = { fixed = true, default = "launch" },
+        request       = { default = "launch" },
         program       = _program,
         args          = _args,
         cwd           = _cwd,
@@ -331,7 +329,7 @@ M["java-debug-server"] = {
 M.lldb = {
     command       = "lldb-dap",
     launch_schema = vim.tbl_extend("error", {
-        type           = { fixed = true, default = "lldb" },
+        type           = { default = "lldb" },
         program        = _program,
         args           = _args,
         cwd            = _cwd,
@@ -344,7 +342,7 @@ M.lldb = {
         launchCommands = _lldb_cmds("LLDB commands run to launch the program (replaces the default launch)"),
     }, _lldb_common),
     attach_schema = vim.tbl_extend("error", {
-        type             = { fixed = true, default = "lldb" },
+        type             = { default = "lldb" },
         program          = { type = "string", kind = "file", desc = "path to the executable (helps locate the binary)" },
         pid              = { type = "integer", desc = "PID to attach to" },
         waitFor          = { type = "boolean", desc = "wait for the next process matching `program` to launch" },
@@ -437,7 +435,7 @@ M["js-debug"] = {
     end,
 
     launch_schema = {
-        type              = { fixed = true, default = "pwa-node" },
+        type              = { default = "pwa-node" },
         program           = _program,
         args              = _args,
         runtimeExecutable = { type = "string", desc = "node executable", default = "node" },
@@ -447,7 +445,7 @@ M["js-debug"] = {
         runInTerminal     = _run_in_terminal,
     },
     attach_schema = {
-        type        = { fixed = true, default = "pwa-node" },
+        type        = { default = "pwa-node" },
         port        = { type = "integer", kind = "port", desc = "inspector port", default = 9229 },
         cwd         = _cwd,
         stopOnEntry = { type = "boolean", desc = "stop at entry" },
@@ -459,24 +457,24 @@ M["js-debug"] = {
 M["bash-debug-adapter"] = {
     command       = "bash-debug-adapter",
     launch_schema = {
-        type          = { fixed = true, default = "bashdb" },
-        name          = { fixed = true, default = "Launch Bash Script" },
+        type          = { default = "bashdb" },
+        name          = { default = "Launch Bash Script" },
         program       = { type = "string", role = "target", desc = "bash script to debug" },
         args          = _args,
         cwd           = _cwd,
         env           = _env,
-        pathBash      = { fixed = true, default = "bash" },
-        pathBashdb    = { fixed = true, default = function()
+        pathBash      = { default = "bash" },
+        pathBashdb    = { default = function()
             local p = vim.fs.joinpath(vim.fn.stdpath("data"), "mason", "packages", "bash-debug-adapter", "bashdb")
             return vim.fn.filereadable(p) == 1 and p or "bashdb"
         end },
-        pathBashdbLib = { fixed = true, default = function()
+        pathBashdbLib = { default = function()
             return vim.fs.joinpath(vim.fn.stdpath("data"), "mason", "packages", "bash-debug-adapter")
         end },
-        pathCat       = { fixed = true, default = "cat" },
-        pathMkfifo    = { fixed = true, default = "mkfifo" },
-        pathPkill     = { fixed = true, default = "pkill" },
-        terminalKind  = { fixed = true, default = "integrated" },
+        pathCat       = { default = "cat" },
+        pathMkfifo    = { default = "mkfifo" },
+        pathPkill     = { default = "pkill" },
+        terminalKind  = { default = "integrated" },
         stopOnEntry   = { type = "boolean", desc = "stop at entry" },
     },
 }
@@ -485,8 +483,8 @@ M["bash-debug-adapter"] = {
 M["php-debug-adapter"] = {
     command       = "php-debug-adapter",
     launch_schema = {
-        type = { fixed = true, default = "php" },
-        name = { fixed = true, default = "Listen for Xdebug" },
+        type = { default = "php" },
+        name = { default = "Listen for Xdebug" },
         cwd  = { type = "string", kind = "dir", desc = "working directory", default = function() return vim.fn.getcwd() end },
         port = { type = "integer", kind = "port", desc = "Xdebug port", default = 9003 },
     },
@@ -508,13 +506,13 @@ M["local-lua-debugger"] = {
     -- `program` is a nested table the js-based adapter consumes; the target file
     -- is set as `program.file`.
     launch_schema = {
-        type    = { fixed = true, default = "lua-local" },
-        name    = { fixed = true, default = "Debug" },
+        type    = { default = "lua-local" },
+        name    = { default = "Debug" },
         program = {
             type   = "schema",
             fields = {
-                lua           = { fixed = true, default = function() return vim.fn.exepath("lua") end },
-                communication = { fixed = true, default = "stdio" },
+                lua           = { default = function() return vim.fn.exepath("lua") end },
+                communication = { default = "stdio" },
                 file          = { type = "string", role = "target", desc = "lua file to debug" },
             },
         },

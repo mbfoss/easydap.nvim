@@ -21,8 +21,6 @@
 ---    `<program>`/`<args>` inputs onto whatever native keys the adapter uses (see
 ---    `key_of_role`). A `role` is independent of `kind`/`type` coercion.
 ---
----These axes are orthogonal to `fixed`, which marks a param as not user-settable
----(it always emits its `default`); a fixed param needs no `type`.
 
 local str_util = require("easydap.tk.strutil")
 
@@ -217,7 +215,7 @@ function M.key_of_role(adapter, request, role)
     if not schema then return nil end
     local found
     _walk_leaves(schema, function(key, spec)
-        if not found and not spec.fixed and spec.role == role then found = key end
+        if not found and spec.role == role then found = key end
     end)
     return found
 end
@@ -245,21 +243,18 @@ function M.requests(adapter)
     return out
 end
 
----The ParamSpec for a user-settable param, or nil when the key is unknown or
----`fixed` (fixed params are not settable from the command line). `key` is a dotted
----path into nested groups (e.g. "connect.host").
+---The ParamSpec for a user-settable param, or nil when the key is unknown.
+---`key` is a dotted path into nested groups (e.g. "connect.host").
 ---@param adapter string
 ---@param request string
 ---@param key string
 ---@return easydap.ParamSpec?
 function M.spec(adapter, request, key)
     local schema = M.schema(adapter, request)
-    local spec   = schema and _find_leaf(schema, key)
-    if not spec or spec.fixed then return nil end
-    return spec
+    return schema and _find_leaf(schema, key) or nil
 end
 
----User-settable param names (excludes `fixed` entries) for an adapter's request,
+---User-settable param names for an adapter's request,
 ---sorted. Nested groups yield dotted names. For completion.
 ---@param adapter string
 ---@param request string
@@ -269,7 +264,7 @@ function M.param_names(adapter, request)
     if not schema then return {} end
     local out = {}
     _walk_leaves(schema, function(key, spec)
-        if not spec.fixed then out[#out + 1] = key end
+        out[#out + 1] = key
     end)
     table.sort(out)
     return out
@@ -277,7 +272,7 @@ end
 
 ---Assemble an adapter-native launch/attach body from already-coerced `values`
 ---(keyed by dotted param path). Mirrors the schema's shape: nested groups produce
----nested body tables. Applies `fixed` values and `default`s for keys the caller
+---nested body tables. Applies `default`s for keys the caller
 ---did not supply, enforces `required`, and omits groups that end up empty. Unknown
 ---keys in `values` are ignored (the caller validates those).
 ---@param adapter string
@@ -302,9 +297,7 @@ function M.build(adapter, request, values)
                 if next(sub) ~= nil then out[key] = sub end
             else
                 local val
-                if node.fixed then
-                    val = M.resolve_default(node)
-                elseif values[path] ~= nil then
+                if values[path] ~= nil then
                     val = values[path]
                 elseif node.default ~= nil then
                     val = M.resolve_default(node)
