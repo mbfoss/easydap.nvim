@@ -3,10 +3,11 @@
 ---Each adapter in `easydap.adapters` may declare a `launch_schema` and/or
 ---`attach_schema`: a `native_key -> easydap.ParamSpec` table describing that
 ---adapter's own DAP launch/attach parameters. This module reads those schemas to
----coerce raw strings into a native request body (`build`), to render a run_file
----template of them (`render_params`, for `new_task`), and to locate the program/
----args fields (`key_of_role`, for `run_target`). It speaks each adapter's native
----keys directly — there is no portable/generic field vocabulary in between.
+---coerce raw strings into a native request body (`build`) and to locate the
+---program/args fields (`key_of_role`, for `run_target`). Rendering a schema as a
+---run_file template (for `new_task`) lives in `easydap.scaffold`, which builds on
+---the `group_fields`/`is_group`/`resolve_default` helpers exposed here. This module
+---speaks each adapter's native keys directly — no portable field vocabulary between.
 ---
 ---A ParamSpec carries three orthogonal descriptors:
 ---  * `type` — the pure Lua/JSON type of the value (string/boolean/integer/…), or
@@ -117,36 +118,19 @@ end
 ---defaults like `getcwd()` are evaluated at build time, not module load).
 ---@param spec easydap.ParamSpec
 ---@return any
-local function _resolve_default(spec)
+function M.resolve_default(spec)
     if type(spec.default) == "function" then return spec.default() end
     return spec.default
-end
-
----A blank value of the shape `spec` expects, used to seed a template entry the
----caller has no default for (so the generated file is valid Lua to edit).
----@param spec easydap.ParamSpec
----@return any
-local function _placeholder(spec)
-    if spec.role == "args" then return {} end
-    local k = spec.kind
-    if k == "list" or k == "env" then return {} end
-    if k == "enum" then return (spec.enum and spec.enum[1]) or "" end
-    if k == "port" then return 0 end
-    local t = spec.type
-    if t == "boolean" then return false end
-    if t == "integer" or t == "number" then return 0 end
-    if t == "table" then return {} end
-    return "" -- string / file / dir / host + target role
 end
 
 ---A schema node is either a leaf ParamSpec or a nested group. A group is marked
 ---explicitly by `type == "schema"` and holds its child nodes under `fields`;
 ---anything else is a leaf. (The root schema is itself a bare `fields` map — the
----value `M.schema` returns — so `_group_fields` treats an unmarked table as its
+---value `M.schema` returns — so `M.group_fields` treats an unmarked table as its
 ---own field map.)
 ---@param node table
 ---@return boolean
-local function _is_group(node)
+function M.is_group(node)
     return type(node) == "table" and node.type == "schema"
 end
 
@@ -154,7 +138,7 @@ end
 ---the bare root map it is the map itself.
 ---@param group table
 ---@return table<string, easydap.ParamSpec>
-local function _group_fields(group)
+function M.group_fields(group)
     return group.type == "schema" and group.fields or group
 end
 
@@ -166,14 +150,14 @@ end
 ---@param fn fun(key: string, spec: easydap.ParamSpec)
 local function _walk_leaves(schema, fn)
     local function rec(group, prefix)
-        local fields = _group_fields(group)
+        local fields = M.group_fields(group)
         local keys = {}
         for k in pairs(fields) do keys[#keys + 1] = k end
         table.sort(keys)
         for _, k in ipairs(keys) do
             local node = fields[k]
             local path = prefix == "" and k or (prefix .. "." .. k)
-            if _is_group(node) then rec(node, path) else fn(path, node) end
+            if M.is_group(node) then rec(node, path) else fn(path, node) end
         end
     end
     rec(schema, "")
@@ -188,9 +172,9 @@ local function _find_leaf(schema, key)
     local node = schema
     for part in vim.gsplit(key, ".", { plain = true }) do
         if type(node) ~= "table" then return nil end
-        node = _group_fields(node)[part]
+        node = M.group_fields(node)[part]
     end
-    if type(node) == "table" and not _is_group(node) then return node end
+    if type(node) == "table" and not M.is_group(node) then return node end
     return nil
 end
 
@@ -291,50 +275,6 @@ function M.param_names(adapter, request)
     return out
 end
 
----Render an adapter's request schema as the body of a Lua `parameters` table — a
----multi-line source string for a run_file template (see `runner.new_task`). Each
----leaf param is emitted on its own line, seeded with its resolved default or a
----type-appropriate placeholder, with a trailing `-- desc` comment; nested groups
----are rendered inline. `indent` is the column (in spaces) the outermost params
----sit at. Keys are sorted for stable output.
----@param adapter string
----@param request string
----@param indent integer
----@return string? lua, string? err
-function M.render_params(adapter, request, indent)
-    local schema = M.schema(adapter, request)
-    if not schema then
-        return nil, ("adapter %s has no %s schema"):format(tostring(adapter), tostring(request))
-    end
-    local lines = {}
-    local function emit(group, pad)
-        local fields = _group_fields(group)
-        local keys = {}
-        for k in pairs(fields) do keys[#keys + 1] = k end
-        table.sort(keys)
-        for _, k in ipairs(keys) do
-            local node = fields[k]
-            -- Bare identifier keys stay unquoted; anything else needs ["..."].
-            local lhs = k:match("^[%a_][%w_]*$") and k or ("[%q]"):format(k)
-            if _is_group(node) then
-                lines[#lines + 1] = ("%s%s = {"):format(pad, lhs)
-                emit(node, pad .. "    ")
-                lines[#lines + 1] = ("%s},"):format(pad)
-            else
-                local val     = (node.fixed or node.default ~= nil) and _resolve_default(node)
-                    or _placeholder(node)
-                local line    = ("%s%s = %s,"):format(pad, lhs, vim.inspect(val))
-                local comment = node.desc
-                if node.fixed then comment = comment and (comment .. " (fixed)") or "fixed" end
-                if comment then line = line .. "  -- " .. comment end
-                lines[#lines + 1] = line
-            end
-        end
-    end
-    emit(schema, string.rep(" ", indent))
-    return table.concat(lines, "\n")
-end
-
 ---Assemble an adapter-native launch/attach body from already-coerced `values`
 ---(keyed by dotted param path). Mirrors the schema's shape: nested groups produce
 ---nested body tables. Applies `fixed` values and `default`s for keys the caller
@@ -354,20 +294,20 @@ function M.build(adapter, request, values)
     ---@return table? node, string? err
     local function assemble(group, prefix)
         local out = {}
-        for key, node in pairs(_group_fields(group)) do
+        for key, node in pairs(M.group_fields(group)) do
             local path = prefix == "" and key or (prefix .. "." .. key)
-            if _is_group(node) then
+            if M.is_group(node) then
                 local sub, err = assemble(node, path)
                 if not sub then return nil, err end
                 if next(sub) ~= nil then out[key] = sub end
             else
                 local val
                 if node.fixed then
-                    val = _resolve_default(node)
+                    val = M.resolve_default(node)
                 elseif values[path] ~= nil then
                     val = values[path]
                 elseif node.default ~= nil then
-                    val = _resolve_default(node)
+                    val = M.resolve_default(node)
                 end
                 if val == nil and node.required then
                     return nil, ("%s is required"):format(path)

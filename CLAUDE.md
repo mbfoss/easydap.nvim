@@ -46,13 +46,17 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   `run` backend for external task runners. Consumes a native task
   (`name`/`adapter`/`request`/`parameters` + optional `host`/`port`/
   `raw_messages`) and sends `parameters` as the DAP request body verbatim.
-- [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug new_task` and
-  `:Debug run_target`. Reads the adapters' `launch_schema`/`attach_schema` (each
-  `ParamSpec` has a Lua `type`, an optional data `kind` and value-meaning `role`; a
-  schema entry may be a nested group — a `type = "schema"` spec holding children
-  under `fields`) to render a run_file template (`new_task`), assemble a native
-  request body, and locate the program/args fields by `role` (`run_target`). Native
-  keys throughout — no portable/generic field vocabulary.
+- [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug run_target` and
+  the schema reader for `new_task`. Reads the adapters' `launch_schema`/
+  `attach_schema` (each `ParamSpec` has a Lua `type`, an optional data `kind` and
+  value-meaning `role`; a schema entry may be a nested group — a `type = "schema"`
+  spec holding children under `fields`) to assemble a native request body (`build`)
+  and locate the program/args fields by `role` (`run_target`). Exposes
+  `is_group`/`group_fields`/`resolve_default` for schema traversal. Native keys
+  throughout — no portable/generic field vocabulary.
+- [scaffold.lua](lua/easydap/scaffold.lua) — task-file creation behind `:Debug
+  new_task`: renders an adapter's schema (via `easydap.schema`) into a runnable Lua
+  run_file, seeded with fixed values/defaults/placeholders, then opens it.
 
 **Persistence** — [store.lua](lua/easydap/store.lua)
 - A thin path + read/write helper. The project root is the nearest ancestor of

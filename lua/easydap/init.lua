@@ -409,8 +409,7 @@ end
 ---@param request string?
 ---@param path string?
 function M.new_task(adapter, request, path)
-    local runner = require("easydap.runner")
-    return runner.new_task(adapter, request, path)
+    return require("easydap.scaffold").new_task(adapter, request, path)
 end
 
 ---Launch `program` (with optional `args`) under the named debugger — a convenience
