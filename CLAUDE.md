@@ -46,12 +46,12 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   `run` backend for external task runners. Consumes a native task
   (`name`/`adapter`/`request`/`parameters` + optional `host`/`port`/
   `raw_messages`) and sends `parameters` as the DAP request body verbatim.
-- [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug quick_run`.
-  Reads the adapters' `launch_schema`/`attach_schema`, coerces `key=value` tokens
-  (each `ParamSpec` has a Lua `type` + optional semantic `kind`) into a native
-  request body, and enumerates params for completion. Native keys throughout —
-  no portable/generic field vocabulary.
-- [templates.lua](lua/easydap/templates.lua) — starter task templates (LLDB, CodeLLDB, …).
+- [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug new_task` and
+  `:Debug run_target`. Reads the adapters' `launch_schema`/`attach_schema` (each
+  `ParamSpec` has a Lua `type` + optional semantic `kind`; a schema entry may be a
+  nested group of ParamSpecs) to render a run_file template (`new_task`), assemble
+  a native request body, and locate the program/args fields by `kind`
+  (`run_target`). Native keys throughout — no portable/generic field vocabulary.
 
 **Persistence** — [store.lua](lua/easydap/store.lua)
 - A thin path + read/write helper. The project root is the nearest ancestor of

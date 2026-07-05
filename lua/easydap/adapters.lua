@@ -4,8 +4,8 @@
 ---AdapterDef — native DAP process/connection config (command, host/port,
 ---setup/teardown, request, …) plus optional `launch_schema`/`attach_schema`
 ---describing that adapter's own launch/attach parameters. The schemas are what
----`:Debug quick_run` reads (via `easydap.schema`) to turn `key=value` tokens into
----a native request body; the DAP core never touches them.
+---`:Debug new_task`/`run_target` read (via `easydap.schema`) to scaffold a task
+---file / assemble a native request body; the DAP core never touches them.
 ---Users can add adapters or override existing ones directly:
 ---  local adapters = require("easydap.adapters")
 ---  adapters.myAdapter = { command = "...", request = "launch" }
@@ -47,7 +47,7 @@ local M = {}
 ---`request_args` here — that is a per-run value carried by the resolved config.
 ---`setup`/`teardown` receive that resolved config (setup may mutate host/port).
 ---`launch_schema`/`attach_schema` describe the adapter's own DAP parameters and
----are consumed only by `easydap.schema` (for quick_run), never by the DAP core.
+---are consumed only by `easydap.schema` (for new_task/run_target), never by the DAP core.
 ---@class easydap.AdapterDef
 ---@field command?               string|string[]
 ---@field command_cwd?           string
@@ -295,8 +295,8 @@ M.netcoredbg = {
 }
 
 -- Generic TCP attach — connect to a DAP server already listening on host:port.
--- host/port are quick_run envelope keys (they set the task-level connection), so
--- the attach body itself stays minimal.
+-- host/port live at the task level (they set the connection), so the attach body
+-- itself stays minimal.
 M.remote = {
     host          = "127.0.0.1",
     port          = 0,

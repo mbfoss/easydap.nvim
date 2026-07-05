@@ -1,11 +1,12 @@
----@brief Schema engine for `:Debug quick_run`.
+---@brief Schema engine behind `:Debug new_task` and `:Debug run_target`.
 ---
 ---Each adapter in `easydap.adapters` may declare a `launch_schema` and/or
 ---`attach_schema`: a `native_key -> easydap.ParamSpec` table describing that
 ---adapter's own DAP launch/attach parameters. This module reads those schemas to
----coerce `key=value` tokens into a native request body, and to enumerate params
----for completion. quick_run speaks each adapter's native keys directly — there is
----no portable/generic field vocabulary in between.
+---coerce raw strings into a native request body (`build`), to render a run_file
+---template of them (`render_params`, for `new_task`), and to locate the program/
+---args fields (`key_of_kind`, for `run_target`). It speaks each adapter's native
+---keys directly — there is no portable/generic field vocabulary in between.
 ---
 ---A ParamSpec carries two orthogonal descriptors:
 ---  * `type` — the pure Lua/JSON type of the value (string/boolean/integer/…).
@@ -113,6 +114,22 @@ local function _resolve_default(spec)
     return spec.default
 end
 
+---A blank value of the shape `spec` expects, used to seed a template entry the
+---caller has no default for (so the generated file is valid Lua to edit).
+---@param spec easydap.ParamSpec
+---@return any
+local function _placeholder(spec)
+    local k = spec.kind
+    if k == "args" or k == "list" or k == "env" then return {} end
+    if k == "enum" then return (spec.enum and spec.enum[1]) or "" end
+    if k == "port" then return 0 end
+    local t = spec.type
+    if t == "boolean" then return false end
+    if t == "integer" or t == "number" then return 0 end
+    if t == "table" then return {} end
+    return "" -- string / file / dir / target / host
+end
+
 ---A schema node is either a leaf ParamSpec or a nested group of further nodes.
 ---A leaf is recognised by its scalar descriptor fields (`type`/`kind`/`fixed`);
 ---a group is just a map of names to nodes and has none of them at its own level.
@@ -172,8 +189,8 @@ function M.schema(adapter, request)
     return nil
 end
 
----Adapter names that declare at least one schema (i.e. quick_run can build a body
----for them), sorted.
+---Adapter names that declare at least one schema (i.e. `new_task` can scaffold a
+---body for them), sorted.
 ---@return string[]
 function M.adapter_names()
     local names = {}
@@ -254,6 +271,49 @@ function M.param_names(adapter, request)
     end)
     table.sort(out)
     return out
+end
+
+---Render an adapter's request schema as the body of a Lua `parameters` table — a
+---multi-line source string for a run_file template (see `runner.new_task`). Each
+---leaf param is emitted on its own line, seeded with its resolved default or a
+---type-appropriate placeholder, with a trailing `-- desc` comment; nested groups
+---are rendered inline. `indent` is the column (in spaces) the outermost params
+---sit at. Keys are sorted for stable output.
+---@param adapter string
+---@param request string
+---@param indent integer
+---@return string? lua, string? err
+function M.render_params(adapter, request, indent)
+    local schema = M.schema(adapter, request)
+    if not schema then
+        return nil, ("adapter %s has no %s schema"):format(tostring(adapter), tostring(request))
+    end
+    local lines = {}
+    local function emit(group, pad)
+        local keys = {}
+        for k in pairs(group) do keys[#keys + 1] = k end
+        table.sort(keys)
+        for _, k in ipairs(keys) do
+            local node = group[k]
+            -- Bare identifier keys stay unquoted; anything else needs ["..."].
+            local lhs = k:match("^[%a_][%w_]*$") and k or ("[%q]"):format(k)
+            if _is_leaf(node) then
+                local val     = (node.fixed or node.default ~= nil) and _resolve_default(node)
+                    or _placeholder(node)
+                local line    = ("%s%s = %s,"):format(pad, lhs, vim.inspect(val))
+                local comment = node.desc
+                if node.fixed then comment = comment and (comment .. " (fixed)") or "fixed" end
+                if comment then line = line .. "  -- " .. comment end
+                lines[#lines + 1] = line
+            else
+                lines[#lines + 1] = ("%s%s = {"):format(pad, lhs)
+                emit(node, pad .. "    ")
+                lines[#lines + 1] = ("%s},"):format(pad)
+            end
+        end
+    end
+    emit(schema, string.rep(" ", indent))
+    return table.concat(lines, "\n")
 end
 
 ---Assemble an adapter-native launch/attach body from already-coerced `values`

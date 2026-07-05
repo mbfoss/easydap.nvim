@@ -259,125 +259,94 @@ function M.run_file(path)
     M.run(task)
 end
 
--- Keys `quick_run` consumes to build the task envelope. host/port are handled
--- separately: they always set the task-level connection and, when an adapter
--- declares them as schema params, also feed its native request body.
-local _QUICK_ENVELOPE = { adapter = true, request = true, name = true, raw_messages = true }
-
----@param raw string
----@return boolean
-local function _truthy(raw)
-    local low = raw:lower()
-    return low == "true" or low == "1" or low == "yes"
-end
-
----Assemble and run a debug task from `key=value` tokens, without a task file.
----`adapter=<name>` is required; the remaining keys are the adapter's own native
----launch/attach params, as declared in its `launch_schema`/`attach_schema` (see
----`easydap.schema`). Each value is coerced per its ParamSpec and assembled into
----the request body. Reports a clear error for every failure mode instead of
----throwing: bad token, missing/unknown adapter, unsupported request, unknown
----field, bad value, or a missing required param.
----@param tokens string[]  raw key=value tokens (e.g. from `:Debug quick_run`)
----@return easydap.runner.Run?
-function M.quick_run(tokens)
+---Scaffold a run_file for `adapter` + `request`: write a Lua file that returns a
+---task table whose `parameters` are pre-populated from the adapter's schema (fixed
+---values, defaults, and type-appropriate placeholders for the rest, each annotated
+---with its description), then open it for editing. Run it afterwards with `:Debug
+---run_file`. `path` defaults to `<project root or cwd>/<adapter>_<request>.lua`,
+---uniquified so an existing file is never clobbered. Reports a clear error for
+---every failure mode instead of throwing.
+---@param adapter string
+---@param request string?
+---@param path string?
+---@return string? path  the file that was created
+function M.new_task(adapter, request, path)
     local schema = require("easydap.schema")
 
-    if type(tokens) ~= "table" or #tokens == 0 then
-        _warn("quick_run: no arguments (usage: quick_run adapter=<name> program=<prog> …)")
-        return
-    end
-
-    -- Parse key=value tokens, splitting on the first '=' so values may contain it.
-    local kv = {}
-    for _, tok in ipairs(tokens) do
-        local eq = tok:find("=", 1, true)
-        if not eq or eq == 1 then
-            _warn("quick_run: expected key=value, got: " .. tok)
-            return
-        end
-        kv[tok:sub(1, eq - 1)] = tok:sub(eq + 1)
-    end
-
-    local adapter = kv.adapter
     if not adapter or adapter == "" then
-        _warn("quick_run: missing required adapter=<name>")
+        _warn("new_task: usage: new_task <adapter> [request] [path]")
         return
     end
     local base = require("easydap.adapters")[adapter]
     if not base then
-        _err("quick_run: unknown adapter: " .. adapter ..
+        _err("new_task: unknown adapter: " .. adapter ..
             " (available: " .. table.concat(schema.adapter_names(), ", ") .. ")")
         return
     end
 
-    -- Resolve the request: explicit request=, else the adapter's DAP default,
-    -- else launch — then fall back to whichever schema the adapter actually has.
-    local request   = kv.request or base.request or "launch"
+    -- Resolve the request: given, else the adapter's DAP default, else its sole
+    -- schema — then reject anything the adapter has no schema for.
     local supported = schema.requests(adapter)
+    if #supported == 0 then
+        _err("new_task: adapter " .. adapter .. " declares no launch/attach schema")
+        return
+    end
+    request = (request and request ~= "") and request or (base.request or "launch")
     if not vim.tbl_contains(supported, request) then
         if #supported == 1 then
             request = supported[1]
         else
-            _err(("quick_run: adapter %s has no %s schema (supports: %s)")
+            _err(("new_task: adapter %s has no %s schema (supports: %s)")
                 :format(adapter, request, table.concat(supported, ", ")))
             return
         end
     end
 
-    -- Coerce the remaining keys into schema values. host/port never fail the
-    -- unknown-field check (they are connection keys); they only reach the body
-    -- when the adapter's schema declares them.
-    local values = {}
-    for key, raw in pairs(kv) do
-        if not _QUICK_ENVELOPE[key] then
-            local spec = schema.spec(adapter, request, key)
-            if spec then
-                local value, err = schema.coerce(spec, raw)
-                if err then
-                    _warn("quick_run: " .. key .. ": " .. err)
-                    return
-                end
-                values[key] = value
-            elseif key ~= "host" and key ~= "port" then
-                _warn("quick_run: unknown field: " .. key ..
-                    " (valid: " .. table.concat(schema.param_names(adapter, request), ", ") .. ")")
-                return
-            end
+    -- Resolve the destination and uniquify so we never overwrite an existing file.
+    local root = require("easydap.store").root() or vim.fn.getcwd()
+    local dest = (path and path ~= "") and vim.fn.fnamemodify(vim.fn.expand(path), ":p")
+        or vim.fs.joinpath(root, adapter .. "_" .. request .. ".lua")
+    if not dest:match("%.lua$") then dest = dest .. ".lua" end
+    do
+        local stem, n = (dest:gsub("%.lua$", "")), 1
+        while vim.uv.fs_stat(dest) do
+            dest = ("%s_%d.lua"):format(stem, n)
+            n = n + 1
         end
     end
 
-    local params, perr = schema.build(adapter, request, values)
-    if not params then
-        _err("quick_run: " .. tostring(perr))
+    local params_src, perr = schema.render_params(adapter, request, 8)
+    if not params_src then
+        _err("new_task: " .. tostring(perr))
         return
     end
 
-    -- Task-level connection target (used verbatim for `remote`, ignored by
-    -- adapters whose setup manages host/port themselves).
-    local task_port
-    if kv.port then
-        task_port = tonumber(kv.port)
-        if not task_port or task_port ~= math.floor(task_port) then
-            _warn("quick_run: port: expected an integer, got " .. kv.port)
-            return
-        end
-    end
-
-    ---@type easydap.Task
-    local task = {
-        name         = kv.name or adapter,
-        adapter      = adapter,
-        request      = request,
-        parameters   = params,
-        host         = kv.host,
-        port         = task_port,
-        raw_messages = kv.raw_messages ~= nil and _truthy(kv.raw_messages) or nil,
+    local lines = {
+        ("-- easydap task — %s (%s)"):format(adapter, request),
+        "-- Edit the parameters, then run with:  :Debug run_file " .. vim.fn.fnamemodify(dest, ":~:."),
+        "return {",
+        ("    name       = %q,"):format(adapter),
+        ("    adapter    = %q,"):format(adapter),
+        ("    request    = %q,"):format(request),
     }
-    return M.run(task)
+    -- TCP adapters carry host/port at the task level, not in the body; seed them.
+    if base.host ~= nil or base.port ~= nil then
+        lines[#lines + 1] = ("    host       = %q,"):format(base.host or "127.0.0.1")
+        lines[#lines + 1] = ("    port       = %d,"):format(base.port or 0)
+    end
+    vim.list_extend(lines, { "    parameters = {", params_src, "    },", "}", "" })
+
+    local ok, werr = require("easydap.tk.fsutil").write_content(dest, table.concat(lines, "\n"))
+    if not ok then
+        _err("new_task: failed to write " .. dest .. ": " .. tostring(werr))
+        return
+    end
+    vim.cmd.edit(vim.fn.fnameescape(dest))
+    vim.notify("[easydap] created task file: " .. dest, vim.log.levels.INFO)
+    return dest
 end
 
----Launch a program under a debugger by name — a convenience over `quick_run` that
+---Launch a program under a debugger by name — a convenience that
 ---takes the program and its arguments directly, instead of adapter-native
 ---`key=value` tokens. It maps `program`/`args` onto whatever native fields the
 ---chosen adapter uses for them (located via their `target`/`args` ParamSpec kinds,
@@ -402,7 +371,7 @@ function M.run_target(adapter, program, program_args)
     end
     local target_key = schema.key_of_kind(adapter, "launch", "target")
     if not target_key then
-        _err("run_target: adapter " .. adapter .. " has no launch target (try quick_run)")
+        _err("run_target: adapter " .. adapter .. " has no launch target (try new_task)")
         return
     end
     if not program or program == "" then

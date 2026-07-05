@@ -78,93 +78,6 @@ local function _warn_if_unpersisted()
         vim.log.levels.WARN)
 end
 
----Completion for `:Debug quick_run …`. `committed` is the already-typed
----`key=value` tokens; `arg_lead` is the partial token under the cursor. Returns
----full `key=value` candidates — the usercmd layer prefix-filters them by arg_lead.
----@param committed string[]
----@param arg_lead string
----@return string[]
-local function _quick_run_complete(committed, arg_lead)
-    local schema = require("easydap.schema")
-
-    -- Scan committed tokens for the chosen adapter/request and the used keys.
-    local adapter, request
-    local used = {}
-    for _, tok in ipairs(committed) do
-        local key, val = tok:match("^([%w_.]+)=(.*)$")
-        if key then
-            used[key] = true
-            if key == "adapter" then adapter = val end
-            if key == "request" then request = val end
-        end
-    end
-
-    ---The request used for param lookup: explicit request=, else the adapter's
-    ---default, else whichever schema it has.
-    local function eff_request()
-        if request and request ~= "" then return request end
-        if not adapter then return "launch" end
-        local supported = schema.requests(adapter)
-        local base      = require("easydap.adapters")[adapter]
-        local r         = (base and base.request) or "launch"
-        if vim.tbl_contains(supported, r) then return r end
-        return supported[1] or "launch"
-    end
-
-    ---@param prefix string
-    ---@param values string[]
-    local function tag(prefix, values)
-        return vim.tbl_map(function(v) return prefix .. v end, values)
-    end
-
-    -- Completing a value: arg_lead is `key=partial`.
-    local vkey, vpartial = arg_lead:match("^([%w_.]+)=(.*)$")
-    if vkey then
-        if vkey == "adapter" then
-            return tag("adapter=", schema.adapter_names())
-        elseif vkey == "request" then
-            return tag("request=", adapter and schema.requests(adapter) or { "launch", "attach" })
-        elseif vkey == "raw_messages" then
-            return tag("raw_messages=", { "true", "false" })
-        end
-        local spec = adapter and schema.spec(adapter, eff_request(), vkey)
-        if spec then
-            if spec.kind == "enum" and spec.enum then
-                return tag(vkey .. "=", vim.tbl_map(tostring, spec.enum))
-            elseif spec.type == "boolean" then
-                return tag(vkey .. "=", { "true", "false" })
-            elseif spec.kind == "dir" then
-                return tag(vkey .. "=", vim.fn.getcompletion(vpartial, "dir"))
-            elseif spec.kind == "file" or spec.kind == "target" then
-                return tag(vkey .. "=", vim.fn.getcompletion(vpartial, "file"))
-            end
-        end
-        return {}
-    end
-
-    -- Completing a key: offer `key=` candidates, minus already-used ones. `seen`
-    -- guards against re-offering host/port, which are both envelope keys and (for
-    -- some adapters) declared schema params.
-    local out  = {}
-    local seen = {}
-    local function offer(key)
-        if not used[key] and not seen[key] then
-            seen[key]    = true
-            out[#out + 1] = key .. "="
-        end
-    end
-    offer("adapter")
-    if adapter and #schema.requests(adapter) > 0 then
-        offer("request")
-        offer("name")
-        offer("raw_messages")
-        offer("host")
-        offer("port")
-        for _, f in ipairs(schema.param_names(adapter, eff_request())) do offer(f) end
-    end
-    return out
-end
-
 local function _register_user_commands()
     local cmd      = require("easydap.manager")
     local usercmd  = require("easydap.tk.usercmd")
@@ -252,7 +165,7 @@ local function _register_user_commands()
     end
 
     local _debug_subs = {
-        "run_file", "run_target", "quick_run", "rerun",
+        "run_file", "run_target", "new_task", "rerun",
         "breakpoint",
         "view", "continue", "continue_all",
         "step_over", "next", "step_in", "step_out", "step_back",
@@ -273,8 +186,8 @@ local function _register_user_commands()
             M.run_file(args[2])
         elseif sub == "run_target" then
             M.run_target(args[2], args[3], { unpack(args, 4) })
-        elseif sub == "quick_run" then
-            M.quick_run({ unpack(args, 2) })
+        elseif sub == "new_task" then
+            M.new_task(args[2], args[3], args[4])
         elseif sub == "rerun" then
             M.rerun()
         elseif sub == "view" then
@@ -366,8 +279,13 @@ local function _register_user_commands()
             if #rest == 1 then return require("easydap.schema").target_adapters() end
             return vim.fn.getcompletion(arg_lead, "file")
         end
-        if rest[1] == "quick_run" then
-            return _quick_run_complete({ unpack(rest, 2) }, arg_lead)
+        if rest[1] == "new_task" then
+            local schema = require("easydap.schema")
+            -- <adapter> <request> [path]
+            if #rest == 1 then return schema.adapter_names() end
+            if #rest == 2 then return schema.requests(rest[2]) end
+            if #rest == 3 then return vim.fn.getcompletion(arg_lead, "file") end
+            return {}
         end
         if rest[1] == "panel" and #rest == 1 then
             return { "toggle", "jump", "next", "previous" }
@@ -484,17 +402,20 @@ function M.run_file(path)
     return runner.run_file(path)
 end
 
----Assemble and run a debug task from `key=value` tokens (adapter-agnostic).
----E.g. `quick_run adapter=gdb command=./a.out stop_on_entry=true`.
----@param tokens string[] raw key=value tokens
-function M.quick_run(tokens)
+---Scaffold a run_file for `adapter` + `request` from its schema (defaults +
+---placeholders + descriptions) and open it for editing. E.g.
+---`new_task("codelldb", "launch")` writes `<root>/codelldb_launch.lua`.
+---@param adapter string
+---@param request string?
+---@param path string?
+function M.new_task(adapter, request, path)
     local runner = require("easydap.runner")
-    return runner.quick_run(tokens)
+    return runner.new_task(adapter, request, path)
 end
 
 ---Launch `program` (with optional `args`) under the named debugger — a convenience
----over `quick_run` that maps the program and its arguments onto the adapter's
----native launch fields. E.g. `run_target("codelldb", "./a.out", { "--verbose" })`.
+---that maps the program and its arguments onto the adapter's native launch fields.
+---E.g. `run_target("codelldb", "./a.out", { "--verbose" })`.
 ---@param adapter string
 ---@param program string?
 ---@param program_args string[]?

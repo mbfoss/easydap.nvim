@@ -2,10 +2,10 @@ local OutputBuffer = require "easydap.ui.OutputBuffer"
 local _config      = require "easydap.config"
 
 ---A debug task — native DAP, sent as-is. `parameters` is the adapter's raw
----launch/attach body, sent verbatim. `:Debug quick_run` assembles one from
----`key=value` tokens using the adapter's schema (see `easydap.schema`); tasks
----from a file supply `parameters` directly. Mirrors what easytasks sends as
----`debug.Params`; `name` defaults to "debug".
+---launch/attach body, sent verbatim. `:Debug new_task` scaffolds a task file
+---pre-filled from the adapter's schema (see `easydap.schema`); tasks from a file
+---supply `parameters` directly. Mirrors what easytasks sends as `debug.Params`;
+---`name` defaults to "debug".
 ---@class easydap.Task
 ---@field name?         string                     run/panel group name (defaults to "debug")
 ---@field adapter       string                     name of an entry in `easydap.adapters`
@@ -66,9 +66,8 @@ M.start = function(task, callbacks)
 
     -- The task is native DAP: `parameters` is the adapter's raw launch/attach
     -- body, sent verbatim. The task layer never inspects or translates it —
-    -- assembling `parameters` from `key=value` tokens is quick_run's job, via the
-    -- adapter schemas in `easydap.schema`. A task with no `parameters` sends an
-    -- empty body.
+    -- scaffolding `parameters` from an adapter schema is new_task's job, via
+    -- `easydap.schema`. A task with no `parameters` sends an empty body.
     local base     = adapters[task.adapter]
     if not base then
         report("unknown DAP adapter: " .. tostring(task.adapter))
