@@ -1,9 +1,11 @@
 ---@brief Built-in DAP adapter definitions.
 ---
----The module is a plain table: each key is an adapter name, each value is a
----Config — pure native DAP (command, host/port, setup/teardown, request, …).
----Translating a generic task (command/cwd/env/…) into a native launch/attach
----body is an opt-in concern that lives in `easydap.derive`, not here.
+---The module is a plain table: each key is an adapter name, each value is an
+---AdapterDef — native DAP process/connection config (command, host/port,
+---setup/teardown, request, …) plus optional `launch_schema`/`attach_schema`
+---describing that adapter's own launch/attach parameters. The schemas are what
+---`:Debug quick_run` reads (via `easydap.schema`) to turn `key=value` tokens into
+---a native request body; the DAP core never touches them.
 ---Users can add adapters or override existing ones directly:
 ---  local adapters = require("easydap.adapters")
 ---  adapters.myAdapter = { command = "...", request = "launch" }
@@ -19,12 +21,29 @@ local M = {}
 ---@field add_bufnr fun(bufnr: integer, opts?: easydap.AddBufOpts)
 ---@field report    fun(message: string)
 
+---One parameter of an adapter's launch/attach schema. `type` is the value's pure
+---Lua/JSON type; `kind` is an optional semantic refinement that drives CLI-string
+---coercion, completion and validation (a `kind` implies its `type`). A `fixed`
+---entry is not user-settable — it always emits its `default` (which may be a
+---function for computed values) — and needs no `type`.
+---@class easydap.ParamSpec
+---@field type?     "string"|"boolean"|"integer"|"number"|"table"
+---@field kind?     "path"|"argv"|"env"|"enum"|"host"|"port"
+---@field enum?     any[]              allowed values when `kind == "enum"`
+---@field desc?     string
+---@field into?     string             dotted body path to assign to (defaults to the key)
+---@field default?  any|fun():any      value used when the caller omits the key
+---@field fixed?    boolean            not user-settable; always emits `default`
+---@field required? boolean
+
 ---A static adapter definition — the launch/attach template for one adapter.
 ---Entries of this module are values of this type. It is NOT the per-run config
 ---the DAP layer consumes: the task runner resolves an `AdapterDef` + a task into
 ---an `easydap.dap.Config` (see [dap/client.lua](dap/client.lua)). No
 ---`request_args` here — that is a per-run value carried by the resolved config.
 ---`setup`/`teardown` receive that resolved config (setup may mutate host/port).
+---`launch_schema`/`attach_schema` describe the adapter's own DAP parameters and
+---are consumed only by `easydap.schema` (for quick_run), never by the DAP core.
 ---@class easydap.AdapterDef
 ---@field command?               string|string[]
 ---@field command_cwd?           string
@@ -35,6 +54,8 @@ local M = {}
 ---@field type?                  string   DAP adapterID override (defaults to the adapter name)
 ---@field defer_launch_attach?   boolean
 ---@field request?               string
+---@field launch_schema?         table<string, easydap.ParamSpec>
+---@field attach_schema?         table<string, easydap.ParamSpec>
 ---@field setup?                 fun(config: easydap.dap.Config, ctx: easydap.AdapterSetupCtx, callback: fun(err?: string, state?: any))
 ---@field teardown?              fun(config: easydap.dap.Config, ctx: any)
 
@@ -48,6 +69,30 @@ local function _free_port()
     tcp:close()
     return addr.port
 end
+
+-- ── Common param specs ─────────────────────────────────────────────────────
+-- Read-only ParamSpec fragments reused across the process-launching adapters.
+-- Adapters whose defaults differ (e.g. lldb's runInTerminal, delve's program)
+-- spell those entries out inline instead of sharing these.
+
+---@type easydap.ParamSpec
+local _program = { type = "string", kind = "path", desc = "program to debug" }
+---@type easydap.ParamSpec
+local _args = { type = "table", kind = "argv", desc = "program arguments" }
+---@type easydap.ParamSpec
+local _cwd = { type = "string", kind = "path", desc = "working directory" }
+---@type easydap.ParamSpec
+local _env = { type = "table", kind = "env", desc = "environment: VAR=VAL,VAR2=VAL2" }
+---@type easydap.ParamSpec
+local _run_in_terminal = { type = "boolean", desc = "run in the integrated terminal" }
+
+-- Shared by debugpy and debugpy-module (both attach the same way).
+---@type table<string, easydap.ParamSpec>
+local _debugpy_attach_schema = {
+    processId   = { type = "integer", desc = "PID to attach to" },
+    cwd         = _cwd,
+    stopOnEntry = { type = "boolean", desc = "stop at entry" },
+}
 
 -- ── Built-in adapter configs ───────────────────────────────────────────────
 
@@ -96,13 +141,40 @@ M.debugpy = {
     command            = "python3",
     setup              = _debugpy_setup,
     teardown           = function(_, ctx) if ctx then ctx.handle.stop() end end,
+    launch_schema      = {
+        type            = { fixed = true, default = "python" },
+        program         = _program,
+        args            = _args,
+        cwd             = _cwd,
+        env             = _env,
+        justMyCode      = { type = "boolean", desc = "debug only user code", default = false },
+        console         = { type = "string", kind = "enum", default = "integratedTerminal",
+            enum = { "integratedTerminal", "internalConsole", "externalTerminal" }, desc = "console kind" },
+        stopOnEntry     = { type = "boolean", desc = "stop at entry", default = false },
+        showReturnValue = { type = "boolean", desc = "show function return values", default = true },
+        runInTerminal   = _run_in_terminal,
+    },
+    attach_schema      = _debugpy_attach_schema,
 }
 
--- task.command maps to `module` (the Python module name, not a file path)
+-- `module` is the Python module name (not a file path); everything else mirrors debugpy.
 M["debugpy-module"] = {
     command            = "python3",
     setup              = _debugpy_setup,
     teardown           = function(_, ctx) if ctx then ctx.handle.stop() end end,
+    launch_schema      = {
+        type          = { fixed = true, default = "python" },
+        module        = { type = "string", desc = "python module name" },
+        args          = _args,
+        cwd           = _cwd,
+        env           = _env,
+        justMyCode    = { type = "boolean", desc = "debug only user code", default = false },
+        console       = { type = "string", kind = "enum", default = "integratedTerminal",
+            enum = { "integratedTerminal", "internalConsole", "externalTerminal" }, desc = "console kind" },
+        stopOnEntry   = { type = "boolean", desc = "stop at entry", default = false },
+        runInTerminal = _run_in_terminal,
+    },
+    attach_schema      = _debugpy_attach_schema,
 }
 
 -- Attach to a remote Python process running debugpy.
@@ -113,45 +185,135 @@ M["debugpy-remote"] = {
     setup              = _debugpy_setup,
     teardown           = function(_, ctx) if ctx then ctx.handle.stop() end end,
     request            = "attach",
+    -- host/port target the REMOTE process and go in the body's `connect`, not the
+    -- task-level connection (the local adapter port is chosen by _debugpy_setup).
+    attach_schema      = {
+        type       = { fixed = true, default = "python" },
+        host       = { type = "string", kind = "host", into = "connect.host", desc = "remote host", default = "127.0.0.1" },
+        port       = { type = "integer", kind = "port", into = "connect.port", desc = "remote port", default = 5678 },
+        justMyCode = { type = "boolean", desc = "debug only user code", default = false },
+    },
 }
 
 M.codelldb = {
-    command = "codelldb",
+    command       = "codelldb",
+    launch_schema = {
+        type          = { fixed = true, default = "lldb" },
+        program       = _program,
+        args          = _args,
+        cwd           = _cwd,
+        env           = _env,
+        stopOnEntry   = { type = "boolean", desc = "stop at entry", default = false },
+        runInTerminal = _run_in_terminal,
+    },
+    attach_schema = {
+        type        = { fixed = true, default = "lldb" },
+        pid         = { type = "integer", desc = "PID to attach to" },
+        cwd         = _cwd,
+        stopOnEntry = { type = "boolean", desc = "stop at entry" },
+    },
 }
 
 M.gdb = {
-    command = { "gdb", "--interpreter=dap" },
+    command       = { "gdb", "--interpreter=dap" },
+    launch_schema = {
+        request       = { fixed = true, default = "launch" },
+        program       = _program,
+        args          = _args,
+        cwd           = _cwd,
+        env           = _env,
+        stopOnEntry   = { type = "boolean", desc = "stop at entry" },
+        runInTerminal = _run_in_terminal,
+    },
+    attach_schema = {
+        pid         = { type = "integer", desc = "PID to attach to" },
+        cwd         = _cwd,
+        stopOnEntry = { type = "boolean", desc = "stop at entry" },
+    },
 }
 
 -- netcoredbg uses stopAtEntry instead of the standard stopOnEntry
 M.netcoredbg = {
-    command = { "netcoredbg", "--interpreter=vscode" },
+    command       = { "netcoredbg", "--interpreter=vscode" },
+    launch_schema = {
+        program       = _program,
+        args          = _args,
+        cwd           = _cwd,
+        env           = _env,
+        stopAtEntry   = { type = "boolean", desc = "stop at entry", default = false },
+        runInTerminal = _run_in_terminal,
+    },
+    attach_schema = {
+        processId   = { type = "integer", desc = "PID to attach to" },
+        cwd         = _cwd,
+        stopAtEntry = { type = "boolean", desc = "stop at entry" },
+    },
 }
 
 -- Generic TCP attach — connect to a DAP server already listening on host:port.
--- Set host/port in the task definition; request_args are forwarded verbatim for
--- adapters that also want them in the DAP attach body (e.g. delve remote mode).
+-- host/port are quick_run envelope keys (they set the task-level connection), so
+-- the attach body itself stays minimal.
 M.remote = {
-    host    = "127.0.0.1",
-    port    = 0,
-    request = "attach",
+    host          = "127.0.0.1",
+    port          = 0,
+    request       = "attach",
+    attach_schema = {
+        stopOnEntry = { type = "boolean", desc = "stop at entry" },
+    },
 }
 
--- Java — expects an external debug server (e.g. started by nvim-jdtls).
--- Set host and port via task-level overrides or request_args.
+-- Java — expects an external debug server (e.g. started by nvim-jdtls). Unlike
+-- `remote`, this adapter also wants host/port echoed into the attach body.
 M["java-debug-server"] = {
-    host    = "127.0.0.1",
-    port    = 0,
-    request = "attach",
+    host          = "127.0.0.1",
+    port          = 0,
+    request       = "attach",
+    attach_schema = {
+        host = { type = "string", kind = "host", desc = "debug server host" },
+        port = { type = "integer", kind = "port", desc = "debug server port" },
+    },
 }
 
 M.lldb = {
-    command = "lldb-dap",
+    command       = "lldb-dap",
+    launch_schema = {
+        type          = { fixed = true, default = "lldb" },
+        program       = _program,
+        args          = _args,
+        cwd           = _cwd,
+        env           = _env,
+        stopOnEntry   = { type = "boolean", desc = "stop at entry", default = false },
+        runInTerminal = { type = "boolean", desc = "run in the integrated terminal", default = true },
+    },
+    attach_schema = {
+        type        = { fixed = true, default = "lldb" },
+        pid         = { type = "integer", desc = "PID to attach to" },
+        cwd         = _cwd,
+        stopOnEntry = { type = "boolean", desc = "stop at entry" },
+    },
 }
 
--- Go — dlv dap communicates over stdio; no TCP setup required.
+-- Go — dlv dap communicates over stdio; no TCP setup required. `program` defaults
+-- to the current directory (debug the package at cwd).
 M.delve = {
-    command = { "dlv", "dap" },
+    command       = { "dlv", "dap" },
+    launch_schema = {
+        mode          = { type = "string", kind = "enum", default = "debug",
+            enum = { "debug", "test", "exec", "replay", "core" }, desc = "dlv launch mode" },
+        program       = { type = "string", kind = "path", desc = "package or binary (defaults to cwd)",
+            default = function() return vim.fn.getcwd() end },
+        args          = _args,
+        cwd           = _cwd,
+        env           = _env,
+        stopOnEntry   = { type = "boolean", desc = "stop at entry" },
+        runInTerminal = _run_in_terminal,
+    },
+    attach_schema = {
+        mode        = { type = "string", kind = "enum", enum = { "local", "remote" }, default = "local", desc = "dlv attach mode" },
+        processId   = { type = "integer", desc = "PID to attach to" },
+        cwd         = _cwd,
+        stopOnEntry = { type = "boolean", desc = "stop at entry" },
+    },
 }
 
 -- JavaScript / TypeScript — starts js-debug's TCP server, then connects to it.
@@ -211,14 +373,61 @@ M["js-debug"] = {
     teardown = function(_, ctx)
         if ctx then ctx.handle.stop() end
     end,
+
+    launch_schema = {
+        type              = { fixed = true, default = "pwa-node" },
+        program           = _program,
+        args              = _args,
+        runtimeExecutable = { type = "string", desc = "node executable", default = "node" },
+        cwd               = _cwd,
+        env               = _env,
+        stopOnEntry       = { type = "boolean", desc = "stop at entry" },
+        runInTerminal     = _run_in_terminal,
+    },
+    attach_schema = {
+        type        = { fixed = true, default = "pwa-node" },
+        port        = { type = "integer", kind = "port", desc = "inspector port", default = 9229 },
+        cwd         = _cwd,
+        stopOnEntry = { type = "boolean", desc = "stop at entry" },
+    },
 }
 
+-- bash-debug-adapter has adapter-specific path fields; runInTerminal is omitted
+-- because the adapter manages its own terminal via terminalKind.
 M["bash-debug-adapter"] = {
-    command = "bash-debug-adapter",
+    command       = "bash-debug-adapter",
+    launch_schema = {
+        type          = { fixed = true, default = "bashdb" },
+        name          = { fixed = true, default = "Launch Bash Script" },
+        program       = { type = "string", kind = "path", desc = "bash script to debug" },
+        args          = _args,
+        cwd           = _cwd,
+        env           = _env,
+        pathBash      = { fixed = true, default = "bash" },
+        pathBashdb    = { fixed = true, default = function()
+            local p = vim.fs.joinpath(vim.fn.stdpath("data"), "mason", "packages", "bash-debug-adapter", "bashdb")
+            return vim.fn.filereadable(p) == 1 and p or "bashdb"
+        end },
+        pathBashdbLib = { fixed = true, default = function()
+            return vim.fs.joinpath(vim.fn.stdpath("data"), "mason", "packages", "bash-debug-adapter")
+        end },
+        pathCat       = { fixed = true, default = "cat" },
+        pathMkfifo    = { fixed = true, default = "mkfifo" },
+        pathPkill     = { fixed = true, default = "pkill" },
+        terminalKind  = { fixed = true, default = "integrated" },
+        stopOnEntry   = { type = "boolean", desc = "stop at entry" },
+    },
 }
 
+-- PHP — listens for an Xdebug connection; there is no program to launch.
 M["php-debug-adapter"] = {
-    command = "php-debug-adapter",
+    command       = "php-debug-adapter",
+    launch_schema = {
+        type = { fixed = true, default = "php" },
+        name = { fixed = true, default = "Listen for Xdebug" },
+        cwd  = { type = "string", kind = "path", desc = "working directory", default = function() return vim.fn.getcwd() end },
+        port = { type = "integer", kind = "port", desc = "Xdebug port", default = 9003 },
+    },
 }
 
 -- Lua
@@ -233,6 +442,15 @@ M["local-lua-debugger"] = {
             vim.fn.stdpath("data"), "mason", "packages",
             "local-lua-debugger-vscode", "debugger", "?.lua"
         ) .. ";;",
+    },
+    -- `program` is a nested table the js-based adapter consumes; `file` lands
+    -- inside it via dotted `into` paths.
+    launch_schema = {
+        type                      = { fixed = true, default = "lua-local" },
+        name                      = { fixed = true, default = "Debug" },
+        ["program.lua"]           = { fixed = true, default = function() return vim.fn.exepath("lua") end },
+        ["program.communication"] = { fixed = true, default = "stdio" },
+        file                      = { type = "string", kind = "path", into = "program.file", desc = "lua file to debug" },
     },
 }
 

@@ -85,7 +85,7 @@ end
 ---@param arg_lead string
 ---@return string[]
 local function _quick_run_complete(committed, arg_lead)
-    local derive = require("easydap.derive")
+    local schema = require("easydap.schema")
 
     -- Scan committed tokens for the chosen adapter/request and the used keys.
     local adapter, request
@@ -99,12 +99,12 @@ local function _quick_run_complete(committed, arg_lead)
         end
     end
 
-    ---The request used for field lookup: explicit request=, else the adapter's
-    ---default, else whichever it maps.
+    ---The request used for param lookup: explicit request=, else the adapter's
+    ---default, else whichever schema it has.
     local function eff_request()
         if request and request ~= "" then return request end
         if not adapter then return "launch" end
-        local supported = derive.requests(adapter)
+        local supported = schema.requests(adapter)
         local base      = require("easydap.adapters")[adapter]
         local r         = (base and base.request) or "launch"
         if vim.tbl_contains(supported, r) then return r end
@@ -121,32 +121,44 @@ local function _quick_run_complete(committed, arg_lead)
     local vkey, vpartial = arg_lead:match("^([%w_]+)=(.*)$")
     if vkey then
         if vkey == "adapter" then
-            return tag("adapter=", derive.adapter_names())
+            return tag("adapter=", schema.adapter_names())
         elseif vkey == "request" then
-            return tag("request=", adapter and derive.requests(adapter) or { "launch", "attach" })
+            return tag("request=", adapter and schema.requests(adapter) or { "launch", "attach" })
         elseif vkey == "raw_messages" then
             return tag("raw_messages=", { "true", "false" })
         end
-        local spec = derive.field_specs[vkey]
-        if spec and spec.type == "boolean" then
-            return tag(vkey .. "=", { "true", "false" })
-        elseif spec and spec.type == "path" then
-            return tag(vkey .. "=", vim.fn.getcompletion(vpartial, "file"))
+        local spec = adapter and schema.spec(adapter, eff_request(), vkey)
+        if spec then
+            if spec.kind == "enum" and spec.enum then
+                return tag(vkey .. "=", vim.tbl_map(tostring, spec.enum))
+            elseif spec.type == "boolean" then
+                return tag(vkey .. "=", { "true", "false" })
+            elseif spec.kind == "path" then
+                return tag(vkey .. "=", vim.fn.getcompletion(vpartial, "file"))
+            end
         end
         return {}
     end
 
-    -- Completing a key: offer `key=` candidates, minus already-used keys.
-    local out = {}
+    -- Completing a key: offer `key=` candidates, minus already-used ones. `seen`
+    -- guards against re-offering host/port, which are both envelope keys and (for
+    -- some adapters) declared schema params.
+    local out  = {}
+    local seen = {}
     local function offer(key)
-        if not used[key] then out[#out + 1] = key .. "=" end
+        if not used[key] and not seen[key] then
+            seen[key]    = true
+            out[#out + 1] = key .. "="
+        end
     end
     offer("adapter")
-    if adapter and derive.adapters[adapter] then
+    if adapter and #schema.requests(adapter) > 0 then
         offer("request")
         offer("name")
         offer("raw_messages")
-        for _, f in ipairs(derive.fields(adapter, eff_request())) do offer(f) end
+        offer("host")
+        offer("port")
+        for _, f in ipairs(schema.param_names(adapter, eff_request())) do offer(f) end
     end
     return out
 end

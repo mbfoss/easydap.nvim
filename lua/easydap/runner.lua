@@ -259,8 +259,9 @@ function M.run_file(path)
     M.run(task)
 end
 
--- Keys `quick_run` consumes itself to build the task envelope; everything else
--- must be a portable `easydap.derive` field.
+-- Keys `quick_run` consumes to build the task envelope. host/port are handled
+-- separately: they always set the task-level connection and, when an adapter
+-- declares them as schema params, also feed its native request body.
 local _QUICK_ENVELOPE = { adapter = true, request = true, name = true, raw_messages = true }
 
 ---@param raw string
@@ -271,19 +272,19 @@ local function _truthy(raw)
 end
 
 ---Assemble and run a debug task from `key=value` tokens, without a task file.
----`adapter=<name>` is required; the remaining keys are the portable
----`easydap.derive` fields (command/cwd/stop_on_entry/…), translated to the
----adapter's native launch/attach body. Adapter-agnostic: the same keys work
----across every adapter. Reports a clear error for every failure mode instead of
+---`adapter=<name>` is required; the remaining keys are the adapter's own native
+---launch/attach params, as declared in its `launch_schema`/`attach_schema` (see
+---`easydap.schema`). Each value is coerced per its ParamSpec and assembled into
+---the request body. Reports a clear error for every failure mode instead of
 ---throwing: bad token, missing/unknown adapter, unsupported request, unknown
----field, bad value, or a derive translation error.
+---field, bad value, or a missing required param.
 ---@param tokens string[]  raw key=value tokens (e.g. from `:Debug quick_run`)
 ---@return easydap.runner.Run?
 function M.quick_run(tokens)
-    local derive = require("easydap.derive")
+    local schema = require("easydap.schema")
 
     if type(tokens) ~= "table" or #tokens == 0 then
-        _warn("quick_run: no arguments (usage: quick_run adapter=<name> command=<prog> …)")
+        _warn("quick_run: no arguments (usage: quick_run adapter=<name> program=<prog> …)")
         return
     end
 
@@ -303,50 +304,64 @@ function M.quick_run(tokens)
         _warn("quick_run: missing required adapter=<name>")
         return
     end
-    if not derive.adapters[adapter] then
-        _err("quick_run: no derive mapping for adapter: " .. adapter ..
-            " (available: " .. table.concat(derive.adapter_names(), ", ") .. ")")
+    local base = require("easydap.adapters")[adapter]
+    if not base then
+        _err("quick_run: unknown adapter: " .. adapter ..
+            " (available: " .. table.concat(schema.adapter_names(), ", ") .. ")")
         return
     end
 
     -- Resolve the request: explicit request=, else the adapter's DAP default,
-    -- else launch — then fall back to whichever the adapter actually maps.
-    local base      = require("easydap.adapters")[adapter]
-    local request   = kv.request or (base and base.request) or "launch"
-    local supported = derive.requests(adapter)
+    -- else launch — then fall back to whichever schema the adapter actually has.
+    local request   = kv.request or base.request or "launch"
+    local supported = schema.requests(adapter)
     if not vim.tbl_contains(supported, request) then
         if #supported == 1 then
             request = supported[1]
         else
-            _err(("quick_run: adapter %s has no %s mapping (supports: %s)")
+            _err(("quick_run: adapter %s has no %s schema (supports: %s)")
                 :format(adapter, request, table.concat(supported, ", ")))
             return
         end
     end
 
-    -- Build the portable derive task from the remaining keys, coercing each.
-    ---@type easydap.derive.Task
-    local generic = {}
+    -- Coerce the remaining keys into schema values. host/port never fail the
+    -- unknown-field check (they are connection keys); they only reach the body
+    -- when the adapter's schema declares them.
+    local values = {}
     for key, raw in pairs(kv) do
         if not _QUICK_ENVELOPE[key] then
-            if derive.field_specs[key] == nil then
+            local spec = schema.spec(adapter, request, key)
+            if spec then
+                local value, err = schema.coerce(spec, raw)
+                if err then
+                    _warn("quick_run: " .. key .. ": " .. err)
+                    return
+                end
+                values[key] = value
+            elseif key ~= "host" and key ~= "port" then
                 _warn("quick_run: unknown field: " .. key ..
-                    " (valid: " .. table.concat(derive.fields(adapter, request), ", ") .. ")")
+                    " (valid: " .. table.concat(schema.param_names(adapter, request), ", ") .. ")")
                 return
             end
-            local value, err = derive.coerce(key, raw)
-            if err then
-                _warn("quick_run: " .. err)
-                return
-            end
-            generic[key] = value
         end
     end
 
-    local params, perr = derive.args(adapter, request, generic)
+    local params, perr = schema.build(adapter, request, values)
     if not params then
         _err("quick_run: " .. tostring(perr))
         return
+    end
+
+    -- Task-level connection target (used verbatim for `remote`, ignored by
+    -- adapters whose setup manages host/port themselves).
+    local task_port
+    if kv.port then
+        task_port = tonumber(kv.port)
+        if not task_port or task_port ~= math.floor(task_port) then
+            _warn("quick_run: port: expected an integer, got " .. kv.port)
+            return
+        end
     end
 
     ---@type easydap.Task
@@ -355,8 +370,8 @@ function M.quick_run(tokens)
         adapter      = adapter,
         request      = request,
         parameters   = params,
-        host         = generic.host,
-        port         = generic.port,
+        host         = kv.host,
+        port         = task_port,
         raw_messages = kv.raw_messages ~= nil and _truthy(kv.raw_messages) or nil,
     }
     return M.run(task)

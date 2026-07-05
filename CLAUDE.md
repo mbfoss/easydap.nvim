@@ -38,16 +38,19 @@ The code is layered; higher layers depend on lower ones, not the reverse.
 
 **Adapters & tasks**
 - [adapters.lua](lua/easydap/adapters.lua) — built-in adapter definitions as a
-  plain `name -> easydap.dap.Config` table (pure native DAP); users add/override
-  keys directly.
+  plain `name -> easydap.AdapterDef` table: native DAP process/connection config
+  plus optional `launch_schema`/`attach_schema` (a `native_key -> ParamSpec` map)
+  describing the adapter's own launch/attach parameters. Users add/override keys
+  directly. The DAP core never reads the schemas — only `easydap.schema` does.
 - [task.lua](lua/easydap/task.lua) — task runner (`easydap.TaskTypeDef`); the
   `run` backend for external task runners. Consumes a native task
   (`name`/`adapter`/`request`/`parameters` + optional `host`/`port`/
   `raw_messages`) and sends `parameters` as the DAP request body verbatim.
-- [derive.lua](lua/easydap/derive.lua) — optional, **standalone** utility (nothing
-  in easydap requires it): builds a task's native `parameters` from a portable
-  description (target/cwd/env/…) via `derive.args(adapter, request, generic)`,
-  keyed by a per-adapter registry parallel to `adapters`.
+- [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug quick_run`.
+  Reads the adapters' `launch_schema`/`attach_schema`, coerces `key=value` tokens
+  (each `ParamSpec` has a Lua `type` + optional semantic `kind`) into a native
+  request body, and enumerates params for completion. Native keys throughout —
+  no portable/generic field vocabulary.
 - [templates.lua](lua/easydap/templates.lua) — starter task templates (LLDB, CodeLLDB, …).
 
 **Persistence** — [store.lua](lua/easydap/store.lua)
