@@ -28,7 +28,7 @@ local M = {}
 ---function for computed values) — and needs no `type`.
 ---@class easydap.ParamSpec
 ---@field type?     "string"|"boolean"|"integer"|"number"|"table"
----@field kind?     "path"|"argv"|"env"|"enum"|"host"|"port"
+---@field kind?     "path"|"argv"|"env"|"enum"|"host"|"port"|"list"
 ---@field enum?     any[]              allowed values when `kind == "enum"`
 ---@field desc?     string
 ---@field into?     string             dotted body path to assign to (defaults to the key)
@@ -85,6 +85,37 @@ local _cwd = { type = "string", kind = "path", desc = "working directory" }
 local _env = { type = "table", kind = "env", desc = "environment: VAR=VAL,VAR2=VAL2" }
 ---@type easydap.ParamSpec
 local _run_in_terminal = { type = "boolean", desc = "run in the integrated terminal" }
+
+---A comma-separated list of verbatim LLDB command lines (each kept whole).
+---@param desc string
+---@return easydap.ParamSpec
+local function _lldb_cmds(desc)
+    return { type = "table", kind = "list", desc = desc }
+end
+
+-- ParamSpecs common to lldb-dap's launch and attach requests (see
+-- https://lldb.llvm.org/use/lldbdap.html). Merged into both schemas below.
+---@type table<string, easydap.ParamSpec>
+local _lldb_common = {
+    sourcePath                    = { type = "string", kind = "path",
+        desc = "remap './' so relative-source binaries resolve breakpoints" },
+    sourceMap                     = { type = "table",
+        desc = "source path re-mappings (array of [from, to] pairs)" },
+    debuggerRoot                  = { type = "string", kind = "path",
+        desc = "working directory lldb-dap uses to locate sources/objects" },
+    commandEscapePrefix           = { type = "string",
+        desc = "prefix for running LLDB commands in the debug console (default '`')" },
+    customFrameFormat             = { type = "string", desc = "format string for stack frame labels" },
+    customThreadFormat            = { type = "string", desc = "format string for thread labels" },
+    displayExtendedBacktrace      = { type = "boolean", desc = "enable language-specific extended backtraces" },
+    enableAutoVariableSummaries   = { type = "boolean", desc = "auto-generate variable summaries when none exist" },
+    enableSyntheticChildDebugging = { type = "boolean", desc = "show synthetic children alongside raw contents" },
+    initCommands                  = _lldb_cmds("LLDB commands run when the debugger starts"),
+    preRunCommands                = _lldb_cmds("LLDB commands run before launch/attach"),
+    stopCommands                  = _lldb_cmds("LLDB commands run after each stop"),
+    exitCommands                  = _lldb_cmds("LLDB commands run when the program exits"),
+    terminateCommands             = _lldb_cmds("LLDB commands run when the session ends"),
+}
 
 -- Shared by debugpy and debugpy-module (both attach the same way).
 ---@type table<string, easydap.ParamSpec>
@@ -274,23 +305,34 @@ M["java-debug-server"] = {
     },
 }
 
+-- lldb-dap — the launch/attach parameters mirror the LLVM docs
+-- (https://lldb.llvm.org/use/lldbdap.html). `_lldb_common` supplies the source
+-- remapping / formatting / command-hook fields shared by both requests.
 M.lldb = {
     command       = "lldb-dap",
-    launch_schema = {
-        type          = { fixed = true, default = "lldb" },
-        program       = _program,
-        args          = _args,
-        cwd           = _cwd,
-        env           = _env,
-        stopOnEntry   = { type = "boolean", desc = "stop at entry", default = false },
-        runInTerminal = { type = "boolean", desc = "run in the integrated terminal", default = true },
-    },
-    attach_schema = {
-        type        = { fixed = true, default = "lldb" },
-        pid         = { type = "integer", desc = "PID to attach to" },
-        cwd         = _cwd,
-        stopOnEntry = { type = "boolean", desc = "stop at entry" },
-    },
+    launch_schema = vim.tbl_extend("error", {
+        type           = { fixed = true, default = "lldb" },
+        program        = _program,
+        args           = _args,
+        cwd            = _cwd,
+        env            = _env,
+        stdio          = { type = "table", kind = "list", desc = "redirection targets for the program's stdio streams" },
+        stopOnEntry    = { type = "boolean", desc = "stop at entry", default = false },
+        console        = { type = "string", kind = "enum", default = "integratedTerminal",
+            enum = { "internalConsole", "integratedTerminal", "externalTerminal" },
+            desc = "where to launch the program (supersedes runInTerminal)" },
+        launchCommands = _lldb_cmds("LLDB commands run to launch the program (replaces the default launch)"),
+    }, _lldb_common),
+    attach_schema = vim.tbl_extend("error", {
+        type             = { fixed = true, default = "lldb" },
+        program          = { type = "string", kind = "path", desc = "path to the executable (helps locate the binary)" },
+        pid              = { type = "integer", desc = "PID to attach to" },
+        waitFor          = { type = "boolean", desc = "wait for the next process matching `program` to launch" },
+        attachCommands   = _lldb_cmds("LLDB commands run to perform the attach (replaces the default attach)"),
+        coreFile         = { type = "string", kind = "path", desc = "core file to debug" },
+        ["gdb-remote-port"] = { type = "integer", kind = "port", desc = "TCP port to attach to on a remote system" },
+        ["gdb-remote-host"] = { type = "string", kind = "host", desc = "hostname of the remote system (default localhost)" },
+    }, _lldb_common),
 }
 
 -- Go — dlv dap communicates over stdio; no TCP setup required. `program` defaults

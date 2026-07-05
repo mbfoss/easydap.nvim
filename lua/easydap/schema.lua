@@ -9,7 +9,7 @@
 ---
 ---A ParamSpec carries two orthogonal descriptors:
 ---  * `type` — the pure Lua/JSON type of the value (string/boolean/integer/…).
----  * `kind` — an optional semantic refinement (path/argv/env/enum/host/port)
+---  * `kind` — an optional semantic refinement (path/argv/env/enum/host/port/list)
 ---    that drives string coercion, completion and validation.
 ---When both are present the `kind` implies the `type` (e.g. `kind="argv"` yields a
 ---`table`); coercing a CLI string prefers the `kind` parser and falls back to a
@@ -69,6 +69,10 @@ function M.coerce(spec, raw)
         return n
     elseif kind == "argv" then
         return str_util.split_shell_args(raw)
+    elseif kind == "list" then
+        -- Comma-separated list of verbatim strings (each element kept whole, so
+        -- entries may contain spaces — e.g. full LLDB command lines).
+        return vim.split(raw, ",", { plain = true, trimempty = true })
     elseif kind == "env" then
         local out = {}
         for _, pair in ipairs(vim.split(raw, ",", { plain = true, trimempty = true })) do
