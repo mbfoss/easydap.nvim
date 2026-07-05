@@ -28,7 +28,7 @@ local M = {}
 ---function for computed values) — and needs no `type`.
 ---@class easydap.ParamSpec
 ---@field type?     "string"|"boolean"|"integer"|"number"|"table"
----@field kind?     "path"|"argv"|"env"|"enum"|"host"|"port"|"list"
+---@field kind?     "target"|"args"|"env"|"enum"|"host"|"port"|"list"|"file"|"dir"
 ---@field enum?     any[]              allowed values when `kind == "enum"`
 ---@field desc?     string
 ---@field into?     string             dotted body path to assign to (defaults to the key)
@@ -75,12 +75,18 @@ end
 -- Adapters whose defaults differ (e.g. lldb's runInTerminal, delve's program)
 -- spell those entries out inline instead of sharing these.
 
+-- `kind = "target"` marks the launch program — the thing `run_target` fills from
+-- its `<program>` argument. It coerces like a file path; the kind is what lets
+-- run_target locate this field generically across adapters (which name it
+-- `program`/`module`/`file`). `kind = "args"` similarly marks the arguments field.
+-- (`file`/`dir` are plain path params, split only so completion knows which to
+-- offer.)
 ---@type easydap.ParamSpec
-local _program = { type = "string", kind = "path", desc = "program to debug" }
+local _program = { type = "string", kind = "target", desc = "program to debug" }
 ---@type easydap.ParamSpec
-local _args = { type = "table", kind = "argv", desc = "program arguments" }
+local _args = { type = "table", kind = "args", desc = "program arguments" }
 ---@type easydap.ParamSpec
-local _cwd = { type = "string", kind = "path", desc = "working directory" }
+local _cwd = { type = "string", kind = "dir", desc = "working directory" }
 ---@type easydap.ParamSpec
 local _env = { type = "table", kind = "env", desc = "environment: VAR=VAL,VAR2=VAL2" }
 ---@type easydap.ParamSpec
@@ -97,11 +103,11 @@ end
 -- https://lldb.llvm.org/use/lldbdap.html). Merged into both schemas below.
 ---@type table<string, easydap.ParamSpec>
 local _lldb_common = {
-    sourcePath                    = { type = "string", kind = "path",
+    sourcePath                    = { type = "string", kind = "dir",
         desc = "remap './' so relative-source binaries resolve breakpoints" },
     sourceMap                     = { type = "table",
         desc = "source path re-mappings (array of [from, to] pairs)" },
-    debuggerRoot                  = { type = "string", kind = "path",
+    debuggerRoot                  = { type = "string", kind = "dir",
         desc = "working directory lldb-dap uses to locate sources/objects" },
     commandEscapePrefix           = { type = "string",
         desc = "prefix for running LLDB commands in the debug console (default '`')" },
@@ -195,7 +201,7 @@ M["debugpy-module"] = {
     teardown           = function(_, ctx) if ctx then ctx.handle.stop() end end,
     launch_schema      = {
         type          = { fixed = true, default = "python" },
-        module        = { type = "string", desc = "python module name" },
+        module        = { type = "string", kind = "target", desc = "python module name" },
         args          = _args,
         cwd           = _cwd,
         env           = _env,
@@ -325,11 +331,11 @@ M.lldb = {
     }, _lldb_common),
     attach_schema = vim.tbl_extend("error", {
         type             = { fixed = true, default = "lldb" },
-        program          = { type = "string", kind = "path", desc = "path to the executable (helps locate the binary)" },
+        program          = { type = "string", kind = "file", desc = "path to the executable (helps locate the binary)" },
         pid              = { type = "integer", desc = "PID to attach to" },
         waitFor          = { type = "boolean", desc = "wait for the next process matching `program` to launch" },
         attachCommands   = _lldb_cmds("LLDB commands run to perform the attach (replaces the default attach)"),
-        coreFile         = { type = "string", kind = "path", desc = "core file to debug" },
+        coreFile         = { type = "string", kind = "file", desc = "core file to debug" },
         ["gdb-remote-port"] = { type = "integer", kind = "port", desc = "TCP port to attach to on a remote system" },
         ["gdb-remote-host"] = { type = "string", kind = "host", desc = "hostname of the remote system (default localhost)" },
     }, _lldb_common),
@@ -342,7 +348,7 @@ M.delve = {
     launch_schema = {
         mode          = { type = "string", kind = "enum", default = "debug",
             enum = { "debug", "test", "exec", "replay", "core" }, desc = "dlv launch mode" },
-        program       = { type = "string", kind = "path", desc = "package or binary (defaults to cwd)",
+        program       = { type = "string", kind = "target", desc = "package or binary (defaults to cwd)",
             default = function() return vim.fn.getcwd() end },
         args          = _args,
         cwd           = _cwd,
@@ -441,7 +447,7 @@ M["bash-debug-adapter"] = {
     launch_schema = {
         type          = { fixed = true, default = "bashdb" },
         name          = { fixed = true, default = "Launch Bash Script" },
-        program       = { type = "string", kind = "path", desc = "bash script to debug" },
+        program       = { type = "string", kind = "target", desc = "bash script to debug" },
         args          = _args,
         cwd           = _cwd,
         env           = _env,
@@ -467,7 +473,7 @@ M["php-debug-adapter"] = {
     launch_schema = {
         type = { fixed = true, default = "php" },
         name = { fixed = true, default = "Listen for Xdebug" },
-        cwd  = { type = "string", kind = "path", desc = "working directory", default = function() return vim.fn.getcwd() end },
+        cwd  = { type = "string", kind = "dir", desc = "working directory", default = function() return vim.fn.getcwd() end },
         port = { type = "integer", kind = "port", desc = "Xdebug port", default = 9003 },
     },
 }
@@ -492,7 +498,7 @@ M["local-lua-debugger"] = {
         name                      = { fixed = true, default = "Debug" },
         ["program.lua"]           = { fixed = true, default = function() return vim.fn.exepath("lua") end },
         ["program.communication"] = { fixed = true, default = "stdio" },
-        file                      = { type = "string", kind = "path", into = "program.file", desc = "lua file to debug" },
+        file                      = { type = "string", kind = "target", into = "program.file", desc = "lua file to debug" },
     },
 }
 

@@ -377,6 +377,80 @@ function M.quick_run(tokens)
     return M.run(task)
 end
 
+---Launch a program under a debugger by name — a convenience over `quick_run` that
+---takes the program and its arguments directly, instead of adapter-native
+---`key=value` tokens. It maps `program`/`args` onto whatever native fields the
+---chosen adapter uses for them (located via their `target`/`args` ParamSpec kinds,
+---so `program`/`module`/`file` all work), fills the rest of the launch body from
+---the schema's defaults, and runs. Always a `launch` — adapters without a launch
+---target (attach-only ones) are rejected.
+---@param adapter string
+---@param program string?
+---@param program_args string[]?  arguments passed to the program
+---@return easydap.runner.Run?
+function M.run_target(adapter, program, program_args)
+    local schema = require("easydap.schema")
+
+    if not adapter or adapter == "" then
+        _warn("run_target: usage: run_target <adapter> <program> [args…]")
+        return
+    end
+    if not require("easydap.adapters")[adapter] then
+        _err("run_target: unknown adapter: " .. adapter ..
+            " (available: " .. table.concat(schema.target_adapters(), ", ") .. ")")
+        return
+    end
+    local target_key = schema.key_of_kind(adapter, "launch", "target")
+    if not target_key then
+        _err("run_target: adapter " .. adapter .. " has no launch target (try quick_run)")
+        return
+    end
+    if not program or program == "" then
+        _warn("run_target: missing program (usage: run_target " .. adapter .. " <program> [args…])")
+        return
+    end
+
+    -- Fill the target field from `program`, and the args field from the remaining
+    -- args; everything else comes from the schema's fixed values / defaults.
+    local values = {}
+    local target_spec = schema.spec(adapter, "launch", target_key)
+    if not target_spec then
+        _err("run_target: adapter " .. adapter .. " has no settable target field")
+        return
+    end
+    local value, cerr = schema.coerce(target_spec, program)
+    if cerr then
+        _warn("run_target: " .. target_key .. ": " .. cerr)
+        return
+    end
+    values[target_key] = value
+
+    if program_args and #program_args > 0 then
+        local args_key = schema.key_of_kind(adapter, "launch", "args")
+        if not args_key then
+            _warn("run_target: adapter " .. adapter .. " takes no program arguments; ignoring: "
+                .. table.concat(program_args, " "))
+        else
+            values[args_key] = program_args
+        end
+    end
+
+    local params, perr = schema.build(adapter, "launch", values)
+    if not params then
+        _err("run_target: " .. tostring(perr))
+        return
+    end
+
+    ---@type easydap.Task
+    local task = {
+        name       = adapter,
+        adapter    = adapter,
+        request    = "launch",
+        parameters = params,
+    }
+    return M.run(task)
+end
+
 ---Cancel every live run. Stops their sessions, or aborts a run still in adapter
 ---setup (before any session exists, where `:Debug stop` has nothing to act on yet).
 function M.cancel()

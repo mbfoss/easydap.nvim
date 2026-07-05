@@ -9,11 +9,15 @@
 ---
 ---A ParamSpec carries two orthogonal descriptors:
 ---  * `type` — the pure Lua/JSON type of the value (string/boolean/integer/…).
----  * `kind` — an optional semantic refinement (path/argv/env/enum/host/port/list)
----    that drives string coercion, completion and validation.
----When both are present the `kind` implies the `type` (e.g. `kind="argv"` yields a
+---  * `kind` — an optional semantic refinement (file/dir/target/args/env/enum/
+---    host/port/list) that drives string coercion, completion and validation.
+---When both are present the `kind` implies the `type` (e.g. `kind="args"` yields a
 ---`table`); coercing a CLI string prefers the `kind` parser and falls back to a
 ---plain `type` coercion when no `kind` is set.
+---
+---`target` and `args` double as role markers: they tag an adapter's program field
+---and arguments field so `run_target` can map its `<program>`/`<args>` inputs onto
+---whatever native keys that adapter uses (see `key_of_kind`).
 
 local str_util = require("easydap.tk.strutil")
 
@@ -53,7 +57,10 @@ end
 ---@return any? value, string? err
 function M.coerce(spec, raw)
     local kind = spec.kind
-    if kind == "path" then
+    if kind == "file" or kind == "dir" or kind == "target" then
+        -- All three are a single expanded path. `file`/`dir` differ only in the
+        -- completion they drive; `target` additionally serves as run_target's
+        -- role marker. None changes the coerced value shape.
         return vim.fn.expand(raw)
     elseif kind == "host" then
         return raw
@@ -67,7 +74,7 @@ function M.coerce(spec, raw)
             return nil, ("port out of range (0-65535), got %d"):format(n)
         end
         return n
-    elseif kind == "argv" then
+    elseif kind == "args" then
         return str_util.split_shell_args(raw)
     elseif kind == "list" then
         -- Comma-separated list of verbatim strings (each element kept whole, so
@@ -149,6 +156,39 @@ function M.adapter_names()
     end
     table.sort(names)
     return names
+end
+
+---The first user-settable param key in an adapter's request schema whose spec has
+---the given `kind` (e.g. `"target"` for the program field, `"args"` for the
+---arguments field), or nil. Lets run_target map program/args onto an adapter's
+---native keys without hard-coding their names. Keys are scanned in sorted order so
+---the pick is stable if a schema ever declares two of the same kind.
+---@param adapter string
+---@param request string  "launch"|"attach"
+---@param kind string
+---@return string?
+function M.key_of_kind(adapter, request, kind)
+    local schema = M.schema(adapter, request)
+    if not schema then return nil end
+    local keys = {}
+    for key in pairs(schema) do keys[#keys + 1] = key end
+    table.sort(keys)
+    for _, key in ipairs(keys) do
+        local spec = schema[key]
+        if not spec.fixed and spec.kind == kind then return key end
+    end
+    return nil
+end
+
+---Adapter names that can launch a program target via run_target — those whose
+---launch schema declares a `target`-kind field — sorted.
+---@return string[]
+function M.target_adapters()
+    local out = {}
+    for _, name in ipairs(M.adapter_names()) do
+        if M.key_of_kind(name, "launch", "target") then out[#out + 1] = name end
+    end
+    return out
 end
 
 ---Which requests (`"launch"`/`"attach"`) an adapter declares a schema for.

@@ -133,7 +133,9 @@ local function _quick_run_complete(committed, arg_lead)
                 return tag(vkey .. "=", vim.tbl_map(tostring, spec.enum))
             elseif spec.type == "boolean" then
                 return tag(vkey .. "=", { "true", "false" })
-            elseif spec.kind == "path" then
+            elseif spec.kind == "dir" then
+                return tag(vkey .. "=", vim.fn.getcompletion(vpartial, "dir"))
+            elseif spec.kind == "file" or spec.kind == "target" then
                 return tag(vkey .. "=", vim.fn.getcompletion(vpartial, "file"))
             end
         end
@@ -250,7 +252,7 @@ local function _register_user_commands()
     end
 
     local _debug_subs = {
-        "run_file", "quick_run", "rerun",
+        "run_file", "run_target", "quick_run", "rerun",
         "breakpoint",
         "view", "continue", "continue_all",
         "step_over", "next", "step_in", "step_out", "step_back",
@@ -269,6 +271,8 @@ local function _register_user_commands()
         local sub = args[1]
         if sub == "run_file" then
             M.run_file(args[2])
+        elseif sub == "run_target" then
+            M.run_target(args[2], args[3], { unpack(args, 4) })
         elseif sub == "quick_run" then
             M.quick_run({ unpack(args, 2) })
         elseif sub == "rerun" then
@@ -355,6 +359,11 @@ local function _register_user_commands()
             return _bp_complete({ unpack(rest, 2) })
         end
         if rest[1] == "run_file" and #rest == 1 then
+            return vim.fn.getcompletion(arg_lead, "file")
+        end
+        if rest[1] == "run_target" then
+            -- First arg: adapter name; program and its args complete as files.
+            if #rest == 1 then return require("easydap.schema").target_adapters() end
             return vim.fn.getcompletion(arg_lead, "file")
         end
         if rest[1] == "quick_run" then
@@ -481,6 +490,17 @@ end
 function M.quick_run(tokens)
     local runner = require("easydap.runner")
     return runner.quick_run(tokens)
+end
+
+---Launch `program` (with optional `args`) under the named debugger — a convenience
+---over `quick_run` that maps the program and its arguments onto the adapter's
+---native launch fields. E.g. `run_target("codelldb", "./a.out", { "--verbose" })`.
+---@param adapter string
+---@param program string?
+---@param program_args string[]?
+function M.run_target(adapter, program, program_args)
+    local runner = require("easydap.runner")
+    return runner.run_target(adapter, program, program_args)
 end
 
 ---@param task easydap.Task
