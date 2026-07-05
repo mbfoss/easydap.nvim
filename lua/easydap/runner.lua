@@ -10,7 +10,7 @@
 ---  -- debug.lua
 ---  return { name = "debug app", adapter = "lldb", request = "launch", parameters = { program = "a.out" } }
 
-local M = {}
+local M        = {}
 
 ---A run: a unique id (used as its panel group), the task name, a cancel
 ---function, the buffers it spawned (REPL, Output, Terminal, DAP messages), and
@@ -49,8 +49,8 @@ end
 -- vim.notify, which is spammy during setup. Pre-flight errors (bad path, etc.)
 -- stay on vim.notify — they happen before any run, hence before any panel.
 
-local _report_buf  ---@type integer?
-local _panel       ---@type easydap.ui.Panel?
+local _report_buf ---@type integer?
+local _panel ---@type easydap.ui.Panel?
 
 ---@return easydap.ui.Panel
 local function _get_panel()
@@ -75,7 +75,7 @@ end
 ---pages do not outrank it) while real program output (Output 0, Terminal 10)
 ---surfaces over it once it arrives.
 local function _report_open()
-    _get_panel():add(_report_bufnr(), { label = "Report", priority = -1, autoscroll = true })
+    _get_panel():add(_report_bufnr(), { label = "Messages", priority = -1, autoscroll = true })
 end
 
 ---Append timestamped lines to the report buffer. The panel autoscrolls the page
@@ -88,8 +88,8 @@ local function _report(msg)
         lines[#lines + 1] = ("[%s] %s"):format(stamp, l)
     end
 
-    local buf   = _report_bufnr()
-    local empty = vim.api.nvim_buf_line_count(buf) == 1
+    local buf              = _report_bufnr()
+    local empty            = vim.api.nvim_buf_line_count(buf) == 1
         and vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == ""
     vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, empty and 0 or -1, -1, false, lines)
@@ -129,8 +129,8 @@ function M.run(task)
         return
     end
 
-    task      = vim.deepcopy(task)
-    task.name = task.name or "debug"
+    task       = vim.deepcopy(task)
+    task.name  = task.name or "debug"
     _last_task = task
 
     _clear_finished(task.name)

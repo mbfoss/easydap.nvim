@@ -160,7 +160,7 @@ local function _register_user_commands()
     })
 
     local _debug_subs = {
-        "run", "rerun",
+        "run_file", "rerun",
         "breakpoint",
         "view", "continue", "continue_all",
         "step_over", "next", "step_in", "step_out", "step_back",
@@ -175,8 +175,8 @@ local function _register_user_commands()
 
     usercmd.register_user_cmd("Debug", function(_, args, opts)
         local sub = args[1]
-        if sub == "run" then
-            M.run(args[2])
+        if sub == "run_file" then
+            M.run_file(args[2])
         elseif sub == "rerun" then
             M.rerun()
         elseif sub == "view" then
@@ -234,7 +234,7 @@ local function _register_user_commands()
             -- both jump to tab 2 (count is 0 when none is given).
             local count  = opts.count > 0 and opts.count or nil
             if action == "jump" then
-                runner.panel_jump(count or tonumber(args[3]))
+                runner.panel_jump(count or tonumber(args[3]) or nil)
             elseif action == "next" then
                 runner.panel_next()
             elseif action == "previous" or action == "prev" then
@@ -262,7 +262,7 @@ local function _register_user_commands()
                 local def = usercmd.get_subcommand("breakpoint")
                 return def and def.complete({ unpack(rest, 2) }, arg_lead) or {}
             end
-            if rest[1] == "run" and #rest == 1 then
+            if rest[1] == "run_file" and #rest == 1 then
                 return vim.fn.getcompletion(arg_lead, "file")
             end
             if rest[1] == "panel" and #rest == 1 then
@@ -344,22 +344,16 @@ function M.open_disassembly_view()
     M.disassembly_view():open()
 end
 
----Run a debug task standalone (without easytasks):
----  • string → a Lua file returning a single task, or a folder to pick one from
----  • table  → run a task directly
----@param arg string|easydap.Task
-function M.run(arg)
+---@param path string a Lua file returning a single task, or a folder to pick one from
+function M.run_file(path)
     local runner = require("easydap.runner")
+    return runner.run_file(path)
+end
 
-    if type(arg) == "string" then
-        return runner.run_file(arg)
-    end
-    if type(arg) == "table" then
-        return runner.run(arg)
-    end
-
-    vim.notify("[easydap] run: expected a Lua file or folder, e.g. :Debug run debug.lua",
-        vim.log.levels.WARN)
+---@param task easydap.Task
+function M.run(task)
+    local runner = require("easydap.runner")
+    return runner.run(task)
 end
 
 ---Re-run the most recently run task from scratch. Warns when nothing has run yet.
