@@ -369,7 +369,7 @@ function M.run_target(adapter, program, program_args)
             " (available: " .. table.concat(schema.target_adapters(), ", ") .. ")")
         return
     end
-    local target_key = schema.key_of_kind(adapter, "launch", "target")
+    local target_key = schema.key_of_role(adapter, "launch", "target")
     if not target_key then
         _err("run_target: adapter " .. adapter .. " has no launch target (try new_task)")
         return
@@ -395,7 +395,7 @@ function M.run_target(adapter, program, program_args)
     values[target_key] = value
 
     if program_args and #program_args > 0 then
-        local args_key = schema.key_of_kind(adapter, "launch", "args")
+        local args_key = schema.key_of_role(adapter, "launch", "args")
         if not args_key then
             _warn("run_target: adapter " .. adapter .. " takes no program arguments; ignoring: "
                 .. table.concat(program_args, " "))

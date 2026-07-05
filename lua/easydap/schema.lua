@@ -5,20 +5,23 @@
 ---adapter's own DAP launch/attach parameters. This module reads those schemas to
 ---coerce raw strings into a native request body (`build`), to render a run_file
 ---template of them (`render_params`, for `new_task`), and to locate the program/
----args fields (`key_of_kind`, for `run_target`). It speaks each adapter's native
+---args fields (`key_of_role`, for `run_target`). It speaks each adapter's native
 ---keys directly — there is no portable/generic field vocabulary in between.
 ---
----A ParamSpec carries two orthogonal descriptors:
----  * `type` — the pure Lua/JSON type of the value (string/boolean/integer/…).
----  * `kind` — an optional semantic refinement (file/dir/target/args/env/enum/
----    host/port/list) that drives string coercion, completion and validation.
----When both are present the `kind` implies the `type` (e.g. `kind="args"` yields a
----`table`); coercing a CLI string prefers the `kind` parser and falls back to a
----plain `type` coercion when no `kind` is set.
+---A ParamSpec carries three orthogonal descriptors:
+---  * `type` — the pure Lua/JSON type of the value (string/boolean/integer/…), or
+---    the sentinel `"schema"` marking a nested group (a `{fields=…}` subschema).
+---  * `kind` — an optional *data* refinement (file/dir/env/enum/host/port/list)
+---    that drives string coercion, completion and validation. A `kind` implies its
+---    `type` (e.g. `kind="list"` yields a `table`); coercing a CLI string prefers
+---    the `kind` parser and falls back to a plain `type` coercion when unset.
+---  * `role` — an optional *value-meaning* marker (target/args) tagging an
+---    adapter's program field and arguments field so `run_target` can map its
+---    `<program>`/`<args>` inputs onto whatever native keys the adapter uses (see
+---    `key_of_role`). A `role` is independent of `kind`/`type` coercion.
 ---
----`target` and `args` double as role markers: they tag an adapter's program field
----and arguments field so `run_target` can map its `<program>`/`<args>` inputs onto
----whatever native keys that adapter uses (see `key_of_kind`).
+---These axes are orthogonal to `fixed`, which marks a param as not user-settable
+---(it always emits its `default`); a fixed param needs no `type`.
 
 local str_util = require("easydap.tk.strutil")
 
@@ -51,17 +54,24 @@ local function _coerce_by_type(type_, raw)
     return raw
 end
 
----Coerce a raw CLI string into the value declared by `spec`. The `kind` (semantic
----type) wins when it defines its own parsing; otherwise the pure `type` is used.
+---Coerce a raw CLI string into the value declared by `spec`. The value-meaning
+---`role` is honoured first (args → table, target → expanded path), then the data
+---`kind`, and finally the pure `type` when neither defines its own parsing.
 ---@param spec easydap.ParamSpec
 ---@param raw string
 ---@return any? value, string? err
 function M.coerce(spec, raw)
+    if spec.role == "args" then
+        return str_util.split_shell_args(raw)
+    elseif spec.role == "target" then
+        -- The run_target program: a single expanded path (module names pass
+        -- through `expand` unchanged, having nothing to expand).
+        return vim.fn.expand(raw)
+    end
     local kind = spec.kind
-    if kind == "file" or kind == "dir" or kind == "target" then
-        -- All three are a single expanded path. `file`/`dir` differ only in the
-        -- completion they drive; `target` additionally serves as run_target's
-        -- role marker. None changes the coerced value shape.
+    if kind == "file" or kind == "dir" then
+        -- A single expanded path; `file`/`dir` differ only in the completion they
+        -- drive, not in the coerced value shape.
         return vim.fn.expand(raw)
     elseif kind == "host" then
         return raw
@@ -75,8 +85,6 @@ function M.coerce(spec, raw)
             return nil, ("port out of range (0-65535), got %d"):format(n)
         end
         return n
-    elseif kind == "args" then
-        return str_util.split_shell_args(raw)
     elseif kind == "list" then
         -- Comma-separated list of verbatim strings (each element kept whole, so
         -- entries may contain spaces — e.g. full LLDB command lines).
@@ -119,43 +127,53 @@ end
 ---@param spec easydap.ParamSpec
 ---@return any
 local function _placeholder(spec)
+    if spec.role == "args" then return {} end
     local k = spec.kind
-    if k == "args" or k == "list" or k == "env" then return {} end
+    if k == "list" or k == "env" then return {} end
     if k == "enum" then return (spec.enum and spec.enum[1]) or "" end
     if k == "port" then return 0 end
     local t = spec.type
     if t == "boolean" then return false end
     if t == "integer" or t == "number" then return 0 end
     if t == "table" then return {} end
-    return "" -- string / file / dir / target / host
+    return "" -- string / file / dir / host + target role
 end
 
----A schema node is either a leaf ParamSpec or a nested group of further nodes.
----A leaf is recognised by its scalar descriptor fields (`type`/`kind`/`fixed`);
----a group is just a map of names to nodes and has none of them at its own level.
+---A schema node is either a leaf ParamSpec or a nested group. A group is marked
+---explicitly by `type == "schema"` and holds its child nodes under `fields`;
+---anything else is a leaf. (The root schema is itself a bare `fields` map — the
+---value `M.schema` returns — so `_group_fields` treats an unmarked table as its
+---own field map.)
 ---@param node table
 ---@return boolean
-local function _is_leaf(node)
-    return type(node.type) == "string"
-        or type(node.kind) == "string"
-        or type(node.fixed) == "boolean"
+local function _is_group(node)
+    return type(node) == "table" and node.type == "schema"
+end
+
+---The child-node map of a group. For a marked subschema that is its `fields`; for
+---the bare root map it is the map itself.
+---@param group table
+---@return table<string, easydap.ParamSpec>
+local function _group_fields(group)
+    return group.type == "schema" and group.fields or group
 end
 
 ---Walk a (possibly nested) schema, calling `fn(dotted_key, spec)` for every leaf.
 ---Keys are visited in sorted order at each level, so the traversal is stable and
----`key_of_kind`'s "first match" is deterministic. Nested groups contribute a
+---`key_of_role`'s "first match" is deterministic. Nested groups contribute a
 ---dotted path prefix (e.g. `connect.host`).
 ---@param schema table
 ---@param fn fun(key: string, spec: easydap.ParamSpec)
 local function _walk_leaves(schema, fn)
     local function rec(group, prefix)
+        local fields = _group_fields(group)
         local keys = {}
-        for k in pairs(group) do keys[#keys + 1] = k end
+        for k in pairs(fields) do keys[#keys + 1] = k end
         table.sort(keys)
         for _, k in ipairs(keys) do
-            local node = group[k]
+            local node = fields[k]
             local path = prefix == "" and k or (prefix .. "." .. k)
-            if _is_leaf(node) then fn(path, node) else rec(node, path) end
+            if _is_group(node) then rec(node, path) else fn(path, node) end
         end
     end
     rec(schema, "")
@@ -170,9 +188,9 @@ local function _find_leaf(schema, key)
     local node = schema
     for part in vim.gsplit(key, ".", { plain = true }) do
         if type(node) ~= "table" then return nil end
-        node = node[part]
+        node = _group_fields(node)[part]
     end
-    if type(node) == "table" and _is_leaf(node) then return node end
+    if type(node) == "table" and not _is_group(node) then return node end
     return nil
 end
 
@@ -202,31 +220,31 @@ function M.adapter_names()
 end
 
 ---The first user-settable param key in an adapter's request schema whose spec has
----the given `kind` (e.g. `"target"` for the program field, `"args"` for the
+---the given `role` (e.g. `"target"` for the program field, `"args"` for the
 ---arguments field), or nil. Lets run_target map program/args onto an adapter's
 ---native keys without hard-coding their names. Keys are scanned in sorted order so
----the pick is stable if a schema ever declares two of the same kind.
+---the pick is stable if a schema ever declares two of the same role.
 ---@param adapter string
 ---@param request string  "launch"|"attach"
----@param kind string
+---@param role string
 ---@return string?
-function M.key_of_kind(adapter, request, kind)
+function M.key_of_role(adapter, request, role)
     local schema = M.schema(adapter, request)
     if not schema then return nil end
     local found
     _walk_leaves(schema, function(key, spec)
-        if not found and not spec.fixed and spec.kind == kind then found = key end
+        if not found and not spec.fixed and spec.role == role then found = key end
     end)
     return found
 end
 
 ---Adapter names that can launch a program target via run_target — those whose
----launch schema declares a `target`-kind field — sorted.
+---launch schema declares a `target`-role field — sorted.
 ---@return string[]
 function M.target_adapters()
     local out = {}
     for _, name in ipairs(M.adapter_names()) do
-        if M.key_of_kind(name, "launch", "target") then out[#out + 1] = name end
+        if M.key_of_role(name, "launch", "target") then out[#out + 1] = name end
     end
     return out
 end
@@ -290,14 +308,19 @@ function M.render_params(adapter, request, indent)
     end
     local lines = {}
     local function emit(group, pad)
+        local fields = _group_fields(group)
         local keys = {}
-        for k in pairs(group) do keys[#keys + 1] = k end
+        for k in pairs(fields) do keys[#keys + 1] = k end
         table.sort(keys)
         for _, k in ipairs(keys) do
-            local node = group[k]
+            local node = fields[k]
             -- Bare identifier keys stay unquoted; anything else needs ["..."].
             local lhs = k:match("^[%a_][%w_]*$") and k or ("[%q]"):format(k)
-            if _is_leaf(node) then
+            if _is_group(node) then
+                lines[#lines + 1] = ("%s%s = {"):format(pad, lhs)
+                emit(node, pad .. "    ")
+                lines[#lines + 1] = ("%s},"):format(pad)
+            else
                 local val     = (node.fixed or node.default ~= nil) and _resolve_default(node)
                     or _placeholder(node)
                 local line    = ("%s%s = %s,"):format(pad, lhs, vim.inspect(val))
@@ -305,10 +328,6 @@ function M.render_params(adapter, request, indent)
                 if node.fixed then comment = comment and (comment .. " (fixed)") or "fixed" end
                 if comment then line = line .. "  -- " .. comment end
                 lines[#lines + 1] = line
-            else
-                lines[#lines + 1] = ("%s%s = {"):format(pad, lhs)
-                emit(node, pad .. "    ")
-                lines[#lines + 1] = ("%s},"):format(pad)
             end
         end
     end
@@ -335,9 +354,13 @@ function M.build(adapter, request, values)
     ---@return table? node, string? err
     local function assemble(group, prefix)
         local out = {}
-        for key, node in pairs(group) do
+        for key, node in pairs(_group_fields(group)) do
             local path = prefix == "" and key or (prefix .. "." .. key)
-            if _is_leaf(node) then
+            if _is_group(node) then
+                local sub, err = assemble(node, path)
+                if not sub then return nil, err end
+                if next(sub) ~= nil then out[key] = sub end
+            else
                 local val
                 if node.fixed then
                     val = _resolve_default(node)
@@ -350,10 +373,6 @@ function M.build(adapter, request, values)
                     return nil, ("%s is required"):format(path)
                 end
                 if val ~= nil then out[key] = val end
-            else
-                local sub, err = assemble(node, path)
-                if not sub then return nil, err end
-                if next(sub) ~= nil then out[key] = sub end
             end
         end
         return out

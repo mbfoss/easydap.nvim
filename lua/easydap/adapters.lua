@@ -22,18 +22,22 @@ local M = {}
 ---@field report    fun(message: string)
 
 ---One parameter of an adapter's launch/attach schema. `type` is the value's pure
----Lua/JSON type; `kind` is an optional semantic refinement that drives CLI-string
----coercion, completion and validation (a `kind` implies its `type`). A `fixed`
----entry is not user-settable — it always emits its `default` (which may be a
----function for computed values) — and needs no `type`.
+---Lua/JSON type. `kind` is an optional *data* refinement (file/dir/env/enum/host/
+---port/list) driving CLI-string coercion, completion and validation (a `kind`
+---implies its `type`). `role` is an optional *value-meaning* marker (target/args)
+---tagging the program/arguments fields so `run_target` can find them across
+---adapters. A `fixed` entry is not user-settable — it always emits its `default`
+---(which may be a function for computed values) — and needs no `type`.
 ---
----A schema is a `table<string, easydap.ParamSpec>`, but any value may itself be a
----nested `table<string, easydap.ParamSpec>` group instead of a leaf ParamSpec —
----that produces a nested body table (e.g. a `connect` group → body.connect). Such
----params are addressed by their dotted path (`connect.host`).
+---A schema is a `table<string, easydap.ParamSpec>`. A value may instead be a nested
+---group — a ParamSpec with `type = "schema"` holding its children under `fields`
+---— which produces a nested body table (e.g. a `connect` group → body.connect).
+---Group children are addressed by their dotted path (`connect.host`).
 ---@class easydap.ParamSpec
----@field type?     "string"|"boolean"|"integer"|"number"|"table"
----@field kind?     "target"|"args"|"env"|"enum"|"host"|"port"|"list"|"file"|"dir"
+---@field type?     "string"|"boolean"|"integer"|"number"|"table"|"schema"
+---@field kind?     "env"|"enum"|"host"|"port"|"list"|"file"|"dir"   data refinement
+---@field role?     "target"|"args"    value meaning; maps program/args for run_target
+---@field fields?   table<string, easydap.ParamSpec>  child specs when `type == "schema"`
 ---@field enum?     any[]              allowed values when `kind == "enum"`
 ---@field desc?     string
 ---@field default?  any|fun():any      value used when the caller omits the key
@@ -79,16 +83,16 @@ end
 -- Adapters whose defaults differ (e.g. lldb's runInTerminal, delve's program)
 -- spell those entries out inline instead of sharing these.
 
--- `kind = "target"` marks the launch program — the thing `run_target` fills from
--- its `<program>` argument. It coerces like a file path; the kind is what lets
+-- `role = "target"` marks the launch program — the thing `run_target` fills from
+-- its `<program>` argument. It coerces like a file path; the role is what lets
 -- run_target locate this field generically across adapters (which name it
--- `program`/`module`/`file`). `kind = "args"` similarly marks the arguments field.
--- (`file`/`dir` are plain path params, split only so completion knows which to
--- offer.)
+-- `program`/`module`/`file`). `role = "args"` similarly marks the arguments field.
+-- (`kind = "file"`/`"dir"` are plain path params, split only so completion knows
+-- which to offer.)
 ---@type easydap.ParamSpec
-local _program = { type = "string", kind = "target", desc = "program to debug" }
+local _program = { type = "string", role = "target", desc = "program to debug" }
 ---@type easydap.ParamSpec
-local _args = { type = "table", kind = "args", desc = "program arguments" }
+local _args = { type = "table", role = "args", desc = "program arguments" }
 ---@type easydap.ParamSpec
 local _cwd = { type = "string", kind = "dir", desc = "working directory" }
 ---@type easydap.ParamSpec
@@ -205,7 +209,7 @@ M["debugpy-module"] = {
     teardown           = function(_, ctx) if ctx then ctx.handle.stop() end end,
     launch_schema      = {
         type          = { fixed = true, default = "python" },
-        module        = { type = "string", kind = "target", desc = "python module name" },
+        module        = { type = "string", role = "target", desc = "python module name" },
         args          = _args,
         cwd           = _cwd,
         env           = _env,
@@ -232,8 +236,11 @@ M["debugpy-remote"] = {
     attach_schema      = {
         type       = { fixed = true, default = "python" },
         connect    = {
-            host = { type = "string", kind = "host", desc = "remote host", default = "127.0.0.1" },
-            port = { type = "integer", kind = "port", desc = "remote port", default = 5678 },
+            type   = "schema",
+            fields = {
+                host = { type = "string", kind = "host", desc = "remote host", default = "127.0.0.1" },
+                port = { type = "integer", kind = "port", desc = "remote port", default = 5678 },
+            },
         },
         justMyCode = { type = "boolean", desc = "debug only user code", default = false },
     },
@@ -355,7 +362,7 @@ M.delve = {
     launch_schema = {
         mode          = { type = "string", kind = "enum", default = "debug",
             enum = { "debug", "test", "exec", "replay", "core" }, desc = "dlv launch mode" },
-        program       = { type = "string", kind = "target", desc = "package or binary (defaults to cwd)",
+        program       = { type = "string", role = "target", desc = "package or binary (defaults to cwd)",
             default = function() return vim.fn.getcwd() end },
         args          = _args,
         cwd           = _cwd,
@@ -454,7 +461,7 @@ M["bash-debug-adapter"] = {
     launch_schema = {
         type          = { fixed = true, default = "bashdb" },
         name          = { fixed = true, default = "Launch Bash Script" },
-        program       = { type = "string", kind = "target", desc = "bash script to debug" },
+        program       = { type = "string", role = "target", desc = "bash script to debug" },
         args          = _args,
         cwd           = _cwd,
         env           = _env,
@@ -504,9 +511,12 @@ M["local-lua-debugger"] = {
         type    = { fixed = true, default = "lua-local" },
         name    = { fixed = true, default = "Debug" },
         program = {
-            lua           = { fixed = true, default = function() return vim.fn.exepath("lua") end },
-            communication = { fixed = true, default = "stdio" },
-            file          = { type = "string", kind = "target", desc = "lua file to debug" },
+            type   = "schema",
+            fields = {
+                lua           = { fixed = true, default = function() return vim.fn.exepath("lua") end },
+                communication = { fixed = true, default = "stdio" },
+                file          = { type = "string", role = "target", desc = "lua file to debug" },
+            },
         },
     },
 }
