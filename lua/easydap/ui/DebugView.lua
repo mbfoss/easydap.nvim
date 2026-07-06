@@ -240,7 +240,7 @@ function DebugView.new()
         _expanded       = {},
         _removal_timers = {},
     }, DebugView)
-    DebugView.init(self)
+    self:init()
     return self
 end
 

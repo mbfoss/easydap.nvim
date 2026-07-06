@@ -89,7 +89,7 @@ function M.new(opts)
         _seq      = 0,
         _attached = {},
     }, Panel)
-    M.init(self)
+    self:init()
     return self
 end
 
