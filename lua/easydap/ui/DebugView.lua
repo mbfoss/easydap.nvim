@@ -1059,7 +1059,7 @@ function DebugView:get_bufnr(on_deleted)
         for id, sess in pairs(manager.sessions()) do
             local info = {
                 id                = id,
-                name              = sess.config.adapter or "debug",
+                name              = sess.config.name or sess.config.adapter or "debug",
                 state             = sess.state,
                 is_paused         = sess.state == "stopped",
                 nb_paused_threads = 0,

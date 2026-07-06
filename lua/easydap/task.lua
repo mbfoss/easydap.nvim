@@ -82,6 +82,7 @@ M.start = function(task, callbacks)
     -- only what the dap layer consumes.
     ---@type easydap.dap.Config
     local config = {
+        name                  = task.name,
         adapter               = task.adapter,
         type                  = base.type,
         command               = base.command,

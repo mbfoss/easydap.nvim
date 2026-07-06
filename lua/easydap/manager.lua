@@ -929,7 +929,7 @@ function M.debug.session()
         prompt = "Select session",
         items  = vim.tbl_map(function(id)
             local s     = sessions[id]
-            local label = (s.config.adapter or "session") .. "  [" .. s.state .. "]"
+            local label = (s.config.name or s.config.adapter or "session") .. "  [" .. s.state .. "]"
             if id == active then label = label .. "  *" end
             return { label = label, data = id }
         end, ids),

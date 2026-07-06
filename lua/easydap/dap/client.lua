@@ -16,6 +16,7 @@ local str_util    = require("easydap.tk.strutil")
 ---(and host/port). `setup`/`teardown` are the adapter def's concern and are
 ---resolved before this exists, so they are not part of it.
 ---@class easydap.dap.Config
+---@field name                   string
 ---@field adapter?               string  adapter name (for adapterID / display)
 ---@field type?                  string  DAP adapterID override
 ---@field command?               string|string[]
@@ -104,7 +105,7 @@ local function _session_info(id, sess)
     end
     return {
         id                = id,
-        name              = sess.config.adapter or "debug",
+        name              = sess.config.name or sess.config.adapter or "debug",
         state             = sess.state,
         is_paused         = sess.state == "stopped",
         nb_paused_threads = n,
