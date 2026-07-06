@@ -35,7 +35,7 @@ local M = {}
 ---@class easydap.ParamSpec
 ---@field type?     "string"|"boolean"|"integer"|"number"|"table"|"list"|"schema"
 ---@field kind?     "env"|"enum"|"host"|"port"|"file"|"dir"   data refinement
----@field role?     "target"|"args"    value meaning; maps program/args for run_target
+---@field role?     "target"|"args"|"cwd"|"env"    value meaning; maps program/args/cwd/env for run_target
 ---@field fields?   table<string, easydap.ParamSpec>  child specs when `type == "schema"`
 ---@field enum?     any[]              allowed values when `kind == "enum"`
 ---@field desc?     string
@@ -92,9 +92,9 @@ local _program = { type = "string", role = "target", desc = "program to debug" }
 ---@type easydap.ParamSpec
 local _args = { type = "list", role = "args", desc = "program arguments" }
 ---@type easydap.ParamSpec
-local _cwd = { type = "string", kind = "dir", desc = "working directory" }
+local _cwd = { type = "string", kind = "dir", role = "cwd", desc = "working directory" }
 ---@type easydap.ParamSpec
-local _env = { type = "table", kind = "env", desc = "environment: VAR=VAL,VAR2=VAL2" }
+local _env = { type = "table", kind = "env", role = "env", desc = "environment: VAR=VAL,VAR2=VAL2" }
 ---@type easydap.ParamSpec
 local _run_in_terminal = { type = "boolean", desc = "run in the integrated terminal" }
 
@@ -482,7 +482,7 @@ M["php-debug-adapter"] = {
     launch_schema = {
         type = { default = "php" },
         name = { default = "Listen for Xdebug" },
-        cwd  = { type = "string", kind = "dir", desc = "working directory", default = function() return vim.fn.getcwd() end },
+        cwd  = { type = "string", kind = "dir", role = "cwd", desc = "working directory", default = function() return vim.fn.getcwd() end },
         port = { type = "integer", kind = "port", desc = "Xdebug port", default = 9003 },
     },
 }
