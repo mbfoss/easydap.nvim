@@ -57,6 +57,20 @@ local _DEFAULT_HEIGHT = 12
 -- bar. Only one run panel is shown at a time, so a single target suffices.
 local _click_target ---@type easydap.ui.Panel?
 
+-- `vim.wo[win].opt = val` sets both the window-local value AND nvim's hidden
+-- global default (the value new windows inherit), even for options with no
+-- real global scope (winfixbuf, number, signcolumn, ...) — so every panel open
+-- would silently leak its window settings into every future plain window, and
+-- a later `setlocal opt<` reset in a split sibling would restore the polluted
+-- value instead of nvim's real default. Force `scope = "local"` to confine
+-- these changes to `win`.
+---@param win integer
+---@param opt string
+---@param val any
+local function _setlocal(win, opt, val)
+    vim.api.nvim_set_option_value(opt, val, { win = win, scope = "local" })
+end
+
 ---@param minwid integer  1-based display index, encoded as the winbar item's minwid
 function _G.EasydapPanelClick(minwid)
     if _click_target then _click_target:show_index(minwid) end
@@ -66,7 +80,7 @@ end
 ---@return easydap.ui.Panel
 function M.new(opts)
     opts = opts or {}
-    return setmetatable({
+    local self = setmetatable({
         _entries  = {},
         _groups   = {},
         _win      = nil,
@@ -75,6 +89,32 @@ function M.new(opts)
         _seq      = 0,
         _attached = {},
     }, Panel)
+    M.init(self)
+    return self
+end
+
+function Panel:init()
+    -- Splitting the panel window copies its winbar (and other window-local
+    -- options) onto the new sibling verbatim — click regions included — but the
+    -- sibling is never re-rendered (_render_winbar only targets self._win), so
+    -- its numbering goes stale as soon as the panel state changes and clicking
+    -- it jumps to the wrong tab. Detect the inherited winbar text (the sibling
+    -- lacks our marker, since window-local variables are not copied on split)
+    -- and strip every panel-special option back off so it reverts to a plain
+    -- window. Registered once per instance (not per open()) so it doesn't pile
+    -- up across open/close cycles.
+    vim.api.nvim_create_autocmd("WinNew", {
+        callback = function()
+            local new_win = vim.api.nvim_get_current_win()
+            if not self:is_open() or new_win == self._win then return end
+            if vim.wo[new_win].winbar == "" or vim.wo[new_win].winbar ~= vim.wo[self._win].winbar then return end
+            vim.api.nvim_win_call(new_win, function()
+                vim.cmd("setlocal winbar< winfixheight< winfixbuf< number< relativenumber< wrap<")
+            end)
+        end,
+    })
+
+    return self
 end
 
 -- ── Window ────────────────────────────────────────────────────────────────
@@ -92,10 +132,10 @@ function Panel:open()
     vim.cmd("botright " .. self._height .. "split")
     self._win                        = vim.api.nvim_get_current_win()
 
-    vim.wo[self._win].number         = false
-    vim.wo[self._win].relativenumber = false
-    vim.wo[self._win].winfixheight   = true
-    vim.wo[self._win].wrap           = false
+    _setlocal(self._win, "number", false)
+    _setlocal(self._win, "relativenumber", false)
+    _setlocal(self._win, "winfixheight", true)
+    _setlocal(self._win, "wrap", false)
 
     local display                    = self:_display()
     local first                      = self._active or (display[1] and display[1].bufnr)
@@ -124,9 +164,9 @@ end
 ---@param bufnr integer
 function Panel:_set_buf(bufnr)
     if not self:is_open() or not vim.api.nvim_buf_is_valid(bufnr) then return end
-    vim.wo[self._win].winfixbuf = false
+    _setlocal(self._win, "winfixbuf", false)
     vim.api.nvim_win_set_buf(self._win, bufnr)
-    vim.wo[self._win].winfixbuf = true
+    _setlocal(self._win, "winfixbuf", true)
     self._active = bufnr
     self:_attach(bufnr)
     if vim.bo[bufnr].buftype == "terminal" then

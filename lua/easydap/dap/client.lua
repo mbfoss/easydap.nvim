@@ -62,7 +62,7 @@ local M                 = {}
 ---@field is_paused boolean
 ---@field nb_paused_threads integer
 
----@class easydap.client.StartOpts
+---@class easydap.client.Callbacks
 ---@field on_event?    fun(event:string, ...)
 ---@field on_session?  fun(id:number, sess:easydap.dap.Session)
 ---@field on_progress? fun(message: string)
@@ -135,15 +135,15 @@ end
 -- ── Session registration ───────────────────────────────────────────────────
 
 ---@param sess     easydap.dap.Session
----@param opts     easydap.client.StartOpts
+---@param callbacks     easydap.client.Callbacks
 ---@param progress fun(msg: string)
-local function _register_session(sess, opts, progress)
+local function _register_session(sess, callbacks, progress)
     local id                 = _next_id
     _next_id                 = _next_id + 1
     _sessions[id]            = sess
 
-    local on_event           = opts.on_event
-    local on_session         = opts.on_session
+    local on_event           = callbacks.on_event
+    local on_session         = callbacks.on_session
 
     sess.conn.on_raw_message = function(direction, msg)
         M.on_raw_message:emit(id, direction, msg)
@@ -185,7 +185,7 @@ local function _register_session(sess, opts, progress)
     end)
 
     sess:on("start_debugging", function(child_config)
-        local child_opts = { on_event = on_event, on_fail = opts.on_fail }
+        local child_opts = { on_event = on_event, on_fail = callbacks.on_fail }
         if sess.config.port then
             M.start({
                 host         = sess.config.host,
@@ -214,42 +214,42 @@ end
 -- ── Session startup ────────────────────────────────────────────────────────
 
 ---@param config easydap.dap.Config
----@param opts? easydap.client.StartOpts
-function M.start(config, opts)
-    opts = opts or {}
+---@param callbacks? easydap.client.Callbacks
+function M.start(config, callbacks)
+    callbacks = callbacks or {}
     assert(type(config) == "table")
-    assert(type(opts) == "table")
+    assert(type(callbacks) == "table")
 
     _start_counter = _start_counter + 1
     local start_id = _start_counter
     local function progress(msg)
-        if opts.on_progress then opts.on_progress(msg) end
+        if callbacks.on_progress then callbacks.on_progress(msg) end
     end
 
     local cfg = _prepare_config(config)
     if not cfg then
-        if opts.on_fail then opts.on_fail() end
+        if callbacks.on_fail then callbacks.on_fail() end
         return start_id
     end
 
     progress("config resolved: " .. vim.inspect(cfg))
 
     if cfg.port then
-        M._start_tcp(cfg, opts, progress)
+        M._start_tcp(cfg, callbacks, progress)
     else
-        M._start_stdio(cfg, opts, progress)
+        M._start_stdio(cfg, callbacks, progress)
     end
 
     return start_id
 end
 
 ---@param config   easydap.dap.Config
----@param opts     easydap.client.StartOpts
+---@param callbacks     easydap.client.Callbacks
 ---@param progress fun(msg: string)
-function M._start_stdio(config, opts, progress)
+function M._start_stdio(config, callbacks, progress)
     if not config.command then
         progress("[dap] no command in config")
-        if opts.on_fail then opts.on_fail() end
+        if callbacks.on_fail then callbacks.on_fail() end
         return
     end
 
@@ -268,7 +268,7 @@ function M._start_stdio(config, opts, progress)
             .. "or override its `command` in require('easydap.adapters')"):format(cmd[1])
         vim.notify("[dap] " .. msg, vim.log.levels.ERROR)
         progress("[dap] " .. msg)
-        if opts.on_fail then opts.on_fail() end
+        if callbacks.on_fail then callbacks.on_fail() end
         return
     end
 
@@ -281,19 +281,19 @@ function M._start_stdio(config, opts, progress)
         local msg = "failed to start adapter: " .. table.concat(cmd, " ")
         vim.notify("[dap] " .. msg, vim.log.levels.ERROR)
         progress("[dap] " .. msg)
-        if opts.on_fail then opts.on_fail() end
+        if callbacks.on_fail then callbacks.on_fail() end
         return
     end
 
     local sess = session_mod.new(conn, config)
-    _register_session(sess, opts, progress)
+    _register_session(sess, callbacks, progress)
     sess:start()
 end
 
 ---@param config   easydap.dap.Config
----@param opts     easydap.client.StartOpts
+---@param callbacks     easydap.client.Callbacks
 ---@param progress fun(msg: string)
-function M._start_tcp(config, opts, progress)
+function M._start_tcp(config, callbacks, progress)
     local host = config.host or "127.0.0.1"
     local port = config.port
     assert(type(port) == "number", "invalid port number")
@@ -305,7 +305,7 @@ function M._start_tcp(config, opts, progress)
         connection.try_tcp(host, port, {}, function(conn, err)
             if conn then
                 local sess = session_mod.new(conn, config)
-                _register_session(sess, opts, progress)
+                _register_session(sess, callbacks, progress)
                 sess:start()
             elseif attempts > 0 then
                 vim.defer_fn(try_connect, 100)
@@ -313,7 +313,7 @@ function M._start_tcp(config, opts, progress)
                 local msg = ("[dap] could not connect to %s:%d — %s"):format(host, port, err or "timeout")
                 progress(msg)
                 progress("connection failed: " .. (err or "timeout"))
-                if opts.on_fail then opts.on_fail() end
+                if callbacks.on_fail then callbacks.on_fail() end
             end
         end)
     end

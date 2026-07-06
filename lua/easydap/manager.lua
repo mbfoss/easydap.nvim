@@ -10,13 +10,6 @@ local inputwin          = require("easydap.tk.inputwin")
 
 local M                 = {}
 
--- ── Re-exported types ─────────────────────────────────────────────────────
----@alias easydap.manager.SessionInfo easydap.client.SessionInfo
----@alias easydap.manager.StartOpts   easydap.client.StartOpts
----A resolved DAP config ready to start: a full adapter config plus the resolved
----`request_args` body.
----@alias easydap.manager.StartConfig easydap.dap.Config
-
 -- ── Re-exported client signals ─────────────────────────────────────────────
 -- Consumers import only manager; client is an implementation detail.
 
@@ -41,9 +34,9 @@ function M.get_session(id) return client.get_session(id) end
 ---@return table<number, easydap.dap.Session>
 function M.sessions() return client.sessions() end
 
----@param config easydap.manager.StartConfig
----@param opts? easydap.client.StartOpts
-function M.start(config, opts) return client.start(config, opts) end
+---@param config easydap.dap.Config
+---@param callbacks? easydap.client.Callbacks
+function M.start(config, callbacks) return client.start(config, callbacks) end
 
 -- ── Active session ─────────────────────────────────────────────────────────
 

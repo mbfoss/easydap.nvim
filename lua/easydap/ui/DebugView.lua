@@ -29,7 +29,7 @@ local floatwin    = require("easydap.tk.floatwin")
 ---@field error    string?
 ---@field greyout  boolean?
 ---@field session_id number?
----@field session_info easydap.manager.SessionInfo?
+---@field session_info easydap.client.SessionInfo?
 ---@field is_current boolean?
 ---@field frame_id   integer?
 ---@field bp_kind       ("source"|"function"|"exception_filter"|"exception_type"|"data")?
@@ -49,6 +49,20 @@ local floatwin    = require("easydap.tk.floatwin")
 ---@field log_message   string?
 
 ---@alias easydap.DebugView.Chunk { [1]: string, [2]: string? }
+
+-- `vim.wo[win].opt = val` sets both the window-local value AND nvim's hidden
+-- global default (the value new windows inherit), even for options with no
+-- real global scope (winfixbuf, number, signcolumn, ...) — so opening the view
+-- would silently leak its window settings into every future plain window, and
+-- a later `setlocal opt<` reset in a split sibling would restore the polluted
+-- value instead of nvim's real default. Force `scope = "local"` to confine
+-- these changes to `win`.
+---@param win integer
+---@param opt string
+---@param val any
+local function _setlocal(win, opt, val)
+    vim.api.nvim_set_option_value(opt, val, { win = win, scope = "local" })
+end
 
 ---@param stop fun()?  stop fn returned by `_start_timer`, or nil
 ---@return nil
@@ -202,6 +216,7 @@ end
 
 ---@class easydap.DebugView
 ---@field private _tree             easydap.ui.TreeBuffer
+---@field private _win              integer?  the view window, when open
 ---@field private _active_id        number?
 ---@field private _active_sess      easydap.dap.Session?
 ---@field private _query_ctx        number
@@ -217,6 +232,7 @@ DebugView.__index = DebugView
 ---@return easydap.DebugView
 function DebugView.new()
     local self = setmetatable({
+        _win            = nil,
         _active_id      = nil,
         _active_sess    = nil,
         _query_ctx      = 0,
@@ -224,9 +240,32 @@ function DebugView.new()
         _expanded       = {},
         _removal_timers = {},
     }, DebugView)
+    DebugView.init(self)
+    return self
+end
+
+function DebugView:init()
     self:_init_tree()
     self:_setup_subs()
     self:_load_breakpoints()
+
+    -- Splitting the view window copies most window-local options onto the new
+    -- sibling (which starts out showing the same buffer, since a plain split
+    -- keeps the current buffer) — but not 'winfixwidth'/'winfixbuf', and never
+    -- window-local variables. Detect a same-buffer sibling missing our marker
+    -- and strip its inherited options back to plain-window defaults.
+    -- Registered once per instance so it doesn't pile up across open/close.
+    vim.api.nvim_create_autocmd("WinNew", {
+        callback = function()
+            local new_win = vim.api.nvim_get_current_win()
+            if not self._win or not vim.api.nvim_win_is_valid(self._win) then return end
+            if vim.api.nvim_win_get_buf(new_win) ~= vim.api.nvim_win_get_buf(self._win) then return end
+            vim.api.nvim_win_call(new_win, function()
+                vim.cmd("setlocal signcolumn< number< relativenumber<")
+            end)
+        end,
+    })
+
     return self
 end
 
@@ -561,7 +600,7 @@ end
 -- ── Session rows ──────────────────────────────────────────────────────────
 
 ---@param id number
----@param info easydap.manager.SessionInfo
+---@param info easydap.client.SessionInfo
 function DebugView:_upsert_session_row(id, info)
     local item_id = _roots.sessions .. "/" .. id
     ---@type easydap.DebugView.ItemData
@@ -1059,6 +1098,7 @@ function DebugView:close()
     if winid > 0 then
         vim.api.nvim_win_close(winid, true)
     end
+    self._win = nil
 end
 
 ---@param focus boolean
@@ -1072,13 +1112,14 @@ function DebugView:_open(focus)
     local bufnr = self:get_bufnr(function() end)
     vim.cmd("botright vsplit")
     local win = vim.api.nvim_get_current_win()
+    self._win = win
     vim.api.nvim_win_set_buf(win, bufnr)
     vim.api.nvim_win_set_width(win, math.ceil(vim.o.columns * 0.2))
-    vim.wo[win].winfixwidth    = true
-    vim.wo[win].winfixbuf      = true
-    vim.wo[win].signcolumn     = "no"
-    vim.wo[win].number         = false
-    vim.wo[win].relativenumber = false
+    _setlocal(win, "winfixwidth", true)
+    _setlocal(win, "winfixbuf", true)
+    _setlocal(win, "signcolumn", "no")
+    _setlocal(win, "number", false)
+    _setlocal(win, "relativenumber", false)
     if not focus then vim.api.nvim_set_current_win(prev_win) end
 end
 
