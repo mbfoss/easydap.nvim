@@ -53,9 +53,8 @@ local M = {}
 ---are consumed only by `easydap.schema` (for new_task/run_target), never by the DAP core.
 ---@class easydap.AdapterDef
 ---@field command?               string|string[]
----@field command_cwd?           string
----@field command_env?           table<string,string>
----@field command_insert_stderr? boolean
+---@field cwd?                   string
+---@field env?                   table<string,string>
 ---@field host?                  string
 ---@field port?                  integer
 ---@field type?                  string   DAP adapterID override (defaults to the adapter name)
@@ -172,7 +171,7 @@ local function _debugpy_setup(config, ctx, callback)
     local handle = term.spawn(
         { python, "-m", "debugpy.adapter", "--host", "127.0.0.1", "--port", tostring(port) },
         {
-            cwd     = config.command_cwd or vim.fn.getcwd(),
+            cwd     = config.cwd or vim.fn.getcwd(),
             on_exit = function() done("debugpy adapter exited unexpectedly") end,
         }
     )
@@ -496,7 +495,7 @@ local _lua_debugger_adapter_js = vim.fs.joinpath(
 )
 M["local-lua-debugger"] = {
     command     = { "node", _lua_debugger_adapter_js },
-    command_env = {
+    env = {
         LUA_PATH = vim.fs.joinpath(
             vim.fn.stdpath("data"), "mason", "packages",
             "local-lua-debugger-vscode", "debugger", "?.lua"

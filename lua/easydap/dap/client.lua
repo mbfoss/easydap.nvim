@@ -19,9 +19,8 @@ local str_util    = require("easydap.tk.strutil")
 ---@field adapter?               string  adapter name (for adapterID / display)
 ---@field type?                  string  DAP adapterID override
 ---@field command?               string|string[]
----@field command_cwd?           string
----@field command_env?           table<string,string>
----@field command_insert_stderr? boolean
+---@field cwd?                   string
+---@field env?                   table<string,string>
 ---@field host?                  string
 ---@field port?                  integer
 ---@field request?               string
@@ -275,8 +274,8 @@ function M._start_stdio(config, opts, progress)
 
     progress("starting adapter: " .. cmd[1])
     local ok, conn = pcall(connection.stdio, cmd, {
-        cwd = config.command_cwd or vim.fn.getcwd(),
-        env = config.command_env,
+        cwd = config.cwd or vim.fn.getcwd(),
+        env = config.env,
     })
     if not ok or not conn then
         local msg = "failed to start adapter: " .. table.concat(cmd, " ")
