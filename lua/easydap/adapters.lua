@@ -78,7 +78,7 @@ end
 
 -- ── Common param specs ─────────────────────────────────────────────────────
 -- Read-only ParamSpec fragments reused across the process-launching adapters.
--- Adapters whose defaults differ (e.g. lldb's runInTerminal, delve's program)
+-- Adapters whose defaults differ (e.g. delve's program, which defaults to cwd)
 -- spell those entries out inline instead of sharing these.
 
 -- These `role` tags let `quick_run` map its `role=value` inputs onto whatever
@@ -96,8 +96,6 @@ local _args = { type = "list", role = "args", desc = "program arguments" }
 local _cwd = { type = "string", kind = "dir", role = "cwd", desc = "working directory" }
 ---@type easydap.ParamSpec
 local _env = { type = "table", kind = "env", role = "env", desc = "environment: VAR=VAL,VAR2=VAL2" }
----@type easydap.ParamSpec
-local _run_in_terminal = { type = "boolean", desc = "run in the integrated terminal" }
 
 ---A comma-separated list of verbatim LLDB command lines (each kept whole).
 ---@param desc string
@@ -130,13 +128,33 @@ local _lldb_common = {
     terminateCommands             = _lldb_cmds("LLDB commands run when the session ends"),
 }
 
--- Shared by debugpy and debugpy-module (both attach the same way).
+-- debugpy's "Debugger Settings" — the toggles shared by launch and attach per the
+-- debugpy wiki (https://github.com/microsoft/debugpy/wiki/Debug-configuration-settings).
+-- `justMyCode`/`showReturnValue` keep easydap's existing defaults (debug all code,
+-- show return values); the rest are omitted unless set, so debugpy applies its own
+-- documented defaults.
 ---@type table<string, easydap.ParamSpec>
-local _debugpy_attach_schema = {
-    processId   = { type = "integer", role = "pid", desc = "PID to attach to" },
-    cwd         = _cwd,
-    stopOnEntry = { type = "boolean", desc = "stop at entry" },
+local _debugpy_common = {
+    justMyCode      = { type = "boolean", desc = "debug only user-written code", default = false },
+    showReturnValue = { type = "boolean", desc = "show function return values when stepping", default = true },
+    django          = { type = "boolean", desc = "enable Django template debugging" },
+    jinja           = { type = "boolean", desc = "enable Jinja2 template debugging (e.g. Flask)" },
+    gevent          = { type = "boolean", desc = "debug gevent monkey-patched code" },
+    pyramid         = { type = "boolean", desc = "debug Pyramid applications" },
+    subProcess      = { type = "boolean", desc = "debug child processes (debugpy default true)" },
+    redirectOutput  = { type = "boolean", desc = "redirect program output to the debug console" },
+    logToFile       = { type = "boolean", desc = "log debugger events to a file" },
+    sudo            = { type = "boolean", desc = "run the program with elevated privileges (Unix)" },
+    pathMappings    = { type = "table", desc = "local<->remote path maps: array of {localRoot, remoteRoot}" },
 }
+
+-- Shared by debugpy and debugpy-module (both attach to a local process the same
+-- way). `cwd`/`stopOnEntry` are launch-only per the docs, so attach carries only
+-- the process selector plus the shared debugger settings.
+---@type table<string, easydap.ParamSpec>
+local _debugpy_attach_schema = vim.tbl_extend("error", {
+    processId = { type = "integer", role = "pid", desc = "PID to attach to" },
+}, _debugpy_common)
 
 -- ── Built-in adapter configs ───────────────────────────────────────────────
 
@@ -185,19 +203,16 @@ M.debugpy = {
     command            = "python3",
     setup              = _debugpy_setup,
     teardown           = function(_, ctx) if ctx then ctx.handle.stop() end end,
-    launch_schema      = {
-        type            = { default = "python" },
-        program         = _program,
-        args            = _args,
-        cwd             = _cwd,
-        env             = _env,
-        justMyCode      = { type = "boolean", desc = "debug only user code", default = false },
-        console         = { type = "string", kind = "enum", default = "integratedTerminal",
-            enum = { "integratedTerminal", "internalConsole", "externalTerminal" }, desc = "console kind" },
-        stopOnEntry     = { type = "boolean", desc = "stop at entry", default = false },
-        showReturnValue = { type = "boolean", desc = "show function return values", default = true },
-        runInTerminal   = _run_in_terminal,
-    },
+    launch_schema      = vim.tbl_extend("error", {
+        type        = { default = "python" },
+        program     = _program,
+        args        = _args,
+        cwd         = _cwd,
+        env         = _env,
+        console     = { type = "string", kind = "enum", default = "integratedTerminal",
+            enum = { "integratedTerminal", "internalConsole", "externalTerminal" }, desc = "where to launch the target" },
+        stopOnEntry = { type = "boolean", desc = "stop at the first line of user code", default = false },
+    }, _debugpy_common),
     attach_schema      = _debugpy_attach_schema,
 }
 
@@ -206,18 +221,16 @@ M["debugpy-module"] = {
     command            = "python3",
     setup              = _debugpy_setup,
     teardown           = function(_, ctx) if ctx then ctx.handle.stop() end end,
-    launch_schema      = {
-        type          = { default = "python" },
-        module        = { type = "string", role = "target", desc = "python module name" },
-        args          = _args,
-        cwd           = _cwd,
-        env           = _env,
-        justMyCode    = { type = "boolean", desc = "debug only user code", default = false },
-        console       = { type = "string", kind = "enum", default = "integratedTerminal",
-            enum = { "integratedTerminal", "internalConsole", "externalTerminal" }, desc = "console kind" },
-        stopOnEntry   = { type = "boolean", desc = "stop at entry", default = false },
-        runInTerminal = _run_in_terminal,
-    },
+    launch_schema      = vim.tbl_extend("error", {
+        type        = { default = "python" },
+        module      = { type = "string", role = "target", desc = "python module name" },
+        args        = _args,
+        cwd         = _cwd,
+        env         = _env,
+        console     = { type = "string", kind = "enum", default = "integratedTerminal",
+            enum = { "integratedTerminal", "internalConsole", "externalTerminal" }, desc = "where to launch the target" },
+        stopOnEntry = { type = "boolean", desc = "stop at the first line of user code", default = false },
+    }, _debugpy_common),
     attach_schema      = _debugpy_attach_schema,
 }
 
@@ -232,36 +245,61 @@ M["debugpy-remote"] = {
     -- The `connect` group targets the REMOTE process and goes in the body's
     -- `connect`, not the task-level connection (the local adapter port is chosen
     -- by _debugpy_setup). Set them as `connect.host` / `connect.port`.
-    attach_schema      = {
-        type       = { default = "python" },
-        connect    = {
+    attach_schema      = vim.tbl_extend("error", {
+        type    = { default = "python" },
+        connect = {
             type   = "schema",
             fields = {
                 host = { type = "string", kind = "host", role = "host", desc = "remote host", default = "127.0.0.1" },
                 port = { type = "integer", kind = "port", role = "port", desc = "remote port", default = 5678 },
             },
         },
-        justMyCode = { type = "boolean", desc = "debug only user code", default = false },
-    },
+    }, _debugpy_common),
+}
+
+-- codelldb (vscode-lldb) — its own key set, distinct from lldb-dap. The command
+-- hooks, source remapping and evaluator settings are shared by launch and attach;
+-- the field set follows the CodeLLDB MANUAL
+-- (https://github.com/vadimcn/codelldb/blob/master/MANUAL.md). codelldb uses
+-- `terminal` (not `runInTerminal`) to pick the debuggee's stdio destination.
+---@type table<string, easydap.ParamSpec>
+local _codelldb_common = {
+    initCommands          = _lldb_cmds("LLDB commands executed on debugger startup (no target yet)"),
+    targetCreateCommands  = _lldb_cmds("LLDB commands executed to create the debug target"),
+    preRunCommands        = _lldb_cmds("LLDB commands executed just before launch/attach"),
+    processCreateCommands = _lldb_cmds("LLDB commands executed to create/attach the process"),
+    postRunCommands       = _lldb_cmds("LLDB commands executed just after launch/attach"),
+    exitCommands          = _lldb_cmds("LLDB commands executed at the end of the session"),
+    expressions           = { type = "string", kind = "enum", enum = { "simple", "python", "native" },
+        desc = "default expression evaluator type" },
+    sourceMap             = { type = "table", desc = "source path re-mappings (dictionary)" },
+    relativePathBase      = { type = "string", kind = "dir", desc = "base dir for resolving relative source paths" },
+    sourceLanguages       = { type = "list", desc = "source languages used in the program" },
+    breakpointMode        = { type = "string", kind = "enum", enum = { "path", "file" },
+        desc = "how source breakpoints resolve locations" },
 }
 
 M.codelldb = {
     command       = "codelldb",
-    launch_schema = {
-        type          = { default = "lldb" },
-        program       = _program,
-        args          = _args,
-        cwd           = _cwd,
-        env           = _env,
-        stopOnEntry   = { type = "boolean", desc = "stop at entry", default = false },
-        runInTerminal = _run_in_terminal,
-    },
-    attach_schema = {
+    launch_schema = vim.tbl_extend("error", {
         type        = { default = "lldb" },
-        pid         = { type = "integer", role = "pid", desc = "PID to attach to" },
+        program     = _program,
+        args        = _args,
         cwd         = _cwd,
-        stopOnEntry = { type = "boolean", desc = "stop at entry" },
-    },
+        env         = _env,
+        envFile     = { type = "string", kind = "file", desc = "file with additional environment variables" },
+        stdio       = { type = "list", desc = "stdio redirection targets, in order [stdin, stdout, stderr]" },
+        terminal    = { type = "string", kind = "enum", enum = { "console", "integrated", "external" },
+            default = "integrated", desc = "destination for the debuggee's stdio streams" },
+        stopOnEntry = { type = "boolean", desc = "stop the debuggee immediately after launch", default = false },
+    }, _codelldb_common),
+    attach_schema = vim.tbl_extend("error", {
+        type        = { default = "lldb" },
+        program     = { type = "string", kind = "file", desc = "path to the executable on the host" },
+        pid         = { type = "integer", role = "pid", desc = "process id to attach to (omit to locate a running instance)" },
+        waitFor     = { type = "boolean", desc = "wait for the process to launch" },
+        stopOnEntry = { type = "boolean", desc = "stop the debuggee immediately after attaching" },
+    }, _codelldb_common),
 }
 
 -- GDB speaks DAP natively via `--interpreter=dap`. Unlike the VS Code C/C++
@@ -296,21 +334,26 @@ M.gdb = {
     },
 }
 
--- netcoredbg uses stopAtEntry instead of the standard stopOnEntry
+-- netcoredbg uses `stopAtEntry` instead of the standard stopOnEntry. Field set
+-- matches the keys netcoredbg's VS Code protocol handler reads
+-- (Samsung/netcoredbg, src/protocols/vscodeprotocol.cpp); `justMyCode` and
+-- `enableStepFiltering` default to true there. No runInTerminal/console arg.
 M.netcoredbg = {
     command       = { "netcoredbg", "--interpreter=vscode" },
     launch_schema = {
-        program       = _program,
-        args          = _args,
-        cwd           = _cwd,
-        env           = _env,
-        stopAtEntry   = { type = "boolean", desc = "stop at entry", default = false },
-        runInTerminal = _run_in_terminal,
+        program             = _program,
+        args                = _args,
+        cwd                 = _cwd,
+        env                 = _env,
+        stopAtEntry         = { type = "boolean", desc = "stop at entry", default = false },
+        justMyCode          = { type = "boolean", desc = "debug only user-written code (default true)" },
+        enableStepFiltering = { type = "boolean", desc = "skip properties and operators while stepping (default true)" },
     },
     attach_schema = {
         processId   = { type = "integer", role = "pid", desc = "PID to attach to" },
         cwd         = _cwd,
         stopAtEntry = { type = "boolean", desc = "stop at entry" },
+        justMyCode  = { type = "boolean", desc = "debug only user-written code (default true)" },
     },
 }
 
@@ -327,14 +370,18 @@ M.remote = {
 }
 
 -- Java — expects an external debug server (e.g. started by nvim-jdtls). Unlike
--- `remote`, this adapter also wants host/port echoed into the attach body.
+-- `remote`, this adapter also wants the JVM's JDWP endpoint echoed into the attach
+-- body. com.microsoft.java.debug reads `hostName`/`port` (not `host`); the field
+-- set follows microsoft/vscode-java-debug's attach configuration.
 M["java-debug-server"] = {
     host          = "127.0.0.1",
     port          = 0,
     request       = "attach",
     attach_schema = {
-        host = { type = "string", kind = "host", role = "host", desc = "debug server host" },
-        port = { type = "integer", kind = "port", role = "port", desc = "debug server port" },
+        hostName    = { type = "string", kind = "host", role = "host", desc = "JVM debug (JDWP) host", default = "localhost" },
+        port        = { type = "integer", kind = "port", role = "port", desc = "JVM debug (JDWP) port" },
+        timeout     = { type = "integer", desc = "attach timeout in milliseconds", default = 30000 },
+        projectName = { type = "string", desc = "project name (helps resolve sources/classpaths)" },
     },
 }
 
@@ -369,26 +416,43 @@ M.lldb = {
 }
 
 -- Go — dlv dap communicates over stdio; no TCP setup required. `program` defaults
--- to the current directory (debug the package at cwd).
+-- to the current directory (debug the package at cwd). Field set follows vscode-go's
+-- launch.json attributes for dlv-dap mode
+-- (https://github.com/golang/vscode-go/blob/master/docs/debugging.md); the delve /
+-- source-remapping settings below are shared by launch and attach.
+---@type table<string, easydap.ParamSpec>
+local _delve_common = {
+    backend             = { type = "string", kind = "enum", enum = { "default", "native", "lldb", "rr" },
+        desc = "backend used by delve (dlv --backend)" },
+    stackTraceDepth     = { type = "integer", desc = "max stack trace depth collected from delve" },
+    showGlobalVariables = { type = "boolean", desc = "show global package variables" },
+    showLog             = { type = "boolean", desc = "show delve log output (dlv --log)" },
+    substitutePath      = { type = "table", desc = "local<->remote path maps: array of {from, to}" },
+    dlvFlags            = { type = "list", desc = "extra flags passed to dlv" },
+}
+
 M.delve = {
     command       = { "dlv", "dap" },
-    launch_schema = {
-        mode          = { type = "string", kind = "enum", default = "debug",
+    launch_schema = vim.tbl_extend("error", {
+        mode         = { type = "string", kind = "enum", default = "debug",
             enum = { "debug", "test", "exec", "replay", "core" }, desc = "dlv launch mode" },
-        program       = { type = "string", role = "target", desc = "package or binary (defaults to cwd)",
+        program      = { type = "string", role = "target", desc = "package or binary (defaults to cwd)",
             default = function() return vim.fn.getcwd() end },
-        args          = _args,
-        cwd           = _cwd,
-        env           = _env,
-        stopOnEntry   = { type = "boolean", desc = "stop at entry" },
-        runInTerminal = _run_in_terminal,
-    },
-    attach_schema = {
+        args         = _args,
+        cwd          = _cwd,
+        env          = _env,
+        buildFlags   = { type = "list", desc = "build flags passed to the Go compiler" },
+        output       = { type = "string", kind = "file", desc = "output path for the debug binary" },
+        stopOnEntry  = { type = "boolean", desc = "stop at entry" },
+        coreFilePath = { type = "string", kind = "file", desc = "core dump to open (core mode)" },
+        traceDirPath = { type = "string", kind = "dir", desc = "trace directory (replay mode)" },
+    }, _delve_common),
+    attach_schema = vim.tbl_extend("error", {
         mode        = { type = "string", kind = "enum", enum = { "local", "remote" }, default = "local", desc = "dlv attach mode" },
         processId   = { type = "integer", role = "pid", desc = "PID to attach to" },
         cwd         = _cwd,
         stopOnEntry = { type = "boolean", desc = "stop at entry" },
-    },
+    }, _delve_common),
 }
 
 -- JavaScript / TypeScript — starts js-debug's TCP server, then connects to it.
@@ -449,56 +513,87 @@ M["js-debug"] = {
         if ctx then ctx.handle.stop() end
     end,
 
+    -- Field set follows vscode-js-debug's `node` launch/attach options
+    -- (https://github.com/microsoft/vscode-js-debug/blob/main/OPTIONS.md). js-debug
+    -- picks the debuggee's console via `console`, not runInTerminal.
     launch_schema = {
         type              = { default = "pwa-node" },
         program           = _program,
         args              = _args,
-        runtimeExecutable = { type = "string", desc = "node executable", default = "node" },
+        runtimeExecutable = { type = "string", desc = "runtime to launch (e.g. node, npm)", default = "node" },
+        runtimeArgs       = { type = "list", desc = "arguments passed to the runtime executable" },
+        runtimeVersion    = { type = "string", desc = "node version to use (requires nvm/nvs)" },
         cwd               = _cwd,
         env               = _env,
+        envFile           = { type = "string", kind = "file", desc = "file with environment variable definitions" },
+        console           = { type = "string", kind = "enum", default = "internalConsole",
+            enum = { "internalConsole", "integratedTerminal", "externalTerminal" }, desc = "where to launch the target" },
         stopOnEntry       = { type = "boolean", desc = "stop at entry" },
-        runInTerminal     = _run_in_terminal,
+        skipFiles         = { type = "list", desc = "glob patterns to skip while stepping" },
+        sourceMaps        = { type = "boolean", desc = "use JavaScript source maps (default true)" },
+        outFiles          = { type = "list", desc = "glob patterns locating generated JS" },
+        smartStep         = { type = "boolean", desc = "automatically step over un-source-mapped lines" },
+        autoAttachChildProcesses = { type = "boolean", desc = "attach to child processes automatically" },
     },
     attach_schema = {
-        type        = { default = "pwa-node" },
-        port        = { type = "integer", kind = "port", role = "port", desc = "inspector port", default = 9229 },
-        cwd         = _cwd,
-        stopOnEntry = { type = "boolean", desc = "stop at entry" },
+        type             = { default = "pwa-node" },
+        port             = { type = "integer", kind = "port", role = "port", desc = "inspector port", default = 9229 },
+        address          = { type = "string", kind = "host", role = "host", desc = "inspector host", default = "localhost" },
+        processId        = { type = "integer", role = "pid", desc = "process id to attach to" },
+        continueOnAttach = { type = "boolean", desc = "continue the program if it is paused when attached" },
+        restart          = { type = "boolean", desc = "reconnect if the connection is lost" },
+        cwd              = _cwd,
+        localRoot        = { type = "string", kind = "dir", desc = "local directory containing the program" },
+        remoteRoot       = { type = "string", desc = "remote directory containing the program" },
+        skipFiles        = { type = "list", desc = "glob patterns to skip while stepping" },
+        sourceMaps       = { type = "boolean", desc = "use JavaScript source maps (default true)" },
+        outFiles         = { type = "list", desc = "glob patterns locating generated JS" },
+        timeout          = { type = "integer", desc = "retry connecting for this many milliseconds" },
     },
 }
 
 -- bash-debug-adapter has adapter-specific path fields; runInTerminal is omitted
--- because the adapter manages its own terminal via terminalKind.
+-- because the adapter manages its own terminal via terminalKind. Field set follows
+-- rogalmic/vscode-bash-debug's launch attributes — note it has no stopOnEntry
+-- (bashdb always breaks at the first line).
 M["bash-debug-adapter"] = {
     command       = "bash-debug-adapter",
     launch_schema = {
-        type          = { default = "bashdb" },
-        name          = { default = "Launch Bash Script" },
-        program       = { type = "string", role = "target", desc = "bash script to debug" },
-        args          = _args,
-        cwd           = _cwd,
-        env           = _env,
-        pathBash      = { default = "bash" },
-        pathBashdb    = { default = "bash-debug-adapter" },
-        pathBashdbLib = { default = function()
+        type            = { default = "bashdb" },
+        name            = { default = "Launch Bash Script" },
+        program         = { type = "string", role = "target", desc = "bash script to debug" },
+        args            = _args,
+        cwd             = _cwd,
+        env             = _env,
+        pathBash        = { default = "bash" },
+        pathBashdb      = { default = "bash-debug-adapter" },
+        pathBashdbLib   = { default = function()
             return vim.fs.joinpath(vim.fn.stdpath("data"), "mason", "packages", "bash-debug-adapter")
         end },
-        pathCat       = { default = "cat" },
-        pathMkfifo    = { default = "mkfifo" },
-        pathPkill     = { default = "pkill" },
-        terminalKind  = { default = "integrated" },
-        stopOnEntry   = { type = "boolean", desc = "stop at entry" },
+        pathCat         = { default = "cat" },
+        pathMkfifo      = { default = "mkfifo" },
+        pathPkill       = { default = "pkill" },
+        terminalKind    = { default = "integrated" },
+        showDebugOutput = { type = "boolean", desc = "show bashdb output alongside the script output" },
     },
 }
 
--- PHP — listens for an Xdebug connection; there is no program to launch.
+-- PHP — listens for an Xdebug connection; there is no program to launch. Listen-mode
+-- settings follow xdebug/vscode-php-debug's launch.json reference.
 M["php-debug-adapter"] = {
     command       = "php-debug-adapter",
     launch_schema = {
-        type = { default = "php" },
-        name = { default = "Listen for Xdebug" },
-        cwd  = { type = "string", kind = "dir", role = "cwd", desc = "working directory", default = function() return vim.fn.getcwd() end },
-        port = { type = "integer", kind = "port", desc = "Xdebug port", default = 9003 },
+        type           = { default = "php" },
+        name           = { default = "Listen for Xdebug" },
+        cwd            = { type = "string", kind = "dir", role = "cwd", desc = "working directory", default = function() return vim.fn.getcwd() end },
+        port           = { type = "integer", kind = "port", desc = "port to listen for Xdebug", default = 9003 },
+        hostname       = { type = "string", kind = "host", desc = "address to bind when listening" },
+        stopOnEntry    = { type = "boolean", desc = "break at the beginning of the script", default = false },
+        pathMappings   = { type = "table", desc = "server<->local source path maps" },
+        log            = { type = "boolean", desc = "log adapter<->client communication to the debug console" },
+        maxConnections = { type = "integer", desc = "max parallel debugging sessions to accept" },
+        ignore         = { type = "list", desc = "glob patterns of files to ignore errors from" },
+        skipFiles      = { type = "list", desc = "glob patterns to skip while stepping" },
     },
 }
 
@@ -516,18 +611,26 @@ M["local-lua-debugger"] = {
         ) .. ";;",
     },
     -- `program` is a nested table the js-based adapter consumes; the target file
-    -- is set as `program.file`.
+    -- is set as `program.file`. Field set follows tomblind/local-lua-debugger-vscode's
+    -- launch configuration.
     launch_schema = {
-        type    = { default = "lua-local" },
-        name    = { default = "Debug" },
-        program = {
+        type        = { default = "lua-local" },
+        name        = { default = "Debug" },
+        program     = {
             type   = "schema",
             fields = {
                 lua           = { default = function() return vim.fn.exepath("lua") end },
-                communication = { default = "stdio" },
+                communication = { type = "string", kind = "enum", enum = { "stdio", "pipe" },
+                    default = "stdio", desc = "extension<->debugger communication method" },
                 file          = { type = "string", role = "target", desc = "lua file to debug" },
             },
         },
+        args        = _args,
+        cwd         = _cwd,
+        env         = _env,
+        stopOnEntry = { type = "boolean", desc = "stop at entry", default = false },
+        scriptRoots = { type = "list", desc = "additional roots for resolving required scripts" },
+        verbose     = { type = "boolean", desc = "enable verbose debugger logging" },
     },
 }
 
