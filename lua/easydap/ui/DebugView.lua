@@ -9,6 +9,8 @@ local select      = require("easydap.util.select")
 local timer       = require("easydap.tk.timer")
 local floatwin    = require("easydap.tk.floatwin")
 
+local _au_group_gen
+
 ---@alias easydap.DebugView.ItemKind
 ---| "root"
 ---| "session"
@@ -114,9 +116,10 @@ end
 
 ---@param data easydap.DebugView.ItemData
 ---@param chunks easydap.DebugView.Chunk[]
-local function _fmt_stackframe(data, chunks)
+---@param width integer  available DebugView window width
+local function _fmt_stackframe(data, chunks, width)
     local hl = data.greyout and "NonText" or (data.is_current and "Special" or nil)
-    chunks[#chunks + 1] = { str_util.crop_for_ui(data.name, config.debug_value_max_len, true), hl }
+    chunks[#chunks + 1] = { str_util.crop_for_ui(data.name, width, true), hl }
 end
 
 ---@param data easydap.DebugView.ItemData
@@ -203,12 +206,13 @@ local _formatters = {
 }
 
 ---@param data easydap.DebugView.ItemData?
+---@param width integer  available DebugView window width
 ---@return easydap.DebugView.Chunk[], table
-local function _node_formatter(_, data, _)
+local function _node_formatter(data, width)
     if not data then return {}, {} end
     local chunks = {}
     local fmt = _formatters[data.kind]
-    if fmt then fmt(data, chunks) end
+    if fmt then fmt(data, chunks, width) end
     return chunks, {}
 end
 
@@ -217,6 +221,8 @@ end
 ---@class easydap.DebugView
 ---@field private _tree             easydap.ui.TreeBuffer
 ---@field private _win              integer?  the view window, when open
+---@field private _win_width        integer?  cached width of _win, invalidated on resize/close
+---@field private _aug              integer?  augroup for window-scoped autocmds (WinResized/WinClosed), live only while _win is open
 ---@field private _active_id        number?
 ---@field private _active_sess      easydap.dap.Session?
 ---@field private _query_ctx        number
@@ -233,6 +239,7 @@ DebugView.__index = DebugView
 function DebugView.new()
     local self = setmetatable({
         _win            = nil,
+        _win_width      = nil,
         _active_id      = nil,
         _active_sess    = nil,
         _query_ctx      = 0,
@@ -257,7 +264,9 @@ end
 function DebugView:_init_tree()
     self._tree = TreeBuffer.new({
         filetype  = "easydap-view",
-        formatter = _node_formatter,
+        formatter = function(_, data, _)
+            return _node_formatter(data, self:_get_win_width())
+        end,
     })
 
     ---@param id string
@@ -325,6 +334,15 @@ function DebugView:_init_tree()
             end
         end,
     })
+end
+
+---@private
+---@return integer
+function DebugView:_get_win_width()
+    if self._win_width then return self._win_width end
+    local winid = self._tree:get_winid()
+    self._win_width = winid > 0 and vim.api.nvim_win_get_width(winid) or config.debug_value_max_len
+    return self._win_width
 end
 
 -- ── Signal subscriptions ──────────────────────────────────────────────────
@@ -1074,13 +1092,24 @@ function DebugView:get_bufnr(on_deleted)
     return bufnr
 end
 
+---Reset window-scoped state; called on programmatic close and on WinClosed.
+---@private
+function DebugView:_cleanup_win()
+    self._win = nil
+    self._win_width = nil
+    if self._aug then
+        vim.api.nvim_del_augroup_by_id(self._aug)
+        self._aug = nil
+    end
+end
+
 ---Close the DebugView window if it is currently visible.
 function DebugView:close()
     local winid = self._tree:get_winid()
     if winid > 0 then
         vim.api.nvim_win_close(winid, true)
     end
-    self._win = nil
+    self:_cleanup_win()
 end
 
 ---@param focus boolean
@@ -1095,6 +1124,24 @@ function DebugView:_open(focus)
     vim.cmd("botright vsplit")
     local win = vim.api.nvim_get_current_win()
     self._win = win
+    _au_group_gen = _au_group_gen and (_au_group_gen + 1) or 1
+    self._aug = vim.api.nvim_create_augroup(("easydap_debugview_%d"):format(_au_group_gen), { clear = true })
+    vim.api.nvim_create_autocmd("WinResized", {
+        group    = self._aug,
+        callback = function()
+            if vim.tbl_contains(vim.v.event.windows, self._win) then
+                self._win_width = nil
+            end
+        end,
+    })
+    -- the window may also be closed directly by the user (e.g. `:q`/`<C-w>c`)
+    -- rather than via DebugView:close(), so tear down on WinClosed too.
+    vim.api.nvim_create_autocmd("WinClosed", {
+        group    = self._aug,
+        pattern  = tostring(win),
+        once     = true,
+        callback = function() self:_cleanup_win() end,
+    })
     vim.api.nvim_win_set_buf(win, bufnr)
     vim.api.nvim_win_set_width(win, math.ceil(vim.o.columns * 0.2))
     _setlocal(win, "winfixwidth", true)
