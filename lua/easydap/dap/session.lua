@@ -908,7 +908,7 @@ end
 ---@param args    easydap.dap.proto.RunInTerminalRequestArguments
 ---@param respond easydap.dap.RespondFn
 function Session:_run_in_terminal(args, respond)
-    local term = require("easydap.util.term")
+    local term = require("easydap.tk.term")
     local cmd  = args.args or {}
     if args.argsCanBeInterpretedByShell then
         cmd = { vim.o.shell, "-c", table.concat(cmd, " ") }

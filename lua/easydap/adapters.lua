@@ -174,7 +174,7 @@ local _debugpy_attach_schema = vim.tbl_extend("error", {
 ---@param ctx      easydap.AdapterSetupCtx
 ---@param callback fun(err?: string, state?: any)
 local function _debugpy_setup(config, ctx, callback)
-    local term = require("easydap.util.term")
+    local term = require("easydap.tk.term")
     local function resolve_python()
         local base = vim.fs.joinpath(vim.fn.stdpath("data"), "mason", "packages", "debugpy", "venv")
         local path = vim.fn.has("win32") == 1
@@ -513,7 +513,7 @@ M.delve = {
 -- JavaScript / TypeScript — starts js-debug's TCP server, then connects to it.
 M["js-debug"] = {
     setup = function(config, ctx, callback)
-        local term = require("easydap.util.term")
+        local term = require("easydap.tk.term")
         local server_js = vim.fs.joinpath(
             vim.fn.stdpath("data"), "mason", "packages",
             "js-debug-adapter", "js-debug", "src", "dapDebugServer.js"

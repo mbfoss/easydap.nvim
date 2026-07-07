@@ -1,19 +1,20 @@
 local M = {}
 
-local ui = require("easydap.util.ui_util")
+local ui = require("easydap.tk.ui")
 
----@class easydap.SpawnHandle
+---@class easydap.tk.TermHandle
 ---@field bufnr number
 ---@field pid   integer
 ---@field stop  fun()  stop the spawned command
 
----@class easydap.SpawnOpts
+---@class easydap.tk.SpawnOpts
 ---@field cwd?       string
 ---@field env?       table<string,string>
 ---@field on_stdout?      fun(id: integer, data: string[], name: string)
 ---@field on_stderr?      fun(id: integer, data: string[], name: string)
 ---@field on_exit?        fun(code: integer)
 ---@field line_buffered?  boolean  only emit complete lines to on_stdout/on_stderr
+---@field no_auto_wipe_on_exit boolean?
 
 ---Neovim splits on newlines but the last element of each on_stdout/on_stderr
 ---call is always a partial fragment joined to the first element of the next call.
@@ -43,16 +44,23 @@ end
 --- Returns immediately with a handle, or nil if jobstart failed.
 --- termopen handles all output rendering including ANSI colours.
 ---@param cmd   string|string[]
----@param opts  easydap.SpawnOpts
+---@param opts  easydap.tk.SpawnOpts
 ---@return number? job_id,number? pid, string? error
 local function _start_job(cmd, opts)
     local job_id
+
     local exited
+    local env = nil
+    if opts.env and next(opts.env) then env = opts.env end
+    if opts.cwd and not vim.fn.has("win32") == 1 then
+        env = env and vim.deepcopy(env) or {}
+        env.PWD = opts.cwd
+    end
     local start_ok, job_id_or_err = pcall(function()
         return vim.fn.jobstart(cmd, {
             term      = true,
             cwd       = opts.cwd,
-            env       = opts.env,
+            env       = env,
             on_stdout = opts.on_stdout and (opts.line_buffered and _wrap_line_buffered(opts.on_stdout) or opts.on_stdout),
             on_stderr = opts.on_stderr and (opts.line_buffered and _wrap_line_buffered(opts.on_stderr) or opts.on_stderr),
             on_exit   = function(_, code)
@@ -89,9 +97,9 @@ end
 --- Returns immediately with a handle, or nil if jobstart failed.
 --- termopen handles all output rendering including ANSI colours.
 ---@param cmd   string|string[]
----@param opts  easydap.SpawnOpts
+---@param opts  easydap.tk.SpawnOpts
 ---@param bufnr? integer buffer to own the terminal (auto created if nil)
----@return easydap.SpawnHandle?,string?
+---@return easydap.tk.TermHandle?,string?
 function M.spawn(cmd, opts, bufnr)
     -- A terminal buffer must be in a window for jobstart {term=true}.
     local own_buf
@@ -132,17 +140,19 @@ function M.spawn(cmd, opts, bufnr)
         vim.bo[bufnr].buflisted = true
     end
 
-    vim.api.nvim_create_autocmd("TermClose", {
-        buffer   = bufnr,
-        once     = true,
-        callback = function()
-            for _, key in ipairs({ 'i', 'a', 'o', 'I', 'A', 'O', 'c', 'cc', 'C', 's', 'S', 'R', '.' }) do
-                vim.keymap.set("n", key, "<Nop>", { buffer = bufnr, nowait = true })
-            end
-        end,
-    })
+    if opts.no_auto_wipe_on_exit then
+        vim.api.nvim_create_autocmd("TermClose", {
+            buffer   = bufnr,
+            once     = true,
+            callback = function()
+                for _, key in ipairs({ 'i', 'a', 'o', 'I', 'A', 'O', 'c', 'cc', 'C', 's', 'S', 'R', '.' }) do
+                    vim.keymap.set("n", key, "<Nop>", { buffer = bufnr, nowait = true })
+                end
+            end,
+        })
+    end
 
-    return { ---@type easydap.SpawnHandle
+    return { ---@type easydap.tk.TermHandle
         bufnr = bufnr,
         pid   = job_pid or 0,
         stop  = function()

@@ -64,10 +64,8 @@ function Connection:_dispatch(msg)
             end
             cb(msg.body, err)
         end
-
     elseif t == "event" then
         pcall(self.on_event, msg.event or "", msg.body or {})
-
     elseif t == "request" then
         -- Adapter-initiated request (e.g. runInTerminal, startDebugging)
         local req_seq = tonumber(msg.seq)
@@ -133,9 +131,9 @@ end
 local function _new_conn(opts)
     ---@diagnostic disable-next-line: missing-fields
     return setmetatable({
-        _seq     = 0,
-        _pending = {},
-        _closed  = false,
+        _seq           = 0,
+        _pending       = {},
+        _closed        = false,
         on_event       = function() end,
         on_request     = function(_, _, respond) respond(nil, "unsupported request") end,
         on_close       = (opts and opts.on_close) or function() end,
@@ -151,18 +149,25 @@ end
 ---@param opts easydap.dap.StdioOpts?
 ---@return easydap.dap.Connection
 function M.stdio(cmd, opts)
-    opts = opts or {}
-    local conn   = _new_conn(opts)
-    local parser = transport.new_parser()
+    opts              = opts or {}
+    local conn        = _new_conn(opts)
+    local parser      = transport.new_parser()
 
     parser.on_message = function(msg)
         -- jobstart callbacks fire on the main loop; dispatch synchronously.
         conn:_dispatch(msg)
     end
 
+    local env         = nil
+    if opts.env and next(opts.env) then env = opts.env end
+    if opts.cwd and not vim.fn.has("win32") == 1 then
+        env = env and vim.deepcopy(env) or {}
+        env.PWD = opts.cwd
+    end
+
     local job_id = vim.fn.jobstart(cmd, {
-        cwd     = opts.cwd,
-        env     = opts.env,
+        cwd       = opts.cwd,
+        env       = env,
         -- Do NOT use stdout_buffered — we need streaming access.
         on_stdout = function(_, data)
             -- data is a list of strings split on \n.
@@ -179,7 +184,7 @@ function M.stdio(cmd, opts)
                 end
             end
         end,
-        on_exit = function()
+        on_exit   = function()
             vim.schedule(function() conn:close() end)
         end,
     })
