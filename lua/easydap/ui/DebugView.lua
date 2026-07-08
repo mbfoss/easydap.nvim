@@ -746,7 +746,7 @@ function DebugView:_merge_children(parent_id, new_children)
         new_ids[item.id] = true
         if existing_map[item.id] then
             self._tree:set_item_data(item.id, item.data)
-            self._tree:set_item_expafndable(item.id, item.expandable or false)
+            self._tree:set_item_expandable(item.id, item.expandable or false)
         else
             self._tree:add_item(parent_id, item)
         end
