@@ -26,7 +26,7 @@ local function _format_node(data)
     local chunks = {}
     chunks[#chunks + 1] = { data.name }
     chunks[#chunks + 1] = { data.is_root and " = " or ": ", "NonText" }
-    local val = str_util.crop_for_ui(tostring(data.value or ""):gsub("\n", "⏎"), config.debug_value_max_len)
+    local val = tostring(data.value or ""):gsub("\n", "⏎")
     chunks[#chunks + 1] = { val, "@string" }
     return chunks, {}
 end

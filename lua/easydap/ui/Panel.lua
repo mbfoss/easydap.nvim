@@ -303,7 +303,7 @@ function Panel:_render_winbar()
         -- Leading number is the index `:Debug panel jump <n>` expects.
         parts[#parts + 1] = ("%%%d@v:lua.EasydapPanelClick@%s %d %s %%X"):format(i, hl, i, e.label)
     end
-    vim.wo[self._win].winbar = table.concat(parts) .. "%#Winbar#"
+    _setlocal(self._win, "winbar", table.concat(parts) .. "%#Winbar#")
 end
 
 -- ── Public API ─────────────────────────────────────────────────────────────
