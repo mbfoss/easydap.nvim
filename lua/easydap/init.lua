@@ -374,6 +374,23 @@ local function _init()
         desc     = "easydap: persist breakpoints and expressions",
     })
 
+    -- Gracefully stop active sessions on exit. An adapter (e.g. lldb-dap) that
+    -- is killed without a completed `disconnect` orphans its launched debuggee —
+    -- the process keeps running. Neovim SIGKILLs the adapter jobs as it exits, so
+    -- we must finish the DAP disconnect handshake first. vim.wait pumps the event
+    -- loop (letting the async disconnect responses land) while the timeout caps a
+    -- hung adapter so quitting is never blocked; the per-session 3s force-close
+    -- backstops within that window.
+    vim.api.nvim_create_autocmd("VimLeavePre", {
+        callback = function()
+            local client = require("easydap.dap.client")
+            local done = false
+            client.quit(function() done = true end)
+            vim.wait(10000, function() return done end, 20)
+        end,
+        desc = "easydap: disconnect sessions so debuggees are terminated on exit",
+    })
+
     -- After a cwd change, re-resolve the project root and restore its state
     -- (or clear it, when the new cwd is not inside a project).
     vim.api.nvim_create_autocmd("DirChanged", {
