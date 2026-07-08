@@ -123,7 +123,7 @@ end
 ---@param width integer  available DebugView window width
 local function _fmt_stackframe(data, chunks, width)
     local hl = data.greyout and "NonText" or (data.is_current and "Special" or nil)
-    chunks[#chunks + 1] = { str_util.crop_for_ui(data.name, width, true), hl }
+    chunks[#chunks + 1] = { str_util.crop_for_ui(data.name, width - 4, true), hl }
 end
 
 ---@param data easydap.DebugView.ItemData
