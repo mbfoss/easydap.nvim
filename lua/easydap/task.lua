@@ -1,5 +1,6 @@
 local OutputBuffer = require "easydap.ui.OutputBuffer"
 local _config      = require "easydap.config"
+local ui_util      = require "easydap.util.ui_util"
 
 ---A debug task — native DAP, sent as-is. `parameters` is the adapter's raw
 ---launch/attach body, sent verbatim. `:Debug new_run_file` scaffolds a run file
@@ -36,23 +37,10 @@ local M            = {}
 
 local _run_counter = 0
 
----Return `base` if no buffer has that name, otherwise `base#1`, `base#2`, …
----@param base string
----@return string
-local function _unique_buf_name(base)
-    local name = base
-    local n    = 0
-    while vim.fn.bufnr(name) ~= -1 do
-        n    = n + 1
-        name = base .. "#" .. n
-    end
-    return name
-end
-
 ---@param task easydap.Task  native DAP task (name + adapter + request + parameters, plus optional host/port/raw_messages)
 ---@param callbacks easydap.TaskCallback
 ---@return fun()
-M.start = function(task, callbacks)
+M.start            = function(task, callbacks)
     local add_bufnr = callbacks.add_bufnr or function() end
     local report    = callbacks.report or function() end
     local on_done   = callbacks.on_done or function() end
@@ -82,17 +70,17 @@ M.start = function(task, callbacks)
     -- only what the dap layer consumes.
     ---@type easydap.dap.Config
     local config = {
-        name                  = task.name,
-        adapter               = task.adapter,
-        type                  = base.type,
-        command               = base.command,
-        cwd                   = base.cwd,
-        env                   = base.env,
-        defer_launch_attach   = base.defer_launch_attach,
-        host                  = base.host,
-        port                  = base.port,
-        request               = request,
-        request_args          = vim.deepcopy(task.parameters or {}),
+        name                = task.name,
+        adapter             = task.adapter,
+        type                = base.type,
+        command             = base.command,
+        cwd                 = base.cwd,
+        env                 = base.env,
+        defer_launch_attach = base.defer_launch_attach,
+        host                = base.host,
+        port                = base.port,
+        request             = request,
+        request_args        = vim.deepcopy(task.parameters or {}),
     }
 
     -- Adapters with setup manage config.host/port themselves (e.g. debugpy picks a
@@ -104,7 +92,7 @@ M.start = function(task, callbacks)
 
     -- REPL buffer: interactive DAP expression evaluation.
     local repl = require("easydap.ui.ReplBuffer").new({
-        name     = "easydap://" .. run_key .. "/repl",
+        name     = ui_util.unique_buf_name("easydap://" .. run_key .. "/repl"),
         evaluate = function(expr, cb)
             manager.evaluate(expr, "repl", function(body, err)
                 cb(body and body.result, err)
@@ -125,7 +113,7 @@ M.start = function(task, callbacks)
         if #lines == 0 then return end
         if not out_buf then
             out_buf = OutputBuffer.new({
-                name      = _unique_buf_name("easydap://" .. run_key .. "/output"),
+                name      = ui_util.unique_buf_name("easydap://" .. run_key .. "/output"),
                 max_lines = _config.output_max_lines,
             })
             local buf = assert(out_buf:bufnr())
@@ -184,7 +172,7 @@ M.start = function(task, callbacks)
                 if task.raw_messages then
                     local out ---@type easydap.OutputBuffer?
                     out = OutputBuffer.new({
-                        name      = _unique_buf_name("easydap://" .. run_key .. "/dap-messages"),
+                        name      = ui_util.unique_buf_name("easydap://" .. run_key .. "/dap-messages"),
                         max_lines = _config.output_max_lines,
                     })
                     local buf = assert(out:bufnr())

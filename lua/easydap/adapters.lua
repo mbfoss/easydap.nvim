@@ -68,6 +68,16 @@ local M = {}
 
 -- ── Utilities ─────────────────────────────────────────────────────────────
 
+local function _unique_buf_name(basename)
+    local name = basename
+    local n    = 0
+    while vim.fn.bufnr(name) ~= -1 do
+        n    = n + 1
+        name = basename .. "#" .. n
+    end
+    return name
+end
+
 ---@return integer
 local function _free_port()
     local tcp = assert(vim.uv.new_tcp(), "uv.new_tcp failed")
@@ -200,6 +210,7 @@ local function _debugpy_setup(config, ctx, callback)
     local handle = term.spawn(
         { python, "-m", "debugpy.adapter", "--host", "127.0.0.1", "--port", tostring(port) },
         {
+            bufname = _unique_buf_name("easydap://" .. (config.name or config.adapter or "debug") .. "/debugpy-adapter"),
             cwd     = config.cwd or vim.fn.getcwd(),
             on_exit = function() done("debugpy adapter exited unexpectedly") end,
         }
@@ -531,6 +542,7 @@ M["js-debug"] = {
         end
         local handle
         handle = term.spawn({ "node", server_js }, {
+            bufname = _unique_buf_name("easydap://" .. (config.name or config.adapter or "debug") .. "/js-debug-server"),
             on_stdout = function(_, data)
                 if resolved_port then return end
                 for _, line in ipairs(data) do
@@ -647,8 +659,16 @@ M["php-debug-adapter"] = {
     launch_schema = {
         type           = { default = "php", fixed = true },
         name           = { default = "Listen for Xdebug", fixed = true },
-        cwd            = { type = "string", kind = "dir", role = "cwd", desc = "working directory", default = function() return
-            vim.fn.getcwd() end },
+        cwd            = {
+            type = "string",
+            kind = "dir",
+            role = "cwd",
+            desc = "working directory",
+            default = function()
+                return
+                    vim.fn.getcwd()
+            end
+        },
         port           = { type = "integer", kind = "port", desc = "port to listen for Xdebug", default = 9003 },
         hostname       = { type = "string", kind = "host", desc = "address to bind when listening" },
         stopOnEntry    = { type = "boolean", desc = "break at the beginning of the script", default = false },

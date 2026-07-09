@@ -1,3 +1,4 @@
+local ui_util  = require "easydap.util.ui_util"
 ---@brief Standalone task runner for easydap.
 ---
 ---Runs a debug task without easytasks by supplying easydap's own run callbacks
@@ -69,7 +70,7 @@ local function _report_bufnr()
     vim.bo[_report_buf].swapfile   = false
     vim.bo[_report_buf].bufhidden  = "hide"
     vim.bo[_report_buf].modifiable = false
-    pcall(vim.api.nvim_buf_set_name, _report_buf, "easydap://reports")
+    vim.api.nvim_buf_set_name(_report_buf, ui_util.unique_buf_name("easydap://reports"))
     return _report_buf
 end
 

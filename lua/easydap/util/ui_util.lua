@@ -82,4 +82,17 @@ function M.define_themed_hl(name, spec_fn)
     vim.api.nvim_set_hl(0, name, spec_fn())
 end
 
+---Return `basename` if no buffer has that name, otherwise `basename#1`, `basename#2`, …
+---@param basename string
+---@return string
+function M.unique_buf_name(basename)
+    local name = basename
+    local n    = 0
+    while vim.fn.bufnr(name) ~= -1 do
+        n    = n + 1
+        name = basename .. "#" .. n
+    end
+    return name
+end
+
 return M

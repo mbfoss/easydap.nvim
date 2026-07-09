@@ -14,6 +14,7 @@
 ---  "start_debugging"   (child_config, parent_sess)— adapter requests child session
 
 local breakpoints = require("easydap.dap.breakpoints")
+local ui_util     = require("easydap.util.ui_util")
 
 ---@class easydap.dap.Thread
 ---@field id           integer
@@ -133,10 +134,10 @@ local breakpoints = require("easydap.dap.breakpoints")
 ---@field _bp_unsub                (fun())?                       unsubscribe from breakpoints.on_change
 ---@field _on_breakpoints_changed  fun(self: easydap.dap.Session, kind: easydap.dap.BreakpointChangeKind, path: string?)
 
-local M = {}
+local M           = {}
 
-local Session = {}
-Session.__index = Session
+local Session     = {}
+Session.__index   = Session
 
 ---@param conn   easydap.dap.Connection
 ---@param config easydap.dap.Config
@@ -177,7 +178,7 @@ function M.new(conn, config)
     -- the desired set pushes the affected breakpoints to this session's adapter.
     -- The initial sync is handled by the _on_initialized handshake instead, so
     -- changes before initialization are ignored (see _on_breakpoints_changed).
-    self._bp_unsub = breakpoints.on_change:subscribe(function(kind, path)
+    self._bp_unsub  = breakpoints.on_change:subscribe(function(kind, path)
         self:_on_breakpoints_changed(kind, path)
     end)
 
@@ -430,16 +431,17 @@ end
 ---@param cb     fun()
 function Session:_sync_one_source(source, cb)
     if source == "" then return cb() end
-    local source_obj  = { path = source }
-    local active_bps  = {}
-    local active_req  = {}
+    local source_obj = { path = source }
+    local active_bps = {}
+    local active_req = {}
     for _, bp in ipairs(breakpoints.for_source(source)) do
         if not bp.disabled then
             local entry = { line = bp.line }
             if bp.column then entry.column = bp.column end
-            if bp.condition     and self:capable("supportsConditionalBreakpoints")    then entry.condition    = bp.condition end
-            if bp.hit_condition and self:capable("supportsHitConditionalBreakpoints") then entry.hitCondition = bp.hit_condition end
-            if bp.log_message   and self:capable("supportsLogPoints")                 then entry.logMessage   = bp.log_message end
+            if bp.condition and self:capable("supportsConditionalBreakpoints") then entry.condition = bp.condition end
+            if bp.hit_condition and self:capable("supportsHitConditionalBreakpoints") then entry.hitCondition = bp
+                .hit_condition end
+            if bp.log_message and self:capable("supportsLogPoints") then entry.logMessage = bp.log_message end
             active_bps[#active_bps + 1] = bp
             active_req[#active_req + 1] = entry
         end
@@ -456,8 +458,8 @@ function Session:_sync_one_source(source, cb)
             for i, upd in ipairs(body.breakpoints) do
                 local bp = active_bps[i]
                 if bp then
-                    local prev = self._bp_status[bp.internal_id]
-                    local st   = {
+                    local prev                      = self._bp_status[bp.internal_id]
+                    local st                        = {
                         verified = upd.verified,
                         message  = upd.message,
                         hits     = prev and prev.hits or 0,
@@ -665,7 +667,7 @@ function Session:_on_stopped(body)
 
     self:_set_state("stopped", reason)
     self:_select_thread(tid, true)
-    self._stack_id              = nil
+    self._stack_id             = nil
     self.exception_description = nil
 
     if reason == "exception" then
@@ -781,9 +783,9 @@ function Session:_on_breakpoint_event(body)
     if not upd or not upd.id then return end
     local bp_id = self._adapter_id_map[upd.id]
     if not bp_id then return end
-    local prev = self._bp_status[bp_id] or { hits = 0 }
-    local bp   = breakpoints.find_by_internal_id(bp_id)
-    local st   = {
+    local prev             = self._bp_status[bp_id] or { hits = 0 }
+    local bp               = breakpoints.find_by_internal_id(bp_id)
+    local st               = {
         verified = upd.verified,
         message  = upd.message,
         hits     = prev.hits,
@@ -877,7 +879,9 @@ end
 
 ---@return nil
 function Session:_on_close()
-    if self._bp_unsub then self._bp_unsub(); self._bp_unsub = nil end
+    if self._bp_unsub then
+        self._bp_unsub(); self._bp_unsub = nil
+    end
     local cb = self._stop_cb
     self._stop_cb = nil
     if self.state ~= "terminated" then
@@ -913,9 +917,13 @@ function Session:_run_in_terminal(args, respond)
     if args.argsCanBeInterpretedByShell then
         cmd = { vim.o.shell, "-c", table.concat(cmd, " ") }
     end
+    -- The adapter-supplied title names it best; otherwise fall back to the
+    -- session's config name (the display name used elsewhere for this session).
+    local name = args.title or self.config.name or self.config.adapter or "debug"
     local handle
     local ok, err = pcall(function()
         handle = term.spawn(cmd, {
+            bufname = ui_util.unique_buf_name("easydap://run/" .. name),
             cwd     = args.cwd,
             env     = args.env,
             on_exit = function() if handle then self:_emit("terminal_exit", handle.bufnr) end end,
@@ -1188,14 +1196,14 @@ end
 ---@return nil
 function Session:restart()
     if not self:capable("supportsRestartRequest") then return end
-    self.threads          = {}
-    self._thread_id        = nil
-    self._modules          = {}
-    self._sources          = {}
-    self._bp_status       = {}
-    self._adapter_id_map  = {}
-    self._instr_bps       = {}
-    self._data_bps        = {}
+    self.threads         = {}
+    self._thread_id      = nil
+    self._modules        = {}
+    self._sources        = {}
+    self._bp_status      = {}
+    self._adapter_id_map = {}
+    self._instr_bps      = {}
+    self._data_bps       = {}
     self:request("restart", { arguments = self:_protocol_args() }, function(_, err)
         if err then self:report("[dap] restart failed: " .. err) end
     end)
@@ -1416,8 +1424,8 @@ function Session:_sync_data_breakpoints(cb)
     for _, bp in ipairs(self._data_bps) do
         if not bp.disabled then
             local entry = { dataId = bp.data_id }
-            if bp.access_type   then entry.accessType   = bp.access_type end
-            if bp.condition     then entry.condition    = bp.condition end
+            if bp.access_type then entry.accessType = bp.access_type end
+            if bp.condition then entry.condition = bp.condition end
             if bp.hit_condition then entry.hitCondition = bp.hit_condition end
             active[#active + 1] = bp
             list[#list + 1]     = entry
@@ -1532,7 +1540,7 @@ end
 function Session:select_thread(thread_id)
     self._thread_id = thread_id
     self._stack_id  = nil
-    local t        = self:current_thread()
+    local t         = self:current_thread()
     if t then
         t.stack_frames = nil
         t.total_frames = nil
@@ -1694,8 +1702,9 @@ function Session:sync_function_breakpoints(cb)
             for i, upd in ipairs(body.breakpoints) do
                 local bp = active[i]
                 if bp then
-                    local prev = self._bp_status[bp.internal_id]
-                    local st   = { verified = upd.verified, message = upd.message, hits = prev and prev.hits or 0 }
+                    local prev                      = self._bp_status[bp.internal_id]
+                    local st                        = { verified = upd.verified, message = upd.message, hits = prev and
+                    prev.hits or 0 }
                     self._bp_status[bp.internal_id] = st
                     if upd.id then self._adapter_id_map[upd.id] = bp.internal_id end
                     self:_emit("breakpoint_updated", bp, st)
