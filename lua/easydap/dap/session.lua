@@ -111,6 +111,7 @@ local ui_util     = require("easydap.util.ui_util")
 ---@field fetch_modules       fun(self: easydap.dap.Session, cb: fun(modules: easydap.dap.proto.Module[]?, err: string?)?)
 ---@field fetch_loaded_sources fun(self: easydap.dap.Session, cb: fun(sources: easydap.dap.proto.Source[]?, err: string?)?)
 ---@field set_variable        fun(self: easydap.dap.Session, reference: integer?, variable: easydap.dap.Variable, value: string, cb: fun(body: table?, err: string?)?)
+---@field set_expression      fun(self: easydap.dap.Session, expression: string, value: string, cb: fun(body: table?, err: string?)?)
 ---@field get_source_buffer   fun(self: easydap.dap.Session, arguments: easydap.dap.proto.SourceArguments, cb: fun(bufnr: integer?, err: string?))
 ---@field _bp_status      table<integer, easydap.dap.BpStatus>
 ---@field _adapter_id_map table<integer, integer>
@@ -1572,11 +1573,21 @@ function Session:_invalidate_variable_cache()
 end
 
 ---Set a variable's value.
----@param reference integer|nil  parent variablesReference (nil for expression-based)
+---
+---Per the DAP spec, when an adapter implements both `setVariable` and
+---`setExpression` a client uses `setExpression` *if and only if* the variable
+---has an `evaluateName` property (that name is a full l-value expression, which
+---handles nested/complex targets a container-scoped `setVariable` cannot).
+---Otherwise it falls back to `setVariable`, which requires the parent
+---`variablesReference`.
+---@param reference integer|nil  parent variablesReference (for the setVariable path)
 ---@param variable  easydap.dap.Variable
 ---@param value     string
 ---@param cb        fun(body: table?, err: string?)?
 function Session:set_variable(reference, variable, value, cb)
+    if self:capable("supportsSetExpression") and variable.evaluateName and variable.evaluateName ~= "" then
+        return self:set_expression(variable.evaluateName, value, cb)
+    end
     if self:capable("supportsSetVariable") and type(reference) == "number" then
         self:request("setVariable", {
             variablesReference = reference,
@@ -1593,24 +1604,37 @@ function Session:set_variable(reference, variable, value, cb)
             end
             if cb then cb(body, err) end
         end)
-    elseif self:capable("supportsSetExpression") and (variable.evaluateName or variable.name) then
-        local frame = self:current_stack_frame()
-        self:request("setExpression", {
-            frameId    = frame and frame.id,
-            expression = variable.evaluateName or variable.name,
-            value      = value,
-        }, function(body, err)
-            if err then
-                self:report("[dap] setExpression failed: " .. err)
-            else
-                self:_invalidate_variable_cache()
-                self:_emit("variable_changed")
-            end
-            if cb then cb(body, err) end
-        end)
     else
         self:report("[dap] unable to set variable: adapter lacks capability")
     end
+end
+
+---Assign a new value to an l-value expression (e.g. a watch expression).
+---Requires the `supportsSetExpression` capability; there is no `setVariable`
+---fallback since a free-standing expression has no parent `variablesReference`.
+---@param expression string  the l-value expression to assign to
+---@param value      string  the value expression to assign
+---@param cb         fun(body: table?, err: string?)?
+function Session:set_expression(expression, value, cb)
+    if not self:capable("supportsSetExpression") then
+        self:report("[dap] unable to set expression: adapter lacks capability")
+        if cb then cb(nil, "adapter lacks supportsSetExpression") end
+        return
+    end
+    local frame = self:current_stack_frame()
+    self:request("setExpression", {
+        frameId    = frame and frame.id,
+        expression = expression,
+        value      = value,
+    }, function(body, err)
+        if err then
+            self:report("[dap] setExpression failed: " .. err)
+        else
+            self:_invalidate_variable_cache()
+            self:_emit("variable_changed")
+        end
+        if cb then cb(body, err) end
+    end)
 end
 
 ---Retrieve a virtual source by reference, returning a buffer number.

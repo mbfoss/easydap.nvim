@@ -1242,7 +1242,7 @@ function DebugView:_setup_keymaps(bufnr)
         end
     end)
 
-    map("c", "Change variable value, breakpoint condition/hit condition, or data breakpoint access type", function()
+    map("c", "Change variable/expression value, breakpoint condition/hit condition, or data breakpoint access type", function()
         local cur = self._tree:get_cursor_item()
         if not cur or not cur.data then return end
         local d = cur.data
@@ -1301,6 +1301,25 @@ function DebugView:_setup_keymaps(bufnr)
                         self:_load_vars(self._query_ctx)
                     end)
             end)
+        elseif d.kind == "expression" and self._active_sess then
+            -- A watch expression is its own l-value: pass it as evaluateName so
+            -- set_variable picks setExpression/setVariable per adapter capability.
+            local parent = self._tree:get_parent_item(cur.id)
+            local parent_ref = parent and parent.data and parent.data.variablesReference
+            inputwin.open({ prompt = "New value: ", default = d.value or "" }, function(input)
+                if input == nil then return end
+                self._active_sess:set_variable(parent_ref,
+                    {
+                        name               = d.name,
+                        value              = d.value,
+                        variablesReference = d.variablesReference or 0,
+                        evaluateName       = d.name,
+                    }, input,
+                    function(_, err)
+                        if err then return end
+                        self:_load_expressions(self._query_ctx)
+                    end)
+            end)
         end
     end)
 
@@ -1317,7 +1336,7 @@ function DebugView:_setup_keymaps(bufnr)
             "d     Remove watch expression or breakpoint",
             "r     Rename expression",
             "x     Toggle breakpoint enabled/disabled",
-            "c     Change variable value / breakpoint condition or hit condition / exception break mode / data access type",
+            "c     Change variable/expression value / breakpoint condition or hit condition / exception break mode / data access type",
         }, "\n"), { title = "Keymaps" })
     end)
 end
