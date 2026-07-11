@@ -890,11 +890,21 @@ local function _visual_selection()
     return table.concat(region, "\n")
 end
 
+-- Cap the inspected expression: a huge selection is almost always a mistake, and
+-- an oversized `evaluate` body just burdens the adapter for no useful result.
+local _MAX_INSPECT_LEN = 1000
+
 ---@param expr? string defaults to the visual selection, else the word under cursor
 function M.debug.inspect(expr)
     expr = expr or _visual_selection() or vim.fn.expand("<cword>")
     if not expr or expr == "" then
         vim.notify("[dap] nothing to inspect", vim.log.levels.WARN)
+        return
+    end
+    if #expr > _MAX_INSPECT_LEN then
+        vim.notify(
+            ("[dap] expression too long to inspect (%d > %d chars)"):format(#expr, _MAX_INSPECT_LEN),
+            vim.log.levels.WARN)
         return
     end
     require("easydap.ui.InspectView").open(expr)
