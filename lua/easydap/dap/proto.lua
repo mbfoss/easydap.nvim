@@ -1,7 +1,7 @@
 ---@meta
 ---@brief DAP (Debug Adapter Protocol) specification types.
 
----Spec: https://microsoft.github.io/debug-adapter-protocol/specification
+---https://microsoft.github.io/debug-adapter-protocol/specification
 
 -- ── Primitive aliases ──────────────────────────────────────────────────────
 
