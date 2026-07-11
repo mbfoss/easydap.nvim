@@ -224,9 +224,9 @@ local function _register_user_commands()
         elseif sub == "terminate_all" then
             cmd.debug.terminate_all()
         elseif sub == "inspect" then
-            -- Reads the live visual selection when invoked from a visual-mode
-            -- `<Cmd>Debug inspect<CR>` mapping, else the word under the cursor.
-            cmd.debug.inspect()
+            -- A `'<,'>` range (e.g. `:'<,'>Debug inspect` from visual mode) sets
+            -- opts.range > 0; inspect then reads the `'<`/`'>` marks.
+            cmd.debug.inspect(nil, opts.range and opts.range > 0)
         elseif sub == "disassemble" then
             cmd.debug.disassemble()
         elseif sub == "session" then
@@ -354,13 +354,12 @@ local function _register_user_commands()
         return {}
     end
 
-    -- `count = true` supports a leading count (`:2Debug panel`) via `opts.count`.
-    -- `range` is mutually exclusive with `count`, so `:'<,'>Debug inspect` can't be
-    -- used; visual-mode inspect goes through a `<Cmd>Debug inspect<CR>` mapping,
-    -- which keeps us in visual mode so the selection is read live.
+    -- `range = true` lets `:'<,'>Debug inspect` from visual mode be accepted
+    -- instead of erroring with E16; a leading count (`:2Debug panel`) still
+    -- arrives via `opts.count`.
     usercmd.register_user_cmd("Debug", _debug_run, {
         desc = "easydap commands",
-        count = true,
+        range = true,
         subcommand = _debug_complete_subs,
     })
 end
