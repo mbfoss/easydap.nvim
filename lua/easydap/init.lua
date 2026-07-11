@@ -318,7 +318,7 @@ local function _register_user_commands()
     end
 
     ---Completion for `:Debug …`.
-    ---@type easydap.tk.usercmd.subcommand_fn
+    ---@type easydap.tk.usercmd.subcommand
     local function _debug_complete_subs(_, rest, arg_lead)
         if #rest == 0 then return _debug_subs end
         if rest[1] == "breakpoint" then
@@ -360,7 +360,7 @@ local function _register_user_commands()
     usercmd.register_user_cmd("Debug", _debug_run, {
         desc = "easydap commands",
         range = true,
-        subcommand_fn = _debug_complete_subs,
+        subcommand = _debug_complete_subs,
     })
 end
 
