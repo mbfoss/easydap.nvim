@@ -123,13 +123,13 @@ DisassemblyView.__index = DisassemblyView
 ---@return easydap.DisassemblyView
 function DisassemblyView.new()
     local self = setmetatable({
-        _rows     = {},
-        _by_src   = {},
-        _ns_pc    = vim.api.nvim_create_namespace("easydap_disasm_pc"),
-        _ns_block = vim.api.nvim_create_namespace("easydap_disasm_block"),
-        _ns_bp    = vim.api.nvim_create_namespace("easydap_disasm_bp"),
-        _gen      = 0,
-        _syncing  = false,
+        _rows      = {},
+        _by_src    = {},
+        _ns_pc     = vim.api.nvim_create_namespace("easydap_disasm_pc"),
+        _ns_block  = vim.api.nvim_create_namespace("easydap_disasm_block"),
+        _ns_bp     = vim.api.nvim_create_namespace("easydap_disasm_bp"),
+        _gen       = 0,
+        _syncing   = false,
         _exhausted = { up = false, down = false },
     }, DisassemblyView)
     self:_init()
@@ -245,7 +245,10 @@ function DisassemblyView:_ensure_win()
             self._bufnr = nil
             self:close()
         end)
-        pcall(vim.api.nvim_buf_set_name, self._bufnr, "easydap://disassembly")
+        local bufname = "easydap://disassembly"
+        local oldbuf = vim.fn.bufnr(bufname)
+        if oldbuf > 0 then vim.api.nvim_buf_delete(oldbuf, {}) end
+        vim.api.nvim_buf_set_name(self._bufnr, bufname)
         -- identity flag consumers use to recognise the disassembly pane (the
         -- buffer name may be cwd-prefixed, so matching on it is unreliable).
         vim.b[self._bufnr].easydap_disasm = true
@@ -319,24 +322,25 @@ function DisassemblyView:_load(focus)
 
     local count  = self:_page_size()
     local offset = -math.floor(count / 2)
-    sess:disassemble({ memoryReference = ref, instructionCount = count, instructionOffset = offset }, function(instrs, err)
-        vim.schedule(function()
-            if err or not instrs then
-                vim.notify("[dap] disassemble failed: " .. (err or "no instructions"), vim.log.levels.WARN)
-                return
-            end
-            instrs = _valid_instrs(instrs)
-            if #instrs == 0 then
-                if focus then vim.notify("[dap] no instructions to disassemble", vim.log.levels.WARN) end
-                return
-            end
-            self:_ensure_win()
-            self:_render(instrs, ref, true)
-            if focus and self:_is_open() then
-                vim.api.nvim_set_current_win(self._win)
-            end
+    sess:disassemble({ memoryReference = ref, instructionCount = count, instructionOffset = offset },
+        function(instrs, err)
+            vim.schedule(function()
+                if err or not instrs then
+                    vim.notify("[dap] disassemble failed: " .. (err or "no instructions"), vim.log.levels.WARN)
+                    return
+                end
+                instrs = _valid_instrs(instrs)
+                if #instrs == 0 then
+                    if focus then vim.notify("[dap] no instructions to disassemble", vim.log.levels.WARN) end
+                    return
+                end
+                self:_ensure_win()
+                self:_render(instrs, ref, true)
+                if focus and self:_is_open() then
+                    vim.api.nvim_set_current_win(self._win)
+                end
+            end)
         end)
-    end)
 end
 
 ---Move the PC marker to `ref` when it already lives in the loaded window,
@@ -369,10 +373,10 @@ end
 ---@return table<string, table<integer, easydap.DisassemblyView.SrcRange>> by_src
 ---@return integer? pc_row
 function DisassemblyView:_build(instrs, pc_ref)
-    local lines   = {} ---@type string[]
-    local rows    = {} ---@type table<integer, easydap.DisassemblyView.Row>
-    local by_src  = {} ---@type table<string, table<integer, easydap.DisassemblyView.SrcRange>>
-    local pc_row  = nil ---@type integer?
+    local lines  = {} ---@type string[]
+    local rows   = {} ---@type table<integer, easydap.DisassemblyView.Row>
+    local by_src = {} ---@type table<string, table<integer, easydap.DisassemblyView.SrcRange>>
+    local pc_row = nil ---@type integer?
 
     -- one buffer line per instruction (no symbol-header lines), so rows and
     -- lines stay 1:1 — the paging splice depends on that invariant.
@@ -626,32 +630,33 @@ function DisassemblyView:_page(dir)
     local page   = self:_page_size()
     local offset = dir == "down" and 1 or -page
 
-    local gen = self._gen
-    sess:disassemble({ memoryReference = edge_addr, instructionCount = page, instructionOffset = offset }, function(new, err)
-        if gen ~= self._gen then return end
-        vim.schedule(function()
+    local gen    = self._gen
+    sess:disassemble({ memoryReference = edge_addr, instructionCount = page, instructionOffset = offset },
+        function(new, err)
             if gen ~= self._gen then return end
-            self._paging = false
-            if not self:_is_open() then return end
-            -- Past the edge of disassemblable memory the adapter either returns
-            -- nothing, fails the whole request (e.g. crossing below a program's
-            -- text start: "Failed to disassemble memory at 0x..."), or pads the
-            -- reply with sentinel rows that _valid_instrs strips. Once nothing
-            -- real is left there is no more to fetch this way, so mark the edge
-            -- exhausted and stop probing it. _maybe_page re-arms it once the
-            -- cursor steps off.
-            if err or not new then
-                self._exhausted[dir] = true
-                return
-            end
-            new = _valid_instrs(new)
-            if #new == 0 then
-                self._exhausted[dir] = true
-                return
-            end
-            self:_apply_page(dir, new, page, anchor_addr)
+            vim.schedule(function()
+                if gen ~= self._gen then return end
+                self._paging = false
+                if not self:_is_open() then return end
+                -- Past the edge of disassemblable memory the adapter either returns
+                -- nothing, fails the whole request (e.g. crossing below a program's
+                -- text start: "Failed to disassemble memory at 0x..."), or pads the
+                -- reply with sentinel rows that _valid_instrs strips. Once nothing
+                -- real is left there is no more to fetch this way, so mark the edge
+                -- exhausted and stop probing it. _maybe_page re-arms it once the
+                -- cursor steps off.
+                if err or not new then
+                    self._exhausted[dir] = true
+                    return
+                end
+                new = _valid_instrs(new)
+                if #new == 0 then
+                    self._exhausted[dir] = true
+                    return
+                end
+                self:_apply_page(dir, new, page, anchor_addr)
+            end)
         end)
-    end)
 end
 
 ---Splice a freshly fetched page into the buffer with two localised edits: grow
@@ -747,9 +752,9 @@ function DisassemblyView:_apply_page(dir, new, page, anchor_addr)
     vim.bo[buf].modifiable = false
     vim.schedule(function() self._syncing = false end)
 
-    self._rows   = rows
-    self._by_src = by_src
-    self._instrs = merged
+    self._rows                                        = rows
+    self._by_src                                      = by_src
+    self._instrs                                      = merged
     -- the window slid, so the trimmed-away edge is fetchable again
     self._exhausted[dir == "down" and "up" or "down"] = false
 

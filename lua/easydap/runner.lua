@@ -70,7 +70,11 @@ local function _report_bufnr()
     vim.bo[_report_buf].swapfile   = false
     vim.bo[_report_buf].bufhidden  = "hide"
     vim.bo[_report_buf].modifiable = false
-    vim.api.nvim_buf_set_name(_report_buf, ui_util.unique_buf_name("easydap://reports"))
+
+    local bufname                  = "easydap://reports"
+    local oldbuf                   = vim.fn.bufnr(bufname)
+    if oldbuf > 0 then vim.api.nvim_buf_delete(oldbuf, {}) end
+    vim.api.nvim_buf_set_name(_report_buf, bufname)
     return _report_buf
 end
 
