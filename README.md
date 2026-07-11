@@ -153,7 +153,6 @@ table. You can override any of them or add your own — see
 | Adapter              | Language(s)          | Requests          | Tooling                                                       |
 | -------------------- | -------------------- | ----------------- | ------------------------------------------------------------- |
 | `debugpy`            | Python               | launch / attach   | `debugpy` (auto-resolved from Mason, else system `python3`)   |
-| `debugpy-module`     | Python (`-m module`) | launch            | as `debugpy`                                                  |
 | `debugpy-remote`     | Python (remote)      | attach            | as `debugpy`; connects to a remote debugpy endpoint          |
 | `codelldb`           | C / C++ / Rust       | launch / attach   | `codelldb` on `PATH`                                          |
 | `lldb`               | C / C++ / Rust       | launch / attach   | `lldb-dap` on `PATH`                                          |
@@ -162,7 +161,7 @@ table. You can override any of them or add your own — see
 | `netcoredbg`         | .NET / C#            | launch / attach   | `netcoredbg` on `PATH`                                        |
 | `js-debug`           | JavaScript / TS / Node | launch / attach | `js-debug-adapter` (auto-resolved from Mason), `node`        |
 | `bash-debug-adapter` | Bash                 | launch            | `bash-debug-adapter` on `PATH`                                |
-| `php-debug-adapter`  | PHP (Xdebug)         | listen            | `php-debug-adapter` on `PATH`                                 |
+| `php-debug-adapter`  | PHP (Xdebug)         | launch (listens)  | `php-debug-adapter` on `PATH`                                 |
 | `local-lua-debugger` | Lua                  | launch            | `local-lua-debugger-vscode` (auto-resolved from Mason), `node` |
 | `remote`             | any                  | attach            | connects to a DAP server on `host:port`                      |
 | `java-debug-server`  | Java                 | attach            | external debug server (e.g. via `nvim-jdtls`)                |
@@ -297,7 +296,7 @@ logpoint, disabled, exception). The full list of subcommands is in the
 
 The main panel is a tree of your **sessions → threads → stack frames → scopes →
 variables**, plus **watch expressions** and **breakpoints**. It opens
-automatically when a session starts; toggle it any time with `:Debug view`.
+automatically when a session starts; open or focus it any time with `:Debug view`.
 
 Inside the panel:
 
@@ -433,7 +432,7 @@ Everything is under the `:Debug` command, with completion for every subcommand.
 | `quick_run …`         | Launch/attach from `role=value` tokens            |
 | `new_run_file …`      | Scaffold a run file from an adapter's schema       |
 | `rerun`               | Re-launch the most recently run task              |
-| `view`                | Toggle the debug panel                            |
+| `view`                | Open/focus the debug panel                        |
 | `continue` / `continue_all` | Continue the active / every session         |
 | `step_over` (`next`) / `step_in` / `step_out` | Stepping             |
 | `step_into_targets`   | Pick a call target to step into                   |
@@ -520,7 +519,7 @@ map("n", "<F9>",   "<Cmd>Debug breakpoint<CR>",        { desc = "Debug: toggle b
 map("n", "<leader>dc", "<Cmd>Debug breakpoint condition<CR>", { desc = "Debug: conditional breakpoint" })
 map("n", "<leader>dl", "<Cmd>Debug breakpoint logpoint<CR>",  { desc = "Debug: logpoint" })
 map("n", "<leader>dr", "<Cmd>Debug rerun<CR>",                { desc = "Debug: re-run last" })
-map("n", "<leader>du", "<Cmd>Debug view<CR>",                 { desc = "Debug: toggle panel" })
+map("n", "<leader>du", "<Cmd>Debug view<CR>",                 { desc = "Debug: focus panel" })
 map("n", "<leader>dp", "<Cmd>Debug panel<CR>",                { desc = "Debug: toggle run panel" })
 map("n", "<leader>dq", "<Cmd>Debug stop<CR>",                 { desc = "Debug: stop" })
 

@@ -169,17 +169,8 @@ local _debugpy_common = {
     pathMappings    = { type = "table", desc = "local<->remote path maps: array of {localRoot, remoteRoot}" },
 }
 
--- Shared by debugpy and debugpy-module (both attach to a local process the same
--- way). `cwd`/`stopOnEntry` are launch-only per the docs, so attach carries only
--- the process selector plus the shared debugger settings.
----@type table<string, easydap.ParamSpec>
-local _debugpy_attach_schema = vim.tbl_extend("error", {
-    processId = { type = "integer", role = "pid", desc = "PID to attach to" },
-}, _debugpy_common)
-
 -- ── Built-in adapter configs ───────────────────────────────────────────────
 
----Shared setup for debugpy and debugpy-module (both launch the same adapter process).
 ---@param config   easydap.dap.Config
 ---@param ctx      easydap.AdapterSetupCtx
 ---@param callback fun(err?: string, state?: any)
@@ -240,30 +231,9 @@ M.debugpy = {
         },
         stopOnEntry = { type = "boolean", desc = "stop at the first line of user code", default = false },
     }, _debugpy_common),
-    attach_schema = _debugpy_attach_schema,
-}
-
--- `module` is the Python module name (not a file path); everything else mirrors debugpy.
-M["debugpy-module"] = {
-    command       = "python3",
-    setup         = _debugpy_setup,
-    teardown      = function(_, ctx) if ctx then ctx.handle.stop() end end,
-    launch_schema = vim.tbl_extend("error", {
-        type        = { default = "python", fixed = true },
-        module      = { type = "string", role = "target", desc = "python module name" },
-        args        = _args,
-        cwd         = _cwd,
-        env         = _env,
-        console     = {
-            type = "string",
-            kind = "enum",
-            default = "integratedTerminal",
-            enum = { "integratedTerminal", "internalConsole", "externalTerminal" },
-            desc = "where to launch the target"
-        },
-        stopOnEntry = { type = "boolean", desc = "stop at the first line of user code", default = false },
-    }, _debugpy_common),
-    attach_schema = _debugpy_attach_schema,
+    attach_schema = vim.tbl_extend("error", {
+    processId = { type = "integer", role = "pid", desc = "PID to attach to" },
+}, _debugpy_common),
 }
 
 -- Attach to a remote Python process running debugpy.

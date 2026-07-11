@@ -110,7 +110,7 @@ Each `ParamSpec`:
 | `fields`   | child specs when `type == "schema"` (a nested group → nested body table)        |
 
 The `role` only *locates* a field across adapters (e.g. `target` is `program` for
-codelldb, `module` for `debugpy-module`, `file` for `local-lua-debugger`);
+codelldb, `file` for `local-lua-debugger`);
 coercion still follows the field's `kind`/`type`. See
 [adapters.lua](lua/easydap/adapters.lua) for worked examples of every shape,
 including nested `schema` groups (`debugpy-remote`'s `connect`,
