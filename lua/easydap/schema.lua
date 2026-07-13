@@ -54,8 +54,9 @@ local function _coerce_by_type(type_, raw)
 end
 
 ---Coerce a raw CLI string into the value declared by `spec`. The value-meaning
----`role` is honoured first (args → table, target → expanded path), then the data
----`kind`, and finally the pure `type` when neither defines its own parsing.
+---`role` is honoured first (args → table, target → expanded path, cwd → absolute
+---path), then the data `kind`, and finally the pure `type` when neither defines
+---its own parsing.
 ---@param spec easydap.ParamSpec
 ---@param raw string
 ---@return any? value, string? err
@@ -66,6 +67,10 @@ function M.coerce(spec, raw)
         -- The run_target program: a single expanded path (module names pass
         -- through `expand` unchanged, having nothing to expand).
         return vim.fn.expand(raw)
+    elseif spec.role == "cwd" then
+        -- Resolve to an absolute path so `.`/relative dirs are anchored to
+        -- Neovim's cwd, not the adapter's own working directory (which may differ).
+        return vim.fn.fnamemodify(vim.fn.expand(raw), ":p")
     end
     local kind = spec.kind
     if kind == "file" or kind == "dir" then
