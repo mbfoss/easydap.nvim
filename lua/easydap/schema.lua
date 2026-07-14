@@ -1,16 +1,16 @@
 ---@brief Schema engine behind `:Debug new_run_file` and `:Debug quick_run`.
 ---
 ---Adapters carry no launch/attach schema of their own — each adapter's
----`presets` (named `easydap.Preset` presets, in `easydap.adapters`) are wholly
----self-describing. A preset's `parameters` is a native request body whose
+---`configurations` (named `easydap.Configuration` configurations, in `easydap.adapters`) are wholly
+---self-describing. A configuration's `parameters` is a native request body whose
 ---leaves may be a literal value (including a zero-arg function, resolved at
----fill time — e.g. a computed default), an identity field the preset pins
+---fill time — e.g. a computed default), an identity field the configuration pins
 ---itself (e.g. `type`/`name`), or a placeholder string: `"{name}"` (kept as a
 ---raw string) or `"{name:kind}"` (coerced per `kind` — see `M.coerce`).
 ---`required` lists placeholder names that must be supplied. This module reads
----those presets to fill a preset's placeholders from `quick_run`'s
----`name=value` inputs (`fill_preset`) and to scaffold a run_file template
----(`easydap.scaffold`, via `preset_placeholder_kind`/`preset`/`presets`). It
+---those configurations to fill a configuration's placeholders from `quick_run`'s
+---`name=value` inputs (`fill_configuration`) and to scaffold a run_file template
+---(`easydap.scaffold`, via `configuration_placeholder_kind`/`configuration`/`configurations`). It
 ---speaks each adapter's native keys directly — no portable field vocabulary
 ---between adapters.
 
@@ -100,7 +100,7 @@ local function _placeholder(value)
     return name, kind
 end
 
----Walk a (possibly nested) plain body table — a preset's `parameters` or
+---Walk a (possibly nested) plain body table — a configuration's `parameters` or
 ---`connect` — calling `fn(dotted_key, placeholder_name, kind)` for every leaf
 ---shaped like a placeholder. Keys are visited in sorted order for a stable
 ---traversal.
@@ -125,40 +125,40 @@ local function _walk_placeholders(body, fn)
     rec(body, "")
 end
 
----An adapter's declared `presets`, or an empty table.
+---An adapter's declared `configurations`, or an empty table.
 ---@param adapter string
----@return table<string, easydap.Preset>
-function M.presets(adapter)
+---@return table<string, easydap.Configuration>
+function M.configurations(adapter)
     local def = require("easydap.adapters")[adapter]
-    return (def and def.presets) or {}
+    return (def and def.configurations) or {}
 end
 
----A single named preset, or nil.
+---A single named configuration, or nil.
 ---@param adapter string
 ---@param name string
----@return easydap.Preset?
-function M.preset(adapter, name)
-    return M.presets(adapter)[name]
+---@return easydap.Configuration?
+function M.configuration(adapter, name)
+    return M.configurations(adapter)[name]
 end
 
----An adapter's preset names, sorted.
+---An adapter's configuration names, sorted.
 ---@param adapter string
 ---@return string[]
-function M.preset_names(adapter)
+function M.configuration_names(adapter)
     local out = {}
-    for name in pairs(M.presets(adapter)) do out[#out + 1] = name end
+    for name in pairs(M.configurations(adapter)) do out[#out + 1] = name end
     table.sort(out)
     return out
 end
 
----The distinct placeholder names a preset's `parameters`/`connect` declare,
+---The distinct placeholder names a configuration's `parameters`/`connect` declare,
 ---sorted, de-duplicated. These are the `name=value` tokens `quick_run` accepts.
 ---@param adapter string
----@param preset_name string
+---@param configuration_name string
 ---@return string[]
-function M.preset_placeholders(adapter, preset_name)
-    local preset = M.preset(adapter, preset_name)
-    if not preset then return {} end
+function M.configuration_placeholders(adapter, configuration_name)
+    local configuration = M.configuration(adapter, configuration_name)
+    if not configuration then return {} end
     local seen, out = {}, {}
     local function collect(body)
         if not body then return end
@@ -169,51 +169,51 @@ function M.preset_placeholders(adapter, preset_name)
             end
         end)
     end
-    collect(preset.parameters)
-    collect(preset.connect)
+    collect(configuration.parameters)
+    collect(configuration.connect)
     table.sort(out)
     return out
 end
 
----The `kind` governing a preset's placeholder (the part after `:` in
+---The `kind` governing a configuration's placeholder (the part after `:` in
 ---`"{name:kind}"`, `""` for a plain string placeholder), or nil when the
 ---placeholder isn't found in `parameters`.
 ---@param adapter string
----@param preset_name string
+---@param configuration_name string
 ---@param placeholder_name string
 ---@return string?
-function M.preset_placeholder_kind(adapter, preset_name, placeholder_name)
-    local preset = M.preset(adapter, preset_name)
-    if not preset or not preset.parameters then return nil end
+function M.configuration_placeholder_kind(adapter, configuration_name, placeholder_name)
+    local configuration = M.configuration(adapter, configuration_name)
+    if not configuration or not configuration.parameters then return nil end
     local found
-    _walk_placeholders(preset.parameters, function(_, name, kind)
+    _walk_placeholders(configuration.parameters, function(_, name, kind)
         if name == placeholder_name and not found then found = kind end
     end)
     return found
 end
 
 ---Adapter names `quick_run`/`new_run_file` can drive — those declaring at
----least one preset — sorted.
+---least one configuration — sorted.
 ---@return string[]
 function M.quick_run_adapters()
     local out = {}
     for name, def in pairs(require("easydap.adapters")) do
-        if def.presets and next(def.presets) then out[#out + 1] = name end
+        if def.configurations and next(def.configurations) then out[#out + 1] = name end
     end
     table.sort(out)
     return out
 end
 
----The first `launch` preset declaring a `target` placeholder, or nil. Lets
----run_target map a bare `program`/`args` pair onto an adapter's presets
----without hard-coding native key names. Preset names are scanned in sorted
+---The first `launch` configuration declaring a `target` placeholder, or nil. Lets
+---run_target map a bare `program`/`args` pair onto an adapter's configurations
+---without hard-coding native key names. Configuration names are scanned in sorted
 ---order so the pick is stable if an adapter ever declares more than one.
 ---@param adapter string
 ---@return string?
-function M.target_preset(adapter)
-    for _, name in ipairs(M.preset_names(adapter)) do
-        local preset = M.presets(adapter)[name]
-        if preset.request == "launch" and vim.tbl_contains(M.preset_placeholders(adapter, name), "target") then
+function M.target_configuration(adapter)
+    for _, name in ipairs(M.configuration_names(adapter)) do
+        local configuration = M.configurations(adapter)[name]
+        if configuration.request == "launch" and vim.tbl_contains(M.configuration_placeholders(adapter, name), "target") then
             return name
         end
     end
@@ -221,42 +221,42 @@ function M.target_preset(adapter)
 end
 
 ---Adapter names that can launch a program target via run_target — those with a
----`target_preset` — sorted.
+---`target_configuration` — sorted.
 ---@return string[]
 function M.target_adapters()
     local out = {}
     for _, name in ipairs(M.quick_run_adapters()) do
-        if M.target_preset(name) then out[#out + 1] = name end
+        if M.target_configuration(name) then out[#out + 1] = name end
     end
     return out
 end
 
----The distinct `request` values ("launch"/"attach") an adapter's presets use,
+---The distinct `request` values ("launch"/"attach") an adapter's configurations use,
 ---sorted.
 ---@param adapter string
 ---@return string[]
 function M.requests(adapter)
     local seen, out = {}, {}
-    for _, preset in pairs(M.presets(adapter)) do
-        if not seen[preset.request] then
-            seen[preset.request] = true
-            out[#out + 1] = preset.request
+    for _, configuration in pairs(M.configurations(adapter)) do
+        if not seen[configuration.request] then
+            seen[configuration.request] = true
+            out[#out + 1] = configuration.request
         end
     end
     table.sort(out)
     return out
 end
 
--- ── Presets (quick_run / new_run_file) ──────────────────────────────────────
+-- ── Configurations (quick_run / new_run_file) ──────────────────────────────────────
 
----Fill one placeholder-bearing body (a preset's `parameters` or `connect`),
+---Fill one placeholder-bearing body (a configuration's `parameters` or `connect`),
 ---coercing each supplied value by the placeholder's own `kind`. A
 ---`values[name]` that is already non-string (e.g. `run_target`'s pre-split
 ---args) is used as-is, skipping coercion. A literal (non-placeholder) leaf is
 ---resolved via `M.resolve_value` (so a zero-arg function default is called at
----fill time) and kept as-is otherwise — this is how a preset pins identity
+---fill time) and kept as-is otherwise — this is how a configuration pins identity
 ---fields (`type`/`name`) or computed defaults directly in `parameters`. An
----unset placeholder is only an error when its name is listed in the preset's
+---unset placeholder is only an error when its name is listed in the configuration's
 ---`required`; otherwise it is simply omitted from the body.
 ---@param body table
 ---@param values table<string, any>
@@ -293,30 +293,30 @@ local function _fill_body(body, values, required, missing, errs)
     return out
 end
 
----Fill a named preset's `{placeholder}` tokens from `values` (placeholder
+---Fill a named configuration's `{placeholder}` tokens from `values` (placeholder
 ---name → raw CLI string, or an already-typed Lua value to use verbatim),
 ---resolve every literal leaf (identity fields, computed defaults), and
 ---assemble the resulting native request body / task-level connection.
 ---@param adapter string
----@param preset_name string
+---@param configuration_name string
 ---@param values table<string, any>
 ---@return table? body, {host?:string, port?:integer}? connect, string? err
-function M.fill_preset(adapter, preset_name, values)
-    local preset = M.preset(adapter, preset_name)
-    if not preset then
-        return nil, nil, ("adapter %s has no preset %q (available: %s)")
-            :format(adapter, tostring(preset_name), table.concat(M.preset_names(adapter), ", "))
+function M.fill_configuration(adapter, configuration_name, values)
+    local configuration = M.configuration(adapter, configuration_name)
+    if not configuration then
+        return nil, nil, ("adapter %s has no configuration %q (available: %s)")
+            :format(adapter, tostring(configuration_name), table.concat(M.configuration_names(adapter), ", "))
     end
     local required = {}
-    for _, name in ipairs(preset.required or {}) do required[name] = true end
+    for _, name in ipairs(configuration.required or {}) do required[name] = true end
 
     local missing, errs = {}, {}
-    local body = _fill_body(preset.parameters or {}, values, required, missing, errs)
+    local body = _fill_body(configuration.parameters or {}, values, required, missing, errs)
 
     local connect
-    if preset.connect then
+    if configuration.connect then
         connect = {}
-        for key, v in pairs(preset.connect) do
+        for key, v in pairs(configuration.connect) do
             local name = _placeholder(v)
             local raw = name and values[name]
             if not name then

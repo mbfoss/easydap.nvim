@@ -3,7 +3,7 @@
 ---@type easydap.AdapterDef
 return {
     command = "lldb-dap",
-    presets = {
+    configurations = {
         program = {
             request = "launch",
             parameters = {
@@ -23,7 +23,7 @@ return {
             },
         },
         -- lldb-dap's `gdb-remote-*` are plain body fields (this stdio adapter is
-        -- not task-level TCP), so this preset has no `connect` block.
+        -- not task-level TCP), so this configuration has no `connect` block.
         gdb_remote = {
             request = "attach",
             parameters = {

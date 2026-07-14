@@ -5,7 +5,7 @@
 ---@type easydap.AdapterDef
 return {
     command = { "netcoredbg", "--interpreter=vscode" },
-    presets = {
+    configurations = {
         program = {
             request = "launch",
             parameters = {

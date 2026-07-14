@@ -5,7 +5,7 @@
 ---@type easydap.AdapterDef
 return {
     command = "codelldb",
-    presets = {
+    configurations = {
         program = {
             request = "launch",
             parameters = {

@@ -64,10 +64,10 @@ return {
     command  = { "dlv", "dap" },
     setup    = _setup,
     teardown = function(_, ctx) if ctx and ctx.handle then ctx.handle.stop() end end,
-    presets  = {
+    configurations  = {
         -- Launch mode defaults to "debug" (LaunchConfig, service/dap/config.go);
         -- `dlvCwd`/per-mode fields (buildFlags, corefilePath, …) aren't set by
-        -- this preset — add them to the run file directly if needed.
+        -- this configuration — add them to the run file directly if needed.
         program = {
             request = "launch",
             parameters = {

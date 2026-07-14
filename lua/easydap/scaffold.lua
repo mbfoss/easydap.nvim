@@ -1,9 +1,9 @@
 ---@brief run_file scaffolding for `:Debug new_run_file`.
 ---
----Writes a runnable Lua run_file for an adapter + one of its `presets`,
----pre-populating `parameters` from that preset's literal fields (identity
+---Writes a runnable Lua run_file for an adapter + one of its `configurations`,
+---pre-populating `parameters` from that configuration's literal fields (identity
 ---fields, computed defaults) and a blank, type-appropriate placeholder for
----each of its `{name}`/`{name:kind}` tokens. It renders the preset — read via
+---each of its `{name}`/`{name:kind}` tokens. It renders the configuration — read via
 ---`easydap.schema` — into Lua source; the DAP core and body assembly stay in
 ---`easydap.schema`.
 
@@ -12,7 +12,7 @@ local schema = require("easydap.schema")
 local M = {}
 
 ---Preferred position of well-known keys in a rendered `parameters` block: the
----identity/target/args/cwd/env fields presets consistently declare first.
+---identity/target/args/cwd/env fields configurations consistently declare first.
 ---Keys absent here sort alphabetically after all of these.
 ---@type table<string, integer>
 local _key_priority = { type = 1, name = 2, program = 3, module = 3, args = 4, cwd = 5, env = 6 }
@@ -35,24 +35,24 @@ local function _blank(kind)
     return "" -- string / file / dir / cwd / host / unset
 end
 
----Render a preset's `parameters` as the body of a Lua `parameters` table — a
+---Render a configuration's `parameters` as the body of a Lua `parameters` table — a
 ---multi-line source string for a run_file template (see `new_run_file`). Each
 ---leaf is emitted on its own line: a placeholder becomes a blank value shaped
 ---like its `kind`; a literal (including a zero-arg function default) is
 ---resolved via `schema.resolve_value` and kept as-is — those are typically
----identity fields the preset pins itself, so editing them has no effect once
----the file runs through the same preset again. `indent` is the column (in
+---identity fields the configuration pins itself, so editing them has no effect once
+---the file runs through the same configuration again. `indent` is the column (in
 ---spaces) the outermost params sit at. Keys are sorted by `_key_priority`
 ---(identity/target/args/cwd/env first), then alphabetically, for stable,
 ---readable output.
 ---@param adapter string
----@param preset_name string
+---@param configuration_name string
 ---@param indent integer
 ---@return string? lua, string? err
-local function _render_params(adapter, preset_name, indent)
-    local preset = schema.preset(adapter, preset_name)
-    if not preset then
-        return nil, ("adapter %s has no preset %q"):format(adapter, tostring(preset_name))
+local function _render_params(adapter, configuration_name, indent)
+    local configuration = schema.configuration(adapter, configuration_name)
+    if not configuration then
+        return nil, ("adapter %s has no configuration %q"):format(adapter, tostring(configuration_name))
     end
 
     local lines = {}
@@ -84,40 +84,40 @@ local function _render_params(adapter, preset_name, indent)
             end
         end
     end
-    emit(preset.parameters or {}, string.rep(" ", indent))
+    emit(configuration.parameters or {}, string.rep(" ", indent))
     return table.concat(lines, "\n")
 end
 
----Scaffold a run_file for an `adapter` + one of its `presets`: write a Lua file
+---Scaffold a run_file for an `adapter` + one of its `configurations`: write a Lua file
 ---that returns a task table whose `parameters` are pre-populated from the
----preset's literal fields and blank placeholders, then open it for
+---configuration's literal fields and blank placeholders, then open it for
 ---editing. Run it afterwards with `:Debug run_file`. `assignments` is
----positional: the adapter (required), the preset name (defaults to the
----adapter's sole preset), then the destination path (defaulting to `<project
----root or cwd>/<adapter>_<preset>.lua`). Fails if the destination already
+---positional: the adapter (required), the configuration name (defaults to the
+---adapter's sole configuration), then the destination path (defaulting to `<project
+---root or cwd>/<adapter>_<configuration>.lua`). Fails if the destination already
 ---exists, rather than overwriting or picking a different name. Reports a clear
 ---error for every failure mode instead of throwing.
----@param assignments string[]  positional adapter, preset, path, e.g. { "codelldb", "program", "./foo.lua" }
+---@param assignments string[]  positional adapter, configuration, path, e.g. { "codelldb", "program", "./foo.lua" }
 ---@return string? path  the file that was created
 function M.new_run_file(assignments)
-    -- Every argument is positional: `new_run_file <adapter> [preset] [path]`.
-    local adapter, preset_name, path
+    -- Every argument is positional: `new_run_file <adapter> [configuration] [path]`.
+    local adapter, configuration_name, path
     for _, tok in ipairs(assignments or {}) do
         if not adapter then
             adapter = tok
-        elseif not preset_name then
-            preset_name = tok
+        elseif not configuration_name then
+            configuration_name = tok
         elseif not path then
             path = tok
         else
             _warn("new_run_file: unexpected argument '" .. tok ..
-                "' (usage: new_run_file <adapter> [preset] [path])")
+                "' (usage: new_run_file <adapter> [configuration] [path])")
             return
         end
     end
 
     if not adapter or adapter == "" then
-        _warn("new_run_file: usage: new_run_file <adapter> [preset] [path]")
+        _warn("new_run_file: usage: new_run_file <adapter> [configuration] [path]")
         return
     end
     local base = require("easydap.adapters")[adapter]
@@ -127,39 +127,39 @@ function M.new_run_file(assignments)
         return
     end
 
-    -- Resolve the preset: given, else the adapter's sole preset — reject an
+    -- Resolve the configuration: given, else the adapter's sole configuration — reject an
     -- adapter that declares none, or an ambiguous choice among several.
-    local names = schema.preset_names(adapter)
+    local names = schema.configuration_names(adapter)
     if #names == 0 then
-        _err("new_run_file: adapter " .. adapter .. " declares no presets")
+        _err("new_run_file: adapter " .. adapter .. " declares no configurations")
         return
     end
-    if preset_name and preset_name ~= "" then
-        if not vim.tbl_contains(names, preset_name) then
-            _err(("new_run_file: adapter %s has no preset %q (available: %s)")
-                :format(adapter, preset_name, table.concat(names, ", ")))
+    if configuration_name and configuration_name ~= "" then
+        if not vim.tbl_contains(names, configuration_name) then
+            _err(("new_run_file: adapter %s has no configuration %q (available: %s)")
+                :format(adapter, configuration_name, table.concat(names, ", ")))
             return
         end
     elseif #names == 1 then
-        preset_name = names[1]
+        configuration_name = names[1]
     else
-        _err(("new_run_file: adapter %s has multiple presets, pick one (available: %s)")
+        _err(("new_run_file: adapter %s has multiple configurations, pick one (available: %s)")
             :format(adapter, table.concat(names, ", ")))
         return
     end
-    local preset = assert(schema.preset(adapter, preset_name))
+    local configuration = assert(schema.configuration(adapter, configuration_name))
 
     -- Resolve the destination; fail rather than clobber or rename an existing file.
     local root = require("easydap.store").root() or vim.fn.getcwd()
     local dest = (path and path ~= "") and vim.fn.fnamemodify(vim.fn.expand(path), ":p")
-        or vim.fs.joinpath(root, adapter .. "_" .. preset_name .. ".lua")
+        or vim.fs.joinpath(root, adapter .. "_" .. configuration_name .. ".lua")
     if not dest:match("%.lua$") then dest = dest .. ".lua" end
     if vim.uv.fs_stat(dest) then
         _err("new_run_file: file already exists: " .. dest)
         return
     end
 
-    local params_src, perr = _render_params(adapter, preset_name, 8)
+    local params_src, perr = _render_params(adapter, configuration_name, 8)
     if not params_src then
         _err("new_run_file: " .. tostring(perr))
         return
@@ -170,7 +170,7 @@ function M.new_run_file(assignments)
         "return {",
         ("    name       = %q,"):format(adapter),
         ("    adapter    = %q,"):format(adapter),
-        ("    request    = %q,"):format(preset.request),
+        ("    request    = %q,"):format(configuration.request),
     }
     -- TCP adapters carry host/port at the task level, not in the body; seed them.
     if base.host ~= nil or base.port ~= nil then

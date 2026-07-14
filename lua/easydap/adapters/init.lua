@@ -2,8 +2,8 @@
 ---
 ---The module is a plain table: each key is an adapter name, each value is an
 ---AdapterDef — native DAP process/connection config (command, host/port,
----setup/teardown, request, …) plus a `presets` table of named `easydap.Preset`
----launch/attach templates. Presets are what `:Debug new_run_file`/`run_target`/
+---setup/teardown, request, …) plus a `configurations` table of named `easydap.Configuration`
+---launch/attach templates. Configurations are what `:Debug new_run_file`/`run_target`/
 ---`quick_run` read (via `easydap.schema`) to scaffold a run file / assemble a
 ---native request body; the DAP core never touches them.
 ---
@@ -22,7 +22,7 @@
 ---@field add_bufnr fun(bufnr: integer, opts?: easydap.AddBufOpts)
 ---@field report    fun(message: string)
 
----A named `quick_run`/`new_run_file` preset for one adapter. `parameters` is a
+---A named `quick_run`/`new_run_file` configuration for one adapter. `parameters` is a
 ---native request body whose leaf values may be:
 ---  * a literal (string/boolean/number/table), for identity fields the
 ---    adapter pins itself (`type`/`name`) or fixed defaults it wants sent
@@ -39,7 +39,7 @@
 ---task-level TCP endpoint (an `AdapterDef` `host`/`port`, e.g. `remote`/
 ---`java-debug-server`) — its `host`/`port` placeholders set the task's
 ---connection, not a body field.
----@class easydap.Preset
+---@class easydap.Configuration
 ---@field request     "launch"|"attach"
 ---@field parameters  table    native request body; leaves may be a literal, a zero-arg function, or `"{placeholder}"`/`"{placeholder:kind}"`
 ---@field required?   string[]                    placeholder names that must be supplied
@@ -51,7 +51,7 @@
 ---an `easydap.dap.Config` (see [dap/client.lua](dap/client.lua)). No
 ---`request_args` here — that is a per-run value carried by the resolved config.
 ---`setup`/`teardown` receive that resolved config (setup may mutate host/port).
----`presets` are consumed only by `easydap.schema` (for
+---`configurations` are consumed only by `easydap.schema` (for
 ---new_run_file/run_target/quick_run), never by the DAP core.
 ---@class easydap.AdapterDef
 ---@field command?               string|string[]
@@ -62,7 +62,7 @@
 ---@field type?                  string   DAP adapterID override (defaults to the adapter name)
 ---@field defer_launch_attach?   boolean
 ---@field request?               string
----@field presets?               table<string, easydap.Preset>
+---@field configurations?               table<string, easydap.Configuration>
 ---@field setup?                 fun(config: easydap.dap.Config, ctx: easydap.AdapterSetupCtx, callback: fun(err?: string, state?: any))
 ---@field teardown?              fun(config: easydap.dap.Config, ctx: any)
 

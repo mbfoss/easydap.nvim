@@ -263,7 +263,7 @@ local function _register_user_commands()
     end
 
     ---Completion for `:Debug quick_run …` tokens: the adapter (1st bare
-    ---positional), then the preset name (2nd bare positional), then
+    ---positional), then the configuration name (2nd bare positional), then
     ---placeholder names (as `name=`) not yet supplied, or a value once `=` has
     ---been typed (file paths for a path-like placeholder).
     ---@param schema table
@@ -271,7 +271,7 @@ local function _register_user_commands()
     ---@param arg_lead string   the token being completed
     ---@return string[]
     local function _quick_run_complete(schema, used, arg_lead)
-        local adapter, preset_name
+        local adapter, configuration_name
         local supplied = {}
         for _, tok in ipairs(used) do
             local e = tok:find("=", 1, true)
@@ -279,14 +279,14 @@ local function _register_user_commands()
                 supplied[tok:sub(1, e - 1)] = true
             elseif not adapter then
                 adapter = tok
-            elseif not preset_name then
-                preset_name = tok
+            elseif not configuration_name then
+                configuration_name = tok
             end
         end
 
         local eq = arg_lead:find("=", 1, true)
         if eq then
-            if not adapter or not preset_name then return {} end
+            if not adapter or not configuration_name then return {} end
             local name = arg_lead:sub(1, eq - 1)
             local pfx  = arg_lead:sub(1, eq)
             local val  = arg_lead:sub(eq + 1)
@@ -298,14 +298,14 @@ local function _register_user_commands()
             return vim.tbl_map(function(f) return pfx .. f end, vim.fn.getcompletion(val, comp_type))
         end
 
-        -- No `=` yet: complete the adapter, then the preset, then placeholder names.
+        -- No `=` yet: complete the adapter, then the configuration, then placeholder names.
         if not adapter then
             return schema.quick_run_adapters()
-        elseif not preset_name then
-            return schema.preset_names(adapter)
+        elseif not configuration_name then
+            return schema.configuration_names(adapter)
         end
         local out = {}
-        for _, name in ipairs(schema.preset_placeholders(adapter, preset_name)) do
+        for _, name in ipairs(schema.configuration_placeholders(adapter, configuration_name)) do
             if not supplied[name] then out[#out + 1] = name .. "=" end
         end
         return out
@@ -322,12 +322,12 @@ local function _register_user_commands()
             return vim.fn.getcompletion(arg_lead, "file")
         end
         if rest[1] == "quick_run" then
-            -- <adapter> <preset> <placeholder>=<value>…
+            -- <adapter> <configuration> <placeholder>=<value>…
             local schema = require("easydap.schema")
             return _quick_run_complete(schema, { unpack(rest, 2) }, arg_lead)
         end
         if rest[1] == "new_run_file" then
-            -- Positional: <adapter> [preset] [path]. The path names a new file to
+            -- Positional: <adapter> [configuration] [path]. The path names a new file to
             -- create, so it has no completion.
             local schema = require("easydap.schema")
             local used   = { unpack(rest, 2) }
@@ -335,7 +335,7 @@ local function _register_user_commands()
             if pos == 1 then
                 return schema.quick_run_adapters()
             elseif pos == 2 then
-                return schema.preset_names(used[1])
+                return schema.configuration_names(used[1])
             end
             return {}
         end
@@ -446,12 +446,12 @@ function M.run_file(path)
     return runner.run_file(path)
 end
 
----Scaffold a run_file from one of an adapter's presets (fixed/default fields +
+---Scaffold a run_file from one of an adapter's configurations (fixed/default fields +
 ---placeholders) and open it for editing. `assignments` is positional: the
----adapter, an optional preset name (defaults to the adapter's sole preset),
+---adapter, an optional configuration name (defaults to the adapter's sole configuration),
 ---and an optional destination path. E.g. `new_run_file({ "codelldb", "program" })`
 ---writes `<root>/codelldb_program.lua`.
----@param assignments string[]  positional adapter, preset, path, e.g. { "codelldb", "program", "./foo.lua" }
+---@param assignments string[]  positional adapter, configuration, path, e.g. { "codelldb", "program", "./foo.lua" }
 function M.new_run_file(assignments)
     return require("easydap.scaffold").new_run_file(assignments)
 end
@@ -467,13 +467,13 @@ function M.run_target(adapter, program, program_args)
     return runner.run_target(adapter, program, program_args)
 end
 
----Launch or attach under an adapter using one of its declared `presets`,
+---Launch or attach under an adapter using one of its declared `configurations`,
 ---filling `{placeholder}` tokens from `placeholder=value` assignments — the
 ---command-surface entry point behind `:Debug quick_run`. `assignments` leads
----with the adapter and preset name as bare positional tokens. E.g.
+---with the adapter and configuration name as bare positional tokens. E.g.
 ---`quick_run({ "codelldb", "program", "target=./a.out", "args=--verbose" })` or
 ---`quick_run({ "debugpy", "pid", "pid=41234" })`.
----@param assignments string[]  adapter, preset name, then "placeholder=value" tokens
+---@param assignments string[]  adapter, configuration name, then "placeholder=value" tokens
 function M.quick_run(assignments)
     return require("easydap.runner").quick_run(assignments)
 end

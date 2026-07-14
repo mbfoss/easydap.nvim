@@ -14,7 +14,7 @@ return {
     command  = "python3",
     setup    = S.debugpy_setup,
     teardown = function(_, ctx) if ctx then ctx.handle.stop() end end,
-    presets  = {
+    configurations  = {
         program = {
             request = "launch",
             parameters = {
@@ -37,7 +37,7 @@ return {
             },
         },
         -- The `connect.*` body group targets the remote process — not the
-        -- preset-level `connect` block (that's reserved for a task-level TCP
+        -- configuration-level `connect` block (that's reserved for a task-level TCP
         -- endpoint, which this adapter's def doesn't declare).
         remote = {
             request = "attach",

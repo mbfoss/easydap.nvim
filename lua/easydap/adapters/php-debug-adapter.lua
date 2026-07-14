@@ -3,7 +3,7 @@
 ---@type easydap.AdapterDef
 return {
     command = "php-debug-adapter",
-    presets = {
+    configurations = {
         listen = {
             request = "launch",
             parameters = {

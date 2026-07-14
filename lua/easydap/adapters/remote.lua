@@ -6,7 +6,7 @@ return {
     host    = "127.0.0.1",
     port    = 0,
     request = "attach",
-    presets = {
+    configurations = {
         connect = {
             request    = "attach",
             parameters = {},

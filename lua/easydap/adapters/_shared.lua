@@ -2,7 +2,7 @@
 ---
 ---Holds small helpers (`unique_buf_name`, `free_port`) and the debugpy
 ---`setup` function used by the `debugpy` adapter file (local launch/attach and
----remote attach). Preset field sets are adapter-specific and stay local to
+---remote attach). Configuration field sets are adapter-specific and stay local to
 ---each adapter's own file.
 
 local S = {}

@@ -6,7 +6,7 @@
 ---@type easydap.AdapterDef
 return {
     command = { "gdb", "--interpreter=dap" },
-    presets = {
+    configurations = {
         program = {
             request = "launch",
             parameters = {
