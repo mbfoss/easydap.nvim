@@ -68,30 +68,6 @@ easydap has no plugin dependencies. Install it with your plugin manager of choic
 and call `setup()`.
 
 <details open>
-<summary><b>lazy.nvim</b></summary>
-
-```lua
-{
-  "mbfoss/easydap.nvim",
-  opts = {},           -- passed to require("easydap").setup()
-}
-```
-</details>
-
-<details>
-<summary><b>packer.nvim</b></summary>
-
-```lua
-use {
-  "mbfoss/easydap.nvim",
-  config = function()
-    require("easydap").setup()
-  end,
-}
-```
-</details>
-
-<details>
 <summary><b>Native packages / <code>vim.pack</code></b></summary>
 
 ```lua
@@ -105,6 +81,17 @@ Or clone into a package directory and `require("easydap").setup()` from your con
 ```sh
 git clone https://github.com/mbfoss/easydap.nvim \
   ~/.local/share/nvim/site/pack/plugins/start/easydap.nvim
+```
+</details>
+
+<details>
+<summary><b>lazy.nvim</b></summary>
+
+```lua
+{
+  "mbfoss/easydap.nvim",
+  opts = {},           -- passed to require("easydap").setup()
+}
 ```
 </details>
 
