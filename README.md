@@ -2,8 +2,7 @@
 
 A batteries-included **Debug Adapter Protocol (DAP) client for Neovim**.
 
-easydap speaks the DAP wire protocol directly — there is **no `nvim-dap` dependency**.
-It manages adapter processes and connections, tracks your sessions and
+It manages adapter processes and connections, tracks sessions and
 breakpoints, and renders a clean, tree-based debug UI. Point it at a debug
 adapter, set a breakpoint, and start stepping.
 
