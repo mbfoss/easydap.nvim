@@ -263,15 +263,15 @@ local function _register_user_commands()
     end
 
     ---Completion for `:Debug quick_run …` tokens: the adapter (1st bare
-    ---positional), then the request (2nd bare positional), then role names (as
-    ---`role=`) not yet supplied, or a value once `=` has been typed (file paths for
-    ---a path-like role).
+    ---positional), then the template name (2nd bare positional), then
+    ---placeholder names (as `name=`) not yet supplied, or a value once `=` has
+    ---been typed (file paths for a path-like placeholder).
     ---@param schema table
     ---@param used string[]     already-typed tokens preceding the one being completed
     ---@param arg_lead string   the token being completed
     ---@return string[]
     local function _quick_run_complete(schema, used, arg_lead)
-        local adapter, request
+        local adapter, template_name
         local supplied = {}
         for _, tok in ipairs(used) do
             local e = tok:find("=", 1, true)
@@ -279,37 +279,34 @@ local function _register_user_commands()
                 supplied[tok:sub(1, e - 1)] = true
             elseif not adapter then
                 adapter = tok
-            elseif not request then
-                request = tok
+            elseif not template_name then
+                template_name = tok
             end
         end
 
         local eq = arg_lead:find("=", 1, true)
         if eq then
-            if not adapter or not request then return {} end
-            local key      = arg_lead:sub(1, eq - 1)
-            local pfx      = arg_lead:sub(1, eq)
-            local val      = arg_lead:sub(eq + 1)
-            -- Completing a role's value: offer file paths for path-like roles
-            -- (target/cwd, or a file/dir field); nothing for the rest.
-            local role_key = schema.key_of_role(adapter, request, key)
-            local spec     = role_key and schema.spec(adapter, request, role_key)
-            local pathish  = key == "target" or key == "cwd"
-                or (spec and (spec.kind == "file" or spec.kind == "dir")) or false
+            if not adapter or not template_name then return {} end
+            local name = arg_lead:sub(1, eq - 1)
+            local pfx  = arg_lead:sub(1, eq)
+            local val  = arg_lead:sub(eq + 1)
+            -- Completing a placeholder's value: offer file paths for path-like
+            -- placeholders (target/cwd); nothing for the rest.
+            local pathish = name == "target" or name == "cwd"
             if not pathish then return {} end
-            local comp_type = spec.kind == "dir" and "dir" or "file"
+            local comp_type = name == "cwd" and "dir" or "file"
             return vim.tbl_map(function(f) return pfx .. f end, vim.fn.getcompletion(val, comp_type))
         end
 
-        -- No `=` yet: complete the adapter, then the request, then role keys.
+        -- No `=` yet: complete the adapter, then the template, then placeholder names.
         if not adapter then
             return schema.quick_run_adapters()
-        elseif not request then
-            return schema.requests(adapter)
+        elseif not template_name then
+            return schema.template_names(adapter)
         end
         local out = {}
-        for _, role in ipairs(schema.quick_roles(adapter, request)) do
-            if not supplied[role] then out[#out + 1] = role .. "=" end
+        for _, name in ipairs(schema.template_placeholders(adapter, template_name)) do
+            if not supplied[name] then out[#out + 1] = name .. "=" end
         end
         return out
     end
@@ -325,7 +322,7 @@ local function _register_user_commands()
             return vim.fn.getcompletion(arg_lead, "file")
         end
         if rest[1] == "quick_run" then
-            -- <adapter> <launch|attach> <role>=<value>…
+            -- <adapter> <template> <placeholder>=<value>…
             local schema = require("easydap.schema")
             return _quick_run_complete(schema, { unpack(rest, 2) }, arg_lead)
         end
@@ -469,12 +466,13 @@ function M.run_target(adapter, program, program_args)
     return runner.run_target(adapter, program, program_args)
 end
 
----Launch or attach under an adapter, filling role-tagged native fields from
----`role=value` assignments — the command-surface entry point behind `:Debug
----quick_run`. `assignments` leads with the adapter and request as bare positional
----tokens. E.g. `quick_run({ "codelldb", "launch", "target=./a.out",
----"args=--verbose" })` or `quick_run({ "debugpy", "attach", "pid=41234" })`.
----@param assignments string[]  adapter, request, then "role=value" tokens
+---Launch or attach under an adapter using one of its declared `templates`,
+---filling `{placeholder}` tokens from `placeholder=value` assignments — the
+---command-surface entry point behind `:Debug quick_run`. `assignments` leads
+---with the adapter and template name as bare positional tokens. E.g.
+---`quick_run({ "codelldb", "program", "target=./a.out", "args=--verbose" })` or
+---`quick_run({ "debugpy", "pid", "pid=41234" })`.
+---@param assignments string[]  adapter, template name, then "placeholder=value" tokens
 function M.quick_run(assignments)
     return require("easydap.runner").quick_run(assignments)
 end

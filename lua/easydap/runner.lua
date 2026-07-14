@@ -295,13 +295,12 @@ function M.run_file(path)
     M.run(task)
 end
 
----Launch a program under a debugger by name — a convenience that
----takes the program and its arguments directly, instead of adapter-native
----`key=value` tokens. It maps `program`/`args` onto whatever native fields the
----chosen adapter uses for them (located via their `target`/`args` ParamSpec kinds,
----so `program`/`module`/`file` all work), fills the rest of the launch body from
----the schema's defaults, and runs. Always a `launch` — adapters without a launch
----target (attach-only ones) are rejected.
+---Launch a program under a debugger by name — a convenience that takes the
+---program and its arguments directly, instead of adapter-native `key=value`
+---tokens. It finds the adapter's `target`-placeholder launch template (see
+---`schema.target_template`) and fills it with `program`/`args`, then runs.
+---Always a `launch` — adapters without such a template (attach-only ones) are
+---rejected.
 ---@param adapter string
 ---@param program string?
 ---@param program_args string[]?  arguments passed to the program
@@ -318,9 +317,9 @@ function M.run_target(adapter, program, program_args)
             " (available: " .. table.concat(schema.target_adapters(), ", ") .. ")")
         return
     end
-    local target_key = schema.key_of_role(adapter, "launch", "target")
-    if not target_key then
-        _err("run_target: adapter " .. adapter .. " has no launch target (try new_run_file)")
+    local template_name = schema.target_template(adapter)
+    if not template_name then
+        _err("run_target: adapter " .. adapter .. " has no launch target template (try new_run_file)")
         return
     end
     if not program or program == "" then
@@ -328,34 +327,19 @@ function M.run_target(adapter, program, program_args)
         return
     end
 
-    -- Fill the target field from `program`, and the args field from the remaining
-    -- args; everything else comes from the schema's defaults.
-    local values = {}
-    local target_spec = schema.spec(adapter, "launch", target_key)
-    if not target_spec then
-        _err("run_target: adapter " .. adapter .. " has no settable target field")
-        return
-    end
-    local value, cerr = schema.coerce(target_spec, program)
-    if cerr then
-        _warn("run_target: " .. target_key .. ": " .. cerr)
-        return
-    end
-    values[target_key] = value
-
+    local values = { target = program }
     if program_args and #program_args > 0 then
-        local args_key = schema.key_of_role(adapter, "launch", "args")
-        if not args_key then
+        if vim.tbl_contains(schema.template_placeholders(adapter, template_name), "args") then
+            values.args = program_args
+        else
             _warn("run_target: adapter " .. adapter .. " takes no program arguments; ignoring: "
                 .. table.concat(program_args, " "))
-        else
-            values[args_key] = program_args
         end
     end
 
-    local params, perr = schema.build(adapter, "launch", values)
+    local params, _, err = schema.fill_template(adapter, template_name, values)
     if not params then
-        _err("run_target: " .. tostring(perr))
+        _err("run_target: " .. tostring(err))
         return
     end
 
@@ -369,131 +353,72 @@ function M.run_target(adapter, program, program_args)
     return M.run(task)
 end
 
----Launch or attach under an adapter by filling role-tagged native fields from
----`role=value` assignments — the request-agnostic generalisation of `run_target`.
----`assignments` leads with the adapter and request as bare positional tokens
----(`{ "codelldb", "launch", … }`); everything else names a `role` the
----adapter's `request` schema declares (see `schema.quick_roles`), whose value is
----coerced by that field's spec and placed in the request body, with the rest of
----the body coming from the schema's defaults. The `host`/`port` roles
----additionally set the task's connection endpoint for adapters that connect over
----a task-level TCP endpoint (a def `host`/`port`, e.g. `remote`/
----`java-debug-server`), so those attach too. Unknown roles are rejected.
----@param assignments string[]  adapter, request, then "role=value" tokens, e.g. { "codelldb", "launch", "target=./a.out" }
+---Launch or attach under an adapter using one of its declared `templates` — the
+---request-agnostic generalisation of `run_target`. `assignments[1]`/`[2]` are
+---strictly the adapter and template name (`{ "codelldb", "program", … }`);
+---every argument from `[3]` on is a `placeholder=value` assignment filled into
+---the template via `schema.fill_template` (see `schema.template_placeholders`
+---for the set a template accepts). A placeholder left unset falls back to its
+---ParamSpec's `default`, or is only rejected when that spec marks it
+---`required` — it is not mandatory just for appearing in the template. A
+---template's optional `connect` block sets the task's connection endpoint for
+---adapters that connect over a task-level TCP endpoint (e.g. `remote`/
+---`java-debug-server`).
+---@param assignments string[]  adapter, template name, then "placeholder=value" tokens, e.g. { "codelldb", "program", "target=./a.out" }
 ---@return easydap.runner.Run?
 function M.quick_run(assignments)
     local schema = require("easydap.schema")
 
-    -- The adapter and request come first as bare positional arguments
-    -- (`quick_run codelldb launch …`); every remaining token is a `role=value`
-    -- assignment.
-    local adapter, request
-    local role_tokens = {}
-    for _, tok in ipairs(assignments) do
-        if tok:find("=", 1, true) then
-            role_tokens[#role_tokens + 1] = tok
-        elseif not adapter then
-            adapter = tok
-        elseif not request then
-            request = tok
-        else
-            _warn("quick_run: unexpected argument '" .. tok .. "' (expected key=value)")
-            return
-        end
-    end
-    assignments = role_tokens
-
-    if not adapter or adapter == "" then
-        _warn("quick_run: usage: quick_run <adapter> <launch|attach> <role>=<value>…")
+    -- The adapter and template name are strictly the first two positional
+    -- arguments (`quick_run codelldb program …`); every argument from the
+    -- third on is a `placeholder=value` assignment.
+    local adapter, template_name = assignments[1], assignments[2]
+    if not adapter or adapter == "" or adapter:find("=", 1, true) then
+        _warn("quick_run: usage: quick_run <adapter> <template> [placeholder=value]…")
         return
     end
-    local def = require("easydap.adapters")[adapter]
-    if not def then
+    if not require("easydap.adapters")[adapter] then
         _err("quick_run: unknown adapter: " .. adapter ..
             " (available: " .. table.concat(schema.quick_run_adapters(), ", ") .. ")")
         return
     end
-    if request ~= "launch" and request ~= "attach" then
-        _warn("quick_run: expected request=launch or request=attach, got " .. tostring(request))
+    if not template_name or template_name == "" or template_name:find("=", 1, true) then
+        _warn("quick_run: usage: quick_run " .. adapter .. " <template> [placeholder=value]…"
+            .. " (templates: " .. table.concat(schema.template_names(adapter), ", ") .. ")")
+        return
+    end
+    local tmpl = schema.template(adapter, template_name)
+    if not tmpl then
+        _err("quick_run: unknown template " .. template_name .. " for adapter " .. adapter ..
+            " (available: " .. table.concat(schema.template_names(adapter), ", ") .. ")")
         return
     end
 
-    -- Adapters that connect over a task-level TCP endpoint carry a def host/port;
-    -- for those, host/port roles set the connection, not (only) the body. A stdio
-    -- adapter that happens to have host/port body fields (e.g. lldb's
-    -- `gdb-remote-*`) is NOT task-level, so those stay in the body — setting
-    -- task.port would wrongly flip it to a TCP connection.
-    local is_tcp   = def.host ~= nil or def.port ~= nil
-    local has_body = schema.schema(adapter, request) ~= nil
-    if not has_body and not (request == "attach" and is_tcp) then
-        _err("quick_run: adapter " .. adapter .. " has no " .. request .. " schema")
-        return
-    end
-
-    local values    = {}
-    local task_host = nil ---@type string?
-    local task_port = nil ---@type integer?
-
-    for _, tok in ipairs(assignments) do
+    local values = {}
+    for i = 3, #assignments do
+        local tok = assignments[i]
         local eq = tok:find("=", 1, true)
         if not eq then
-            _warn("quick_run: expected key=value, got " .. tok)
+            _warn("quick_run: expected placeholder=value, got '" .. tok .. "'")
             return
         end
-        local role = tok:sub(1, eq - 1)
-        local raw  = tok:sub(eq + 1)
-        local key  = schema.key_of_role(adapter, request, role)
-
-        local value
-        if key then
-            local spec = schema.spec(adapter, request, key)
-            if spec then
-                local cerr
-                value, cerr = schema.coerce(spec, raw)
-                if cerr then
-                    _warn("quick_run: " .. role .. ": " .. cerr)
-                    return
-                end
-                values[key] = value
-            end
-        end
-
-        if is_tcp and role == "host" then
-            task_host = key and value or raw
-        elseif is_tcp and role == "port" then
-            local n = key and value or tonumber(raw)
-            if type(n) ~= "number" or n ~= math.floor(n) then
-                _warn("quick_run: port: expected an integer, got " .. raw)
-                return
-            end
-            task_port = math.floor(n)
-        elseif not key then
-            local roles = schema.quick_roles(adapter, request)
-            _warn("quick_run: adapter " .. adapter .. " " .. request ..
-                " has no role '" .. role .. "'" ..
-                (#roles > 0 and " (roles: " .. table.concat(roles, ", ") .. ")" or ""))
-            return
-        end
+        values[tok:sub(1, eq - 1)] = tok:sub(eq + 1)
     end
 
-    local params
-    if has_body then
-        local perr
-        params, perr = schema.build(adapter, request, values)
-        if not params then
-            _err("quick_run: " .. tostring(perr))
-            return
-        end
+    local params, connect, err = schema.fill_template(adapter, template_name, values)
+    if not params then
+        _err("quick_run: " .. tostring(err))
+        return
     end
 
     ---@type easydap.Task
     local task = {
         name       = adapter,
         adapter    = adapter,
-        request    = request,
+        request    = tmpl.request,
         parameters = params,
-        host       = task_host,
-        port       = task_port,
+        host       = connect and connect.host,
+        port       = connect and connect.port,
     }
     return M.run(task)
 end

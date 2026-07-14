@@ -104,7 +104,7 @@ return {
         },
         program      = {
             type = "string",
-            role = "target",
+            kind = "file",
             desc = "package or binary to debug (defaults to cwd; debug/test/exec/core)",
             default = function() return vim.fn.getcwd() end
         },
@@ -123,6 +123,16 @@ return {
     -- connection level, not through this launched-server body.
     attach_schema = vim.tbl_extend("error", {
         mode      = { type = "string", kind = "enum", enum = { "local", "remote" }, default = "local", desc = "dlv attach mode" },
-        processId = { type = "integer", role = "pid", desc = "PID to attach to (local mode)" },
+        processId = { type = "integer", desc = "PID to attach to (local mode)" },
     }, _common),
+    templates     = {
+        program = {
+            request    = "launch",
+            parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },
+        },
+        pid     = {
+            request    = "attach",
+            parameters = { processId = "{pid}" },
+        },
+    },
 }

@@ -89,9 +89,9 @@ return {
     },
     attach_schema = {
         type             = { default = "pwa-node", fixed = true },
-        port             = { type = "integer", kind = "port", role = "port", desc = "inspector port", default = 9229 },
-        address          = { type = "string", kind = "host", role = "host", desc = "inspector host", default = "localhost" },
-        processId        = { type = "integer", role = "pid", desc = "process id to attach to" },
+        port             = { type = "integer", kind = "port", desc = "inspector port", default = 9229 },
+        address          = { type = "string", kind = "host", desc = "inspector host", default = "localhost" },
+        processId        = { type = "integer", desc = "process id to attach to" },
         continueOnAttach = { type = "boolean", desc = "continue the program if it is paused when attached" },
         restart          = { type = "boolean", desc = "reconnect if the connection is lost" },
         cwd              = S.cwd,
@@ -101,5 +101,19 @@ return {
         sourceMaps       = { type = "boolean", desc = "use JavaScript source maps (default true)" },
         outFiles         = { type = "list", desc = "glob patterns locating generated JS" },
         timeout          = { type = "integer", desc = "retry connecting for this many milliseconds" },
+    },
+    templates     = {
+        program = {
+            request    = "launch",
+            parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },
+        },
+        pid     = {
+            request    = "attach",
+            parameters = { processId = "{pid}" },
+        },
+        remote  = {
+            request    = "attach",
+            parameters = { address = "{host}", port = "{port}" },
+        },
     },
 }

@@ -23,12 +23,9 @@
 ---@field report    fun(message: string)
 
 ---One parameter of an adapter's launch/attach schema. `type` is the value's pure
----Lua/JSON type. `kind` is an optional *data* refinement (file/dir/env/enum/host/
----port/list) driving CLI-string coercion, completion and validation (a `kind`
----implies its `type`). `role` is an optional *value-meaning* marker
----(target/args/cwd/env for launch, pid/host/port for attach) tagging a field so
----`quick_run` can map its `role=value` inputs onto the adapter's native keys
----across adapters.
+---Lua/JSON type. `kind` is an optional *data* refinement (file/dir/cwd/env/enum/
+---host/port/list/shell_args) driving CLI-string coercion, completion and
+---validation (a `kind` implies its `type`).
 ---
 ---A schema is a `table<string, easydap.ParamSpec>`. A value may instead be a nested
 ---group — a ParamSpec with `type = "schema"` holding its children under `fields`
@@ -36,14 +33,26 @@
 ---Group children are addressed by their dotted path (`connect.host`).
 ---@class easydap.ParamSpec
 ---@field type?     "string"|"boolean"|"integer"|"number"|"table"|"list"|"schema"
----@field kind?     "env"|"enum"|"host"|"port"|"file"|"dir"   data refinement
----@field role?     "target"|"args"|"cwd"|"env"|"pid"|"host"|"port"  value meaning; maps a field to a quick_run role
+---@field kind?     "env"|"enum"|"host"|"port"|"file"|"dir"|"cwd"|"shell_args"   data refinement
 ---@field fields?   table<string, easydap.ParamSpec>  child specs when `type == "schema"`
 ---@field enum?     any[]              allowed values when `kind == "enum"`
 ---@field desc?     string
 ---@field default?  any|fun():any      value used when the caller omits the key
 ---@field required? boolean
 ---@field fixed?    boolean            identity field (e.g. `type`/`name`) the adapter pins itself; not user-editable, so `new_run_file` omits it from the scaffolded template
+
+---A named `quick_run` preset for one adapter. `parameters` is a native request
+---body (mirroring the shape of `launch_schema`/`attach_schema`'s output) whose
+---leaf values may be the literal placeholder string `"{name}"`; `easydap.schema`
+---fills those from `quick_run`'s `name=value` tokens, coercing each by the
+---ParamSpec found at that field's native path in the adapter's `request` schema.
+---`connect` is the same mechanism for adapters that connect over a task-level TCP
+---endpoint (an `AdapterDef` `host`/`port`, e.g. `remote`/`java-debug-server`) —
+---its `host`/`port` placeholders set the task's connection, not a body field.
+---@class easydap.Template
+---@field request     "launch"|"attach"
+---@field parameters  table    native request body; leaves may be `"{placeholder}"`
+---@field connect?    {host?: string, port?: string}   task-level connection placeholders
 
 ---A static adapter definition — the launch/attach template for one adapter.
 ---Entries of this module are values of this type. It is NOT the per-run config
@@ -52,7 +61,9 @@
 ---`request_args` here — that is a per-run value carried by the resolved config.
 ---`setup`/`teardown` receive that resolved config (setup may mutate host/port).
 ---`launch_schema`/`attach_schema` describe the adapter's own DAP parameters and
----are consumed only by `easydap.schema` (for new_run_file/run_target), never by the DAP core.
+---are consumed only by `easydap.schema` (for new_run_file/run_target/quick_run),
+---never by the DAP core. `templates` names the `quick_run` presets built on top
+---of those schemas.
 ---@class easydap.AdapterDef
 ---@field command?               string|string[]
 ---@field cwd?                   string
@@ -64,6 +75,7 @@
 ---@field request?               string
 ---@field launch_schema?         table<string, easydap.ParamSpec>
 ---@field attach_schema?         table<string, easydap.ParamSpec>
+---@field templates?             table<string, easydap.Template>
 ---@field setup?                 fun(config: easydap.dap.Config, ctx: easydap.AdapterSetupCtx, callback: fun(err?: string, state?: any))
 ---@field teardown?              fun(config: easydap.dap.Config, ctx: any)
 

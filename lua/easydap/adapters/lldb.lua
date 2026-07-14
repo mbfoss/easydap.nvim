@@ -59,11 +59,27 @@ return {
     attach_schema = vim.tbl_extend("error", {
         type                = { default = "lldb", fixed = true },
         program             = { type = "string", kind = "file", desc = "path to the executable (helps locate the binary)" },
-        pid                 = { type = "integer", role = "pid", desc = "PID to attach to" },
+        pid                 = { type = "integer", desc = "PID to attach to" },
         waitFor             = { type = "boolean", desc = "wait for the next process matching `program` to launch" },
         attachCommands      = S.lldb_cmds("LLDB commands run to perform the attach (replaces the default attach)"),
         coreFile            = { type = "string", kind = "file", desc = "core file to debug" },
-        ["gdb-remote-port"] = { type = "integer", kind = "port", role = "port", desc = "TCP port to attach to on a remote system" },
-        ["gdb-remote-host"] = { type = "string", kind = "host", role = "host", desc = "hostname of the remote system (default localhost)" },
+        ["gdb-remote-port"] = { type = "integer", kind = "port", desc = "TCP port to attach to on a remote system" },
+        ["gdb-remote-host"] = { type = "string", kind = "host", desc = "hostname of the remote system (default localhost)" },
     }, _common),
+    templates     = {
+        program    = {
+            request    = "launch",
+            parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },
+        },
+        pid        = {
+            request    = "attach",
+            parameters = { pid = "{pid}" },
+        },
+        -- lldb-dap's `gdb-remote-*` are plain body fields (this stdio adapter is
+        -- not task-level TCP), so this template has no `connect` block.
+        gdb_remote = {
+            request    = "attach",
+            parameters = { ["gdb-remote-host"] = "{host}", ["gdb-remote-port"] = "{port}" },
+        },
+    },
 }

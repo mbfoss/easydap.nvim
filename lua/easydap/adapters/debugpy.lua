@@ -21,6 +21,16 @@ return {
         stopOnEntry = { type = "boolean", desc = "stop at the first line of user code", default = false },
     }, S.debugpy_common),
     attach_schema = vim.tbl_extend("error", {
-        processId = { type = "integer", role = "pid", desc = "PID to attach to" },
+        processId = { type = "integer", desc = "PID to attach to" },
     }, S.debugpy_common),
+    templates     = {
+        program = {
+            request    = "launch",
+            parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },
+        },
+        pid     = {
+            request    = "attach",
+            parameters = { processId = "{pid}" },
+        },
+    },
 }

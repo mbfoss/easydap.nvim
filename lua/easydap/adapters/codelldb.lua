@@ -53,8 +53,18 @@ return {
     attach_schema = vim.tbl_extend("error", {
         type        = { default = "lldb", fixed = true },
         program     = { type = "string", kind = "file", desc = "path to the executable on the host" },
-        pid         = { type = "integer", role = "pid", desc = "process id to attach to (omit to locate a running instance)" },
+        pid         = { type = "integer", desc = "process id to attach to (omit to locate a running instance)" },
         waitFor     = { type = "boolean", desc = "wait for the process to launch" },
         stopOnEntry = { type = "boolean", desc = "stop the debuggee immediately after attaching" },
     }, _common),
+    templates     = {
+        program = {
+            request    = "launch",
+            parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },
+        },
+        pid     = {
+            request    = "attach",
+            parameters = { pid = "{pid}" },
+        },
+    },
 }

@@ -9,4 +9,11 @@ return {
     attach_schema = {
         stopOnEntry = { type = "boolean", desc = "stop at entry" },
     },
+    templates     = {
+        connect = {
+            request    = "attach",
+            parameters = {},
+            connect    = { host = "{host}", port = "{port}" },
+        },
+    },
 }

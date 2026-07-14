@@ -1,8 +1,8 @@
 ---@brief Reusable fragments shared across built-in adapter definitions.
 ---
----Holds the generic role-tagged ParamSpecs (`program`/`args`/`cwd`/`env`), small
----helpers (`lldb_cmds`, `unique_buf_name`, `free_port`), and the debugpy `setup`/
----`common` fields that both the `debugpy` and `debugpy-remote` adapter files use.
+---Holds the generic `program`/`args`/`cwd`/`env` ParamSpecs, small helpers
+---(`lldb_cmds`, `unique_buf_name`, `free_port`), and the debugpy `setup`/`common`
+---fields that both the `debugpy` and `debugpy-remote` adapter files use.
 ---Adapter-specific field sets that live in a single file (lldb, codelldb, delve, …)
 ---stay local to that file instead of here.
 
@@ -31,26 +31,22 @@ function S.free_port()
     return addr.port
 end
 
--- ── Common role-tagged param specs ─────────────────────────────────────────
+-- ── Common param specs ──────────────────────────────────────────────────────
 -- Read-only ParamSpec fragments reused across the process-launching adapters.
 -- Adapters whose defaults differ (e.g. delve's program, which defaults to cwd)
 -- spell those entries out inline instead of sharing these.
 --
--- These `role` tags let `quick_run` map its `role=value` inputs onto whatever
--- native keys an adapter uses. `role = "target"` marks the launch program (named
--- `program`/`module`/`file` across adapters), `args` the argument vector, `cwd`
--- the working directory, `env` the environment; the attach schemas add `pid` and
--- the `host`/`port` endpoint. The role only *locates* the field — coercion still
--- follows its `kind`/`type`. (`kind = "file"`/`"dir"` are plain path params, split
--- only so completion knows which to offer.)
+-- Adapters that want these reachable from a `target`/`args`-driven `run_target`
+-- or `quick_run` template point their template's `program`/`args` placeholders
+-- at whichever of these keys they use (see e.g. `codelldb.lua`'s `templates`).
 ---@type easydap.ParamSpec
-S.program = { type = "string", role = "target", desc = "program to debug" }
+S.program = { type = "string", kind = "file", desc = "program to debug" }
 ---@type easydap.ParamSpec
-S.args = { type = "list", role = "args", desc = "program arguments" }
+S.args = { type = "list", kind = "shell_args", desc = "program arguments" }
 ---@type easydap.ParamSpec
-S.cwd = { type = "string", kind = "dir", role = "cwd", desc = "working directory" }
+S.cwd = { type = "string", kind = "cwd", desc = "working directory" }
 ---@type easydap.ParamSpec
-S.env = { type = "table", kind = "env", role = "env", desc = "environment: VAR=VAL,VAR2=VAL2" }
+S.env = { type = "table", kind = "env", desc = "environment: VAR=VAL,VAR2=VAL2" }
 
 ---A comma-separated list of verbatim LLDB command lines (each kept whole).
 ---@param desc string

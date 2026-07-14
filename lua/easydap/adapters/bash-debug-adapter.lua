@@ -10,7 +10,7 @@ return {
     launch_schema = {
         type            = { default = "bashdb", fixed = true },
         name            = { default = "Launch Bash Script", fixed = true },
-        program         = { type = "string", role = "target", desc = "bash script to debug" },
+        program         = { type = "string", kind = "file", desc = "bash script to debug" },
         args            = S.args,
         cwd             = S.cwd,
         env             = S.env,
@@ -26,5 +26,18 @@ return {
         pathPkill       = { default = "pkill" },
         terminalKind    = { default = "integrated" },
         showDebugOutput = { type = "boolean", desc = "show bashdb output alongside the script output" },
+    },
+    templates     = {
+        -- `quick_run bash-debug-adapter bash_script script=./run.sh`. Coercion
+        -- for each placeholder comes from the matching key's kind above
+        -- (program → file, cwd → cwd, env → env), not from the template.
+        bash_script = {
+            request = "launch",
+            parameters = {
+                program = "{script}",
+                cwd     = "{cwd}",
+                env     = "{env}",
+            },
+        },
     },
 }

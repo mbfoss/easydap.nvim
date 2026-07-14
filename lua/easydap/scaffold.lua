@@ -28,16 +28,15 @@ local function _err(msg) vim.notify("[easydap] " .. msg, vim.log.levels.ERROR) e
 ---@param spec easydap.ParamSpec
 ---@return any
 local function _placeholder(spec)
-    if spec.role == "args" then return {} end
     local k = spec.kind
-    if k == "list" or k == "env" then return {} end
+    if k == "list" or k == "env" or k == "shell_args" then return {} end
     if k == "enum" then return (spec.enum and spec.enum[1]) or "" end
     if k == "port" then return 0 end
     local t = spec.type
     if t == "boolean" then return false end
     if t == "integer" or t == "number" then return 0 end
     if t == "table" then return {} end
-    return "" -- string / file / dir / host + target role
+    return "" -- string / file / dir / cwd / host
 end
 
 ---Render an adapter's request schema as the body of a Lua `parameters` table — a

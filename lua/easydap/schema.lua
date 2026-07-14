@@ -3,23 +3,22 @@
 ---Each adapter in `easydap.adapters` may declare a `launch_schema` and/or
 ---`attach_schema`: a `native_key -> easydap.ParamSpec` table describing that
 ---adapter's own DAP launch/attach parameters. This module reads those schemas to
----coerce raw strings into a native request body (`build`) and to locate
----role-tagged fields (`key_of_role`, for `quick_run`). Rendering a schema as a
----run_file template (for `new_run_file`) lives in `easydap.scaffold`, which builds on
----the `group_fields`/`is_group`/`resolve_default` helpers exposed here. This module
----speaks each adapter's native keys directly — no portable field vocabulary between.
+---coerce raw strings into a native request body (`build`), and reads an adapter's
+---`templates` (named `easydap.Template` presets) to fill their `{placeholder}`
+---tokens from `quick_run`'s `name=value` inputs (`fill_template`). Rendering a
+---schema as a run_file template (for `new_run_file`) lives in `easydap.scaffold`,
+---which builds on the `group_fields`/`is_group`/`resolve_default` helpers exposed
+---here. This module speaks each adapter's native keys directly — no portable
+---field vocabulary between adapters.
 ---
----A ParamSpec carries three orthogonal descriptors:
+---A ParamSpec carries two orthogonal descriptors:
 ---  * `type` — the pure Lua/JSON type of the value (string/boolean/integer/…), or
 ---    the sentinel `"schema"` marking a nested group (a `{fields=…}` subschema).
----  * `kind` — an optional *data* refinement (file/dir/env/enum/host/port/list)
----    that drives string coercion, completion and validation. A `kind` implies its
----    `type` (e.g. `kind="list"` yields a `table`); coercing a CLI string prefers
----    the `kind` parser and falls back to a plain `type` coercion when unset.
----  * `role` — an optional *value-meaning* marker (target/args/cwd/env for launch,
----    pid/host/port for attach) tagging a field so `quick_run` can map its
----    `role=value` inputs onto whatever native keys the adapter uses (see
----    `key_of_role`). A `role` is independent of `kind`/`type` coercion.
+---  * `kind` — an optional *data* refinement (file/dir/cwd/env/enum/host/port/
+---    list/shell_args) that drives string coercion, completion and validation. A
+---    `kind` implies its `type` (e.g. `kind="list"` yields a `table`); coercing a
+---    CLI string prefers the `kind` parser and falls back to a plain `type`
+---    coercion when unset.
 ---
 
 local str_util = require("easydap.tk.strutil")
@@ -53,30 +52,23 @@ local function _coerce_by_type(type_, raw)
     return raw
 end
 
----Coerce a raw CLI string into the value declared by `spec`. The value-meaning
----`role` is honoured first (args → table, target → expanded path, cwd → absolute
----path), then the data `kind`, and finally the pure `type` when neither defines
----its own parsing.
+---Coerce a raw CLI string into the value declared by `spec`. The data `kind` is
+---honoured first, falling back to the pure `type` when unset.
 ---@param spec easydap.ParamSpec
 ---@param raw string
 ---@return any? value, string? err
 function M.coerce(spec, raw)
-    if spec.role == "args" then
-        return str_util.split_shell_args(raw)
-    elseif spec.role == "target" then
-        -- The run_target program: a single expanded path (module names pass
-        -- through `expand` unchanged, having nothing to expand).
-        return vim.fn.expand(raw)
-    elseif spec.role == "cwd" then
-        -- Resolve to an absolute path so `.`/relative dirs are anchored to
-        -- Neovim's cwd, not the adapter's own working directory (which may differ).
-        return vim.fn.fnamemodify(vim.fn.expand(raw), ":p")
-    end
     local kind = spec.kind
     if kind == "file" or kind == "dir" then
         -- A single expanded path; `file`/`dir` differ only in the completion they
         -- drive, not in the coerced value shape.
         return vim.fn.expand(raw)
+    elseif kind == "cwd" then
+        -- Resolve to an absolute path so `.`/relative dirs are anchored to
+        -- Neovim's cwd, not the adapter's own working directory (which may differ).
+        return vim.fn.fnamemodify(vim.fn.expand(raw), ":p")
+    elseif kind == "shell_args" then
+        return str_util.split_shell_args(raw)
     elseif kind == "host" then
         return raw
     elseif kind == "port" then
@@ -146,9 +138,8 @@ function M.group_fields(group)
 end
 
 ---Walk a (possibly nested) schema, calling `fn(dotted_key, spec)` for every leaf.
----Keys are visited in sorted order at each level, so the traversal is stable and
----`key_of_role`'s "first match" is deterministic. Nested groups contribute a
----dotted path prefix (e.g. `connect.host`).
+---Keys are visited in sorted order at each level, so the traversal is stable.
+---Nested groups contribute a dotted path prefix (e.g. `connect.host`).
 ---@param schema table
 ---@param fn fun(key: string, spec: easydap.ParamSpec)
 local function _walk_leaves(schema, fn)
@@ -206,89 +197,124 @@ function M.adapter_names()
     return names
 end
 
----The first user-settable param key in an adapter's request schema whose spec has
----the given `role` (e.g. `"target"` for the program field, `"args"` for the
----arguments field), or nil. Lets run_target map program/args onto an adapter's
----native keys without hard-coding their names. Keys are scanned in sorted order so
----the pick is stable if a schema ever declares two of the same role.
----@param adapter string
----@param request string  "launch"|"attach"
----@param role string
+---A leaf value shaped like a placeholder (`"{name}"`), or nil.
+---@param value any
 ---@return string?
-function M.key_of_role(adapter, request, role)
-    local schema = M.schema(adapter, request)
-    if not schema then return nil end
-    local found
-    _walk_leaves(schema, function(key, spec)
-        if not found and spec.role == role then found = key end
-    end)
-    return found
+local function _placeholder(value)
+    if type(value) ~= "string" then return nil end
+    return value:match("^{([%w_]+)}$")
 end
 
----Adapter names that can launch a program target via run_target — those whose
----launch schema declares a `target`-role field — sorted.
----@return string[]
-function M.target_adapters()
-    local out = {}
-    for _, name in ipairs(M.adapter_names()) do
-        if M.key_of_role(name, "launch", "target") then out[#out + 1] = name end
-    end
-    return out
-end
-
----The distinct `role`s an adapter's request schema declares, sorted. These are
----the body fields `quick_run` can fill; see `quick_roles` for the completion set
----(which also surfaces a task-level TCP endpoint).
----@param adapter string
----@param request string  "launch"|"attach"
----@return string[]
-function M.roles(adapter, request)
-    local schema = M.schema(adapter, request)
-    if not schema then return {} end
-    local seen, out = {}, {}
-    _walk_leaves(schema, function(_, spec)
-        if spec.role and not seen[spec.role] then
-            seen[spec.role] = true
-            out[#out + 1] = spec.role
+---Walk a (possibly nested) plain body table — a template's `parameters` or
+---`connect` — calling `fn(dotted_key, placeholder_name)` for every leaf shaped
+---like `"{name}"`. Keys are visited in sorted order for a stable traversal.
+---@param body table
+---@param fn fun(key: string, name: string)
+local function _walk_placeholders(body, fn)
+    local function rec(node, prefix)
+        local keys = {}
+        for k in pairs(node) do keys[#keys + 1] = k end
+        table.sort(keys)
+        for _, k in ipairs(keys) do
+            local v = node[k]
+            local path = prefix == "" and k or (prefix .. "." .. k)
+            if type(v) == "table" then
+                rec(v, path)
+            else
+                local name = _placeholder(v)
+                if name then fn(path, name) end
+            end
         end
-    end)
+    end
+    rec(body, "")
+end
+
+---An adapter's declared `templates`, or an empty table.
+---@param adapter string
+---@return table<string, easydap.Template>
+function M.templates(adapter)
+    local def = require("easydap.adapters")[adapter]
+    return (def and def.templates) or {}
+end
+
+---A single named template, or nil.
+---@param adapter string
+---@param name string
+---@return easydap.Template?
+function M.template(adapter, name)
+    return M.templates(adapter)[name]
+end
+
+---An adapter's template names, sorted.
+---@param adapter string
+---@return string[]
+function M.template_names(adapter)
+    local out = {}
+    for name in pairs(M.templates(adapter)) do out[#out + 1] = name end
     table.sort(out)
     return out
 end
 
----The roles `quick_run` accepts for an adapter+request: the schema's declared
----roles (`roles`), plus `host`/`port` when the adapter connects over a task-level
----TCP endpoint (its def carries a `host`/`port`) so `remote`-style attach can set
----them even though they are not body fields. Sorted, de-duplicated.
+---The distinct placeholder names a template's `parameters`/`connect` declare,
+---sorted, de-duplicated. These are the `name=value` tokens `quick_run` accepts.
 ---@param adapter string
----@param request string  "launch"|"attach"
+---@param template_name string
 ---@return string[]
-function M.quick_roles(adapter, request)
-    local roles = M.roles(adapter, request)
-    local def = require("easydap.adapters")[adapter]
-    if request == "attach" and def and (def.host ~= nil or def.port ~= nil) then
-        local seen = {}
-        for _, r in ipairs(roles) do seen[r] = true end
-        for _, r in ipairs({ "host", "port" }) do
-            if not seen[r] then roles[#roles + 1] = r end
-        end
-        table.sort(roles)
+function M.template_placeholders(adapter, template_name)
+    local tmpl = M.template(adapter, template_name)
+    if not tmpl then return {} end
+    local seen, out = {}, {}
+    local function collect(body)
+        if not body then return end
+        _walk_placeholders(body, function(_, name)
+            if not seen[name] then
+                seen[name] = true
+                out[#out + 1] = name
+            end
+        end)
     end
-    return roles
+    collect(tmpl.parameters)
+    collect(tmpl.connect)
+    table.sort(out)
+    return out
 end
 
----Adapter names `quick_run` can drive — those declaring at least one role in
----either schema, or a task-level TCP endpoint (def `host`/`port`) — sorted.
+---Adapter names `quick_run` can drive — those declaring at least one
+---template — sorted.
 ---@return string[]
 function M.quick_run_adapters()
     local out = {}
     for name, def in pairs(require("easydap.adapters")) do
-        if #M.roles(name, "launch") > 0 or #M.roles(name, "attach") > 0
-            or def.host ~= nil or def.port ~= nil then
-            out[#out + 1] = name
-        end
+        if def.templates and next(def.templates) then out[#out + 1] = name end
     end
     table.sort(out)
+    return out
+end
+
+---The first `launch` template declaring a `target` placeholder, or nil. Lets
+---run_target map a bare `program`/`args` pair onto an adapter's templates
+---without hard-coding native key names. Template names are scanned in sorted
+---order so the pick is stable if an adapter ever declares more than one.
+---@param adapter string
+---@return string?
+function M.target_template(adapter)
+    for _, name in ipairs(M.template_names(adapter)) do
+        local tmpl = M.templates(adapter)[name]
+        if tmpl.request == "launch" and vim.tbl_contains(M.template_placeholders(adapter, name), "target") then
+            return name
+        end
+    end
+    return nil
+end
+
+---Adapter names that can launch a program target via run_target — those with a
+---`target_template` — sorted.
+---@return string[]
+function M.target_adapters()
+    local out = {}
+    for _, name in ipairs(M.adapter_names()) do
+        if M.target_template(name) then out[#out + 1] = name end
+    end
     return out
 end
 
@@ -372,6 +398,107 @@ function M.build(adapter, request, values)
         return out
     end
     return assemble(schema, "")
+end
+
+-- ── Templates (quick_run) ────────────────────────────────────────────────────
+
+---Fill one placeholder-bearing body (a template's `parameters` or `connect`),
+---coercing each supplied value by the ParamSpec at its dotted native path in
+---`schema` (falling back to a bare passthrough when the path has no spec — e.g.
+---a `connect.host`/`connect.port` field, which lives outside the body schema).
+---A `values[name]` that is already non-string (e.g. `run_target`'s pre-split
+---args) is used as-is, skipping coercion. A placeholder the caller left unset
+---is only an error when its ParamSpec marks it `required`; otherwise it falls
+---back to the spec's `default` (when set) or is simply omitted from the body —
+---mirroring `M.build`'s own default/required handling.
+---@param schema table?  the template's request schema, for spec lookup by path
+---@param body table
+---@param values table<string, any>
+---@param missing string[]  required placeholder names with no value, appended in place
+---@param errs string[]     "name: message" coercion errors, appended in place
+---@return table
+local function _fill_body(schema, body, values, missing, errs, prefix)
+    prefix = prefix or ""
+    local out = {}
+    for key, v in pairs(body) do
+        local path = prefix == "" and key or (prefix .. "." .. key)
+        if type(v) == "table" then
+            out[key] = _fill_body(schema, v, values, missing, errs, path)
+        else
+            local name = _placeholder(v)
+            if not name then
+                out[key] = v
+            else
+                local raw = values[name]
+                if raw == nil then
+                    local spec = schema and _find_leaf(schema, path) or nil
+                    if spec and spec.default ~= nil then
+                        out[key] = M.resolve_default(spec)
+                    elseif spec and spec.required then
+                        missing[#missing + 1] = name
+                    end
+                elseif type(raw) ~= "string" then
+                    out[key] = raw
+                else
+                    local spec = schema and _find_leaf(schema, path) or nil
+                    local val, cerr = M.coerce(spec or {}, raw)
+                    if cerr then
+                        errs[#errs + 1] = name .. ": " .. cerr
+                    else
+                        out[key] = val
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+
+---Fill a named template's `{placeholder}` tokens from `values` (placeholder
+---name → raw CLI string, or an already-typed Lua value to use verbatim), and
+---assemble the resulting native request body / task-level connection.
+---@param adapter string
+---@param template_name string
+---@param values table<string, any>
+---@return table? body, {host?:string, port?:integer}? connect, string? err
+function M.fill_template(adapter, template_name, values)
+    local tmpl = M.template(adapter, template_name)
+    if not tmpl then
+        return nil, nil, ("adapter %s has no template %q (available: %s)")
+            :format(adapter, tostring(template_name), table.concat(M.template_names(adapter), ", "))
+    end
+    local request_schema = M.schema(adapter, tmpl.request)
+    local missing, errs = {}, {}
+    local body = _fill_body(request_schema, tmpl.parameters or {}, values, missing, errs)
+
+    local connect
+    if tmpl.connect then
+        connect = {}
+        for key, v in pairs(tmpl.connect) do
+            local name = _placeholder(v)
+            local raw = name and values[name]
+            if not name then
+                connect[key] = v
+            elseif raw == nil then
+                -- No ParamSpec governs `connect` (it's task-level, not a body
+                -- field), so an unset host/port is always optional: the
+                -- resolved AdapterDef's own host/port apply instead.
+            elseif key == "port" then
+                local n = type(raw) == "number" and raw or tonumber(raw)
+                if not n or n ~= math.floor(n) then
+                    errs[#errs + 1] = name .. (": expected an integer port, got %q"):format(tostring(raw))
+                else
+                    connect.port = math.floor(n)
+                end
+            else
+                connect[key] = raw
+            end
+        end
+    end
+
+    if #errs > 0 then return nil, nil, table.concat(errs, "; ") end
+    if #missing > 0 then return nil, nil, "missing: " .. table.concat(missing, ", ") end
+    return body, connect
 end
 
 return M

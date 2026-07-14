@@ -32,7 +32,7 @@ return {
                     default = "stdio",
                     desc = "extension<->debugger communication method"
                 },
-                file          = { type = "string", role = "target", desc = "lua file to debug" },
+                file          = { type = "string", kind = "file", desc = "lua file to debug" },
             },
         },
         args        = S.args,
@@ -41,5 +41,16 @@ return {
         stopOnEntry = { type = "boolean", desc = "stop at entry", default = false },
         scriptRoots = { type = "list", desc = "additional roots for resolving required scripts" },
         verbose     = { type = "boolean", desc = "enable verbose debugger logging" },
+    },
+    templates     = {
+        program = {
+            request    = "launch",
+            parameters = {
+                program = { file = "{target}" },
+                args    = "{args}",
+                cwd     = "{cwd}",
+                env     = "{env}",
+            },
+        },
     },
 }

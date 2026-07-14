@@ -29,9 +29,19 @@ return {
             kind = "file",
             desc = "program to debug (supply for remote targets GDB can't auto-detect)"
         },
-        pid              = { type = "integer", role = "pid", desc = "process ID to attach to" },
+        pid              = { type = "integer", desc = "process ID to attach to" },
         target           = { type = "string", desc = "target to connect to (passed to `target remote`)" },
         coreFile         = { type = "string", kind = "file", desc = "core file to debug" },
         adaSourceCharset = { type = "string", desc = "Ada source character set" },
+    },
+    templates     = {
+        program = {
+            request    = "launch",
+            parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },
+        },
+        pid     = {
+            request    = "attach",
+            parameters = { pid = "{pid}" },
+        },
     },
 }

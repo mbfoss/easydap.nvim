@@ -17,9 +17,19 @@ return {
         enableStepFiltering = { type = "boolean", desc = "skip properties and operators while stepping (default true)" },
     },
     attach_schema = {
-        processId   = { type = "integer", role = "pid", desc = "PID to attach to" },
+        processId   = { type = "integer", desc = "PID to attach to" },
         cwd         = S.cwd,
         stopAtEntry = { type = "boolean", desc = "stop at entry" },
         justMyCode  = { type = "boolean", desc = "debug only user-written code (default true)" },
+    },
+    templates     = {
+        program = {
+            request    = "launch",
+            parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },
+        },
+        pid     = {
+            request    = "attach",
+            parameters = { processId = "{pid}" },
+        },
     },
 }

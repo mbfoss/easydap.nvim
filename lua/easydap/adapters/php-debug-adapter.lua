@@ -8,8 +8,7 @@ return {
         name           = { default = "Listen for Xdebug", fixed = true },
         cwd            = {
             type = "string",
-            kind = "dir",
-            role = "cwd",
+            kind = "cwd",
             desc = "working directory",
             default = function()
                 return vim.fn.getcwd()
@@ -23,5 +22,11 @@ return {
         maxConnections = { type = "integer", desc = "max parallel debugging sessions to accept" },
         ignore         = { type = "list", desc = "glob patterns of files to ignore errors from" },
         skipFiles      = { type = "list", desc = "glob patterns to skip while stepping" },
+    },
+    templates     = {
+        listen = {
+            request    = "launch",
+            parameters = { cwd = "{cwd}" },
+        },
     },
 }

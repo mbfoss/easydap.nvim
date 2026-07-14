@@ -17,9 +17,18 @@ return {
         connect = {
             type   = "schema",
             fields = {
-                host = { type = "string", kind = "host", role = "host", desc = "remote host", default = "127.0.0.1" },
-                port = { type = "integer", kind = "port", role = "port", desc = "remote port", default = 5678 },
+                host = { type = "string", kind = "host", desc = "remote host", default = "127.0.0.1" },
+                port = { type = "integer", kind = "port", desc = "remote port", default = 5678 },
             },
         },
     }, S.debugpy_common),
+    templates     = {
+        -- The `connect.*` body group above targets the remote process — not the
+        -- template-level `connect` block (that's reserved for a task-level TCP
+        -- endpoint, which this adapter's def doesn't declare).
+        remote = {
+            request    = "attach",
+            parameters = { connect = { host = "{host}", port = "{port}" } },
+        },
+    },
 }
