@@ -212,33 +212,6 @@ function M.quick_run_adapters()
     return out
 end
 
----The first `launch` configuration declaring a `target` placeholder, or nil. Lets
----run_target map a bare `program`/`args` pair onto an adapter's configurations
----without hard-coding native key names. Configuration names are scanned in sorted
----order so the pick is stable if an adapter ever declares more than one.
----@param adapter string
----@return string?
-function M.target_configuration(adapter)
-    for _, name in ipairs(M.configuration_names(adapter)) do
-        local configuration = M.configurations(adapter)[name]
-        if configuration.request == "launch" and vim.tbl_contains(M.configuration_placeholders(adapter, name), "target") then
-            return name
-        end
-    end
-    return nil
-end
-
----Adapter names that can launch a program target via run_target — those with a
----`target_configuration` — sorted.
----@return string[]
-function M.target_adapters()
-    local out = {}
-    for _, name in ipairs(M.quick_run_adapters()) do
-        if M.target_configuration(name) then out[#out + 1] = name end
-    end
-    return out
-end
-
 ---The distinct `request` values ("launch"/"attach") an adapter's configurations use,
 ---sorted.
 ---@param adapter string
@@ -259,8 +232,7 @@ end
 
 ---Fill one placeholder-bearing body (a configuration's `parameters` or `connect`),
 ---coercing each supplied value by the placeholder's own `kind`. A
----`values[name]` that is already non-string (e.g. `run_target`'s pre-split
----args) is used as-is, skipping coercion. A literal (non-placeholder) leaf is
+---`values[name]` that is already non-string is used as-is, skipping coercion. A literal (non-placeholder) leaf is
 ---resolved via `M.resolve_value` (so a zero-arg function default is called at
 ---fill time) and kept as-is otherwise — this is how a configuration pins identity
 ---fields (`type`/`name`) or computed defaults directly in `parameters`. An

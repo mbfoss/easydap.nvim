@@ -235,9 +235,6 @@ local easydap = require("easydap")
 -- Run a task table directly
 easydap.run({ adapter = "delve", request = "launch", parameters = { mode = "test" } })
 
--- Convenience: launch a program under an adapter (maps program/args for you)
-easydap.run_target("codelldb", "./a.out", { "--verbose" })
-
 -- The quick_run / run_file / new_run_file / rerun entry points, too
 easydap.quick_run({ "debugpy", "launch", "target=./main.py" })
 easydap.run_file("debug.lua")

@@ -22,8 +22,7 @@ for the UI and commands — prefer it over importing `dap/client` directly.
 
 **Public API** — [lua/easydap/init.lua](lua/easydap/init.lua)
 `setup`, the run entry points (`run`, `run_file`, `quick_run`, `new_run_file`,
-`run_target`, `rerun`), the debug/disassembly view accessors, and the user
-commands.
+`rerun`), the debug/disassembly view accessors, and the user commands.
 
 **Command surface / active session** — [lua/easydap/manager.lua](lua/easydap/manager.lua)
 Owns the "which session is active" concept that keymaps and UI subscribe to.
@@ -54,7 +53,7 @@ Re-exports client signals so consumers depend only on `manager`.
   `host`/`port`/`raw_messages`) and sends `parameters` as the DAP request body
   verbatim.
 - [runner.lua](lua/easydap/runner.lua) — the standalone run frontend: run files,
-  `quick_run`, `run_target`, `rerun`, and the run panel.
+  `quick_run`, `rerun`, and the run panel.
 - [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug quick_run` and
   the reader for `new_run_file`. Reads adapters' `configurations` to fill a
   configuration's `{placeholder}` tokens (`fill_configuration`) and assemble the
@@ -123,10 +122,7 @@ A `parameters` (or `connect`) leaf value is one of:
 Placeholder *names* are native to each adapter/configuration — there is no
 portable role vocabulary across adapters (e.g. codelldb's `launch`
 configuration takes `command`, a full shell command line, while debugpy's
-`launch` configuration takes `target`/`args` separately). `run_target` finds
-an adapter's launch configuration to drive via `schema.target_configuration`
-(the first `launch` configuration declaring a `target` placeholder) rather than
-assuming one exists. See each file under
+`launch` configuration takes `target`/`args` separately). See each file under
 [adapters/](lua/easydap/adapters/) for worked examples of every shape,
 including nested `connect` groups (`debugpy`'s `remote` configuration) and
 computed defaults.

@@ -3,8 +3,8 @@
 ---The module is a plain table: each key is an adapter name, each value is an
 ---AdapterDef — native DAP process/connection config (command, host/port,
 ---setup/teardown, request, …) plus a `configurations` table of named `easydap.Configuration`
----launch/attach templates. Configurations are what `:Debug new_run_file`/`run_target`/
----`quick_run` read (via `easydap.schema`) to scaffold a run file / assemble a
+---launch/attach templates. Configurations are what `:Debug new_run_file`/`quick_run`
+---read (via `easydap.schema`) to scaffold a run file / assemble a
 ---native request body; the DAP core never touches them.
 ---
 ---Each built-in adapter lives in its own file under `easydap/adapters/`, returning
@@ -53,7 +53,7 @@
 ---`request_args` here — that is a per-run value carried by the resolved config.
 ---`setup`/`teardown` receive that resolved config (setup may mutate host/port).
 ---`configurations` are consumed only by `easydap.schema` (for
----new_run_file/run_target/quick_run), never by the DAP core.
+---new_run_file/quick_run), never by the DAP core.
 ---@class easydap.AdapterDef
 ---@field command?               string|string[]
 ---@field cwd?                   string

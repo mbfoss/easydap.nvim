@@ -456,17 +456,6 @@ function M.new_run_file(assignments)
     return require("easydap.scaffold").new_run_file(assignments)
 end
 
----Launch `program` (with optional `args`) under the named debugger — a convenience
----that maps the program and its arguments onto the adapter's native launch fields.
----E.g. `run_target("codelldb", "./a.out", { "--verbose" })`.
----@param adapter string
----@param program string?
----@param program_args string[]?
-function M.run_target(adapter, program, program_args)
-    local runner = require("easydap.runner")
-    return runner.run_target(adapter, program, program_args)
-end
-
 ---Launch or attach under an adapter using one of its declared `configurations`,
 ---filling `{placeholder}` tokens from `placeholder=value` assignments — the
 ---command-surface entry point behind `:Debug quick_run`. `assignments` leads
