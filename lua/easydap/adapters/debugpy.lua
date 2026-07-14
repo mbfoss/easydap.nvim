@@ -14,7 +14,7 @@ return {
     command  = "python3",
     setup    = S.debugpy_setup,
     teardown = function(_, ctx) if ctx then ctx.handle.stop() end end,
-    configurations  = {
+    configurations = {
         program = {
             request = "launch",
             parameters = {
