@@ -1,4 +1,4 @@
-local S = require("easydap.adapters._shared")
+local ui = require("easydap.util.ui_util")
 
 -- JavaScript / TypeScript — starts js-debug's TCP server, then connects to it.
 ---@type easydap.AdapterDef
@@ -22,7 +22,7 @@ return {
         end
         local handle
         handle = term.spawn({ "node", server_js }, {
-            bufname = S.unique_buf_name("easydap://" .. (config.name or config.adapter or "debug") .. "/js-debug-server"),
+            bufname = ui.unique_buf_name("easydap://" .. (config.name or config.adapter or "debug") .. "/js-debug-server"),
             on_stdout = function(_, data)
                 if resolved_port then return end
                 for _, line in ipairs(data) do

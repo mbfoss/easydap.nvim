@@ -1,4 +1,4 @@
-local S = require("easydap.adapters._shared")
+local ui = require("easydap.util.ui_util")
 
 -- Go — `dlv dap` is a TCP DAP server, NOT a stdio adapter: it prints
 -- "DAP server listening at: <host>:<port>" and expects the client to connect over
@@ -29,7 +29,7 @@ local function _setup(config, ctx, callback)
         callback(err, state)
     end
     handle = term.spawn(cmd, {
-        bufname   = S.unique_buf_name("easydap://" .. (config.name or config.adapter or "debug") .. "/dlv-dap"),
+        bufname   = ui.unique_buf_name("easydap://" .. (config.name or config.adapter or "debug") .. "/dlv-dap"),
         cwd       = config.cwd or vim.fn.getcwd(),
         env       = config.env,
         on_stdout = function(_, data)

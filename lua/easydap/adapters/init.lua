@@ -9,7 +9,6 @@
 ---
 ---Each built-in adapter lives in its own file under `easydap/adapters/`, returning
 ---one AdapterDef; this module assembles them into the `name -> AdapterDef` table.
----Reusable fragments shared between adapter files live in `adapters/_shared.lua`.
 ---Users can add adapters or override existing ones directly:
 ---  local adapters = require("easydap.adapters")
 ---  adapters.myAdapter = { command = "...", request = "launch" }
