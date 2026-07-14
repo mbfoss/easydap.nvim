@@ -30,7 +30,8 @@
 ---    `function() return vim.fn.getcwd() end`);
 ---  * a placeholder string `"{name}"` (kept as a raw string) or `"{name:kind}"`
 ---    (coerced from a CLI string by `kind` — one of `boolean`/`integer`/
----    `number`/`file`/`dir`/`cwd`/`env`/`host`/`port`/`list`/`shell_args`;
+---    `number`/`file`/`dir`/`cwd`/`env`/`host`/`port`/`list`/`shell_args`/
+---    `shell_program`/`shell_rest_args`;
 ---    `easydap.schema.coerce` does the coercion).
 ---`required` lists placeholder names that must be supplied (a missing one is a
 ---`quick_run` error; anything else left unset is simply omitted from the body).

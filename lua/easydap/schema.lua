@@ -39,6 +39,14 @@ function M.coerce(kind, raw)
         return vim.fn.fnamemodify(vim.fn.expand(raw), ":p")
     elseif kind == "shell_args" then
         return str_util.split_shell_args(raw)
+    elseif kind == "shell_program" then
+        -- First word of a shell command line, expanded as a path — lets a
+        -- `program`/`args` pair share one raw `command` placeholder.
+        local parts = str_util.split_shell_args(raw)
+        return vim.fn.expand(parts[1] or "")
+    elseif kind == "shell_rest_args" then
+        local parts = str_util.split_shell_args(raw)
+        return { unpack(parts, 2) }
     elseif kind == "host" then
         return raw
     elseif kind == "port" or kind == "integer" then
