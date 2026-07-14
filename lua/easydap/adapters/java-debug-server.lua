@@ -13,7 +13,7 @@ return {
         timeout     = { type = "integer", desc = "attach timeout in milliseconds", default = 30000 },
         projectName = { type = "string", desc = "project name (helps resolve sources/classpaths)" },
     },
-    templates     = {
+    presets     = {
         -- `host`/`port` fill both the JDWP body fields (hostName/port) and the
         -- task-level connection (this adapter's own def carries host/port, so
         -- it connects to the java-debug server over TCP too).

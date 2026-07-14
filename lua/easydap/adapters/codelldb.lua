@@ -57,7 +57,7 @@ return {
         waitFor     = { type = "boolean", desc = "wait for the process to launch" },
         stopOnEntry = { type = "boolean", desc = "stop the debuggee immediately after attaching" },
     }, _common),
-    templates     = {
+    presets     = {
         program = {
             request    = "launch",
             parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },

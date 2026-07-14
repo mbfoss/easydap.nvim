@@ -9,7 +9,7 @@ return {
     attach_schema = {
         stopOnEntry = { type = "boolean", desc = "stop at entry" },
     },
-    templates     = {
+    presets     = {
         connect = {
             request    = "attach",
             parameters = {},

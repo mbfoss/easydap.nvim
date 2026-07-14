@@ -37,7 +37,7 @@ return {
             },
         },
     }, S.debugpy_common),
-    templates     = {
+    presets     = {
         program = {
             request    = "launch",
             parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },
@@ -47,7 +47,7 @@ return {
             parameters = { processId = "{pid}" },
         },
         -- The `connect.*` body group above targets the remote process — not the
-        -- template-level `connect` block (that's reserved for a task-level TCP
+        -- preset-level `connect` block (that's reserved for a task-level TCP
         -- endpoint, which this adapter's def doesn't declare).
         remote  = {
             request    = "attach",

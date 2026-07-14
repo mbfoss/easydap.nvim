@@ -23,7 +23,7 @@ return {
         ignore         = { type = "list", desc = "glob patterns of files to ignore errors from" },
         skipFiles      = { type = "list", desc = "glob patterns to skip while stepping" },
     },
-    templates     = {
+    presets     = {
         listen = {
             request    = "launch",
             parameters = { cwd = "{cwd}" },

@@ -125,7 +125,7 @@ return {
         mode      = { type = "string", kind = "enum", enum = { "local", "remote" }, default = "local", desc = "dlv attach mode" },
         processId = { type = "integer", desc = "PID to attach to (local mode)" },
     }, _common),
-    templates     = {
+    presets     = {
         program = {
             request    = "launch",
             parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },

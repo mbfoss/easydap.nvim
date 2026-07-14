@@ -102,7 +102,7 @@ return {
         outFiles         = { type = "list", desc = "glob patterns locating generated JS" },
         timeout          = { type = "integer", desc = "retry connecting for this many milliseconds" },
     },
-    templates     = {
+    presets     = {
         program = {
             request    = "launch",
             parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },

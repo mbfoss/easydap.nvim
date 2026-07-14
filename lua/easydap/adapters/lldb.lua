@@ -66,7 +66,7 @@ return {
         ["gdb-remote-port"] = { type = "integer", kind = "port", desc = "TCP port to attach to on a remote system" },
         ["gdb-remote-host"] = { type = "string", kind = "host", desc = "hostname of the remote system (default localhost)" },
     }, _common),
-    templates     = {
+    presets     = {
         program    = {
             request    = "launch",
             parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },
@@ -76,7 +76,7 @@ return {
             parameters = { pid = "{pid}" },
         },
         -- lldb-dap's `gdb-remote-*` are plain body fields (this stdio adapter is
-        -- not task-level TCP), so this template has no `connect` block.
+        -- not task-level TCP), so this preset has no `connect` block.
         gdb_remote = {
             request    = "attach",
             parameters = { ["gdb-remote-host"] = "{host}", ["gdb-remote-port"] = "{port}" },

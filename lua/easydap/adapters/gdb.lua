@@ -34,7 +34,7 @@ return {
         coreFile         = { type = "string", kind = "file", desc = "core file to debug" },
         adaSourceCharset = { type = "string", desc = "Ada source character set" },
     },
-    templates     = {
+    presets     = {
         program = {
             request    = "launch",
             parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },

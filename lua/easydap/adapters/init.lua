@@ -49,7 +49,7 @@
 ---`connect` is the same mechanism for adapters that connect over a task-level TCP
 ---endpoint (an `AdapterDef` `host`/`port`, e.g. `remote`/`java-debug-server`) —
 ---its `host`/`port` placeholders set the task's connection, not a body field.
----@class easydap.Template
+---@class easydap.Preset
 ---@field request     "launch"|"attach"
 ---@field parameters  table    native request body; leaves may be `"{placeholder}"`
 ---@field connect?    {host?: string, port?: string}   task-level connection placeholders
@@ -62,7 +62,7 @@
 ---`setup`/`teardown` receive that resolved config (setup may mutate host/port).
 ---`launch_schema`/`attach_schema` describe the adapter's own DAP parameters and
 ---are consumed only by `easydap.schema` (for new_run_file/run_target/quick_run),
----never by the DAP core. `templates` names the `quick_run` presets built on top
+---never by the DAP core. `presets` names the `quick_run` presets built on top
 ---of those schemas.
 ---@class easydap.AdapterDef
 ---@field command?               string|string[]
@@ -75,7 +75,7 @@
 ---@field request?               string
 ---@field launch_schema?         table<string, easydap.ParamSpec>
 ---@field attach_schema?         table<string, easydap.ParamSpec>
----@field templates?             table<string, easydap.Template>
+---@field presets?               table<string, easydap.Preset>
 ---@field setup?                 fun(config: easydap.dap.Config, ctx: easydap.AdapterSetupCtx, callback: fun(err?: string, state?: any))
 ---@field teardown?              fun(config: easydap.dap.Config, ctx: any)
 

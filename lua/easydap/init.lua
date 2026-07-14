@@ -263,7 +263,7 @@ local function _register_user_commands()
     end
 
     ---Completion for `:Debug quick_run …` tokens: the adapter (1st bare
-    ---positional), then the template name (2nd bare positional), then
+    ---positional), then the preset name (2nd bare positional), then
     ---placeholder names (as `name=`) not yet supplied, or a value once `=` has
     ---been typed (file paths for a path-like placeholder).
     ---@param schema table
@@ -271,7 +271,7 @@ local function _register_user_commands()
     ---@param arg_lead string   the token being completed
     ---@return string[]
     local function _quick_run_complete(schema, used, arg_lead)
-        local adapter, template_name
+        local adapter, preset_name
         local supplied = {}
         for _, tok in ipairs(used) do
             local e = tok:find("=", 1, true)
@@ -279,14 +279,14 @@ local function _register_user_commands()
                 supplied[tok:sub(1, e - 1)] = true
             elseif not adapter then
                 adapter = tok
-            elseif not template_name then
-                template_name = tok
+            elseif not preset_name then
+                preset_name = tok
             end
         end
 
         local eq = arg_lead:find("=", 1, true)
         if eq then
-            if not adapter or not template_name then return {} end
+            if not adapter or not preset_name then return {} end
             local name = arg_lead:sub(1, eq - 1)
             local pfx  = arg_lead:sub(1, eq)
             local val  = arg_lead:sub(eq + 1)
@@ -298,14 +298,14 @@ local function _register_user_commands()
             return vim.tbl_map(function(f) return pfx .. f end, vim.fn.getcompletion(val, comp_type))
         end
 
-        -- No `=` yet: complete the adapter, then the template, then placeholder names.
+        -- No `=` yet: complete the adapter, then the preset, then placeholder names.
         if not adapter then
             return schema.quick_run_adapters()
-        elseif not template_name then
-            return schema.template_names(adapter)
+        elseif not preset_name then
+            return schema.preset_names(adapter)
         end
         local out = {}
-        for _, name in ipairs(schema.template_placeholders(adapter, template_name)) do
+        for _, name in ipairs(schema.preset_placeholders(adapter, preset_name)) do
             if not supplied[name] then out[#out + 1] = name .. "=" end
         end
         return out
@@ -322,7 +322,7 @@ local function _register_user_commands()
             return vim.fn.getcompletion(arg_lead, "file")
         end
         if rest[1] == "quick_run" then
-            -- <adapter> <template> <placeholder>=<value>…
+            -- <adapter> <preset> <placeholder>=<value>…
             local schema = require("easydap.schema")
             return _quick_run_complete(schema, { unpack(rest, 2) }, arg_lead)
         end
@@ -466,13 +466,13 @@ function M.run_target(adapter, program, program_args)
     return runner.run_target(adapter, program, program_args)
 end
 
----Launch or attach under an adapter using one of its declared `templates`,
+---Launch or attach under an adapter using one of its declared `presets`,
 ---filling `{placeholder}` tokens from `placeholder=value` assignments — the
 ---command-surface entry point behind `:Debug quick_run`. `assignments` leads
----with the adapter and template name as bare positional tokens. E.g.
+---with the adapter and preset name as bare positional tokens. E.g.
 ---`quick_run({ "codelldb", "program", "target=./a.out", "args=--verbose" })` or
 ---`quick_run({ "debugpy", "pid", "pid=41234" })`.
----@param assignments string[]  adapter, template name, then "placeholder=value" tokens
+---@param assignments string[]  adapter, preset name, then "placeholder=value" tokens
 function M.quick_run(assignments)
     return require("easydap.runner").quick_run(assignments)
 end

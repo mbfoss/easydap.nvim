@@ -37,8 +37,8 @@ end
 -- spell those entries out inline instead of sharing these.
 --
 -- Adapters that want these reachable from a `target`/`args`-driven `run_target`
--- or `quick_run` template point their template's `program`/`args` placeholders
--- at whichever of these keys they use (see e.g. `codelldb.lua`'s `templates`).
+-- or `quick_run` preset point their preset's `program`/`args` placeholders
+-- at whichever of these keys they use (see e.g. `codelldb.lua`'s `presets`).
 ---@type easydap.ParamSpec
 S.program = { type = "string", kind = "file", desc = "program to debug" }
 ---@type easydap.ParamSpec

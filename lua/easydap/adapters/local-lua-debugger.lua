@@ -42,7 +42,7 @@ return {
         scriptRoots = { type = "list", desc = "additional roots for resolving required scripts" },
         verbose     = { type = "boolean", desc = "enable verbose debugger logging" },
     },
-    templates     = {
+    presets     = {
         program = {
             request    = "launch",
             parameters = {

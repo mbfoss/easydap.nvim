@@ -27,10 +27,10 @@ return {
         terminalKind    = { default = "integrated" },
         showDebugOutput = { type = "boolean", desc = "show bashdb output alongside the script output" },
     },
-    templates     = {
+    presets     = {
         -- `quick_run bash-debug-adapter bash_script script=./run.sh`. Coercion
         -- for each placeholder comes from the matching key's kind above
-        -- (program → file, cwd → cwd, env → env), not from the template.
+        -- (program → file, cwd → cwd, env → env), not from the preset.
         bash_script = {
             request = "launch",
             parameters = {

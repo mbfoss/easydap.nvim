@@ -297,9 +297,9 @@ end
 
 ---Launch a program under a debugger by name — a convenience that takes the
 ---program and its arguments directly, instead of adapter-native `key=value`
----tokens. It finds the adapter's `target`-placeholder launch template (see
----`schema.target_template`) and fills it with `program`/`args`, then runs.
----Always a `launch` — adapters without such a template (attach-only ones) are
+---tokens. It finds the adapter's `target`-placeholder launch preset (see
+---`schema.target_preset`) and fills it with `program`/`args`, then runs.
+---Always a `launch` — adapters without such a preset (attach-only ones) are
 ---rejected.
 ---@param adapter string
 ---@param program string?
@@ -317,9 +317,9 @@ function M.run_target(adapter, program, program_args)
             " (available: " .. table.concat(schema.target_adapters(), ", ") .. ")")
         return
     end
-    local template_name = schema.target_template(adapter)
-    if not template_name then
-        _err("run_target: adapter " .. adapter .. " has no launch target template (try new_run_file)")
+    local preset_name = schema.target_preset(adapter)
+    if not preset_name then
+        _err("run_target: adapter " .. adapter .. " has no launch target preset (try new_run_file)")
         return
     end
     if not program or program == "" then
@@ -329,7 +329,7 @@ function M.run_target(adapter, program, program_args)
 
     local values = { target = program }
     if program_args and #program_args > 0 then
-        if vim.tbl_contains(schema.template_placeholders(adapter, template_name), "args") then
+        if vim.tbl_contains(schema.preset_placeholders(adapter, preset_name), "args") then
             values.args = program_args
         else
             _warn("run_target: adapter " .. adapter .. " takes no program arguments; ignoring: "
@@ -337,7 +337,7 @@ function M.run_target(adapter, program, program_args)
         end
     end
 
-    local params, _, err = schema.fill_template(adapter, template_name, values)
+    local params, _, err = schema.fill_preset(adapter, preset_name, values)
     if not params then
         _err("run_target: " .. tostring(err))
         return
@@ -353,28 +353,28 @@ function M.run_target(adapter, program, program_args)
     return M.run(task)
 end
 
----Launch or attach under an adapter using one of its declared `templates` — the
+---Launch or attach under an adapter using one of its declared `presets` — the
 ---request-agnostic generalisation of `run_target`. `assignments[1]`/`[2]` are
----strictly the adapter and template name (`{ "codelldb", "program", … }`);
+---strictly the adapter and preset name (`{ "codelldb", "program", … }`);
 ---every argument from `[3]` on is a `placeholder=value` assignment filled into
----the template via `schema.fill_template` (see `schema.template_placeholders`
----for the set a template accepts). A placeholder left unset falls back to its
+---the preset via `schema.fill_preset` (see `schema.preset_placeholders`
+---for the set a preset accepts). A placeholder left unset falls back to its
 ---ParamSpec's `default`, or is only rejected when that spec marks it
----`required` — it is not mandatory just for appearing in the template. A
----template's optional `connect` block sets the task's connection endpoint for
+---`required` — it is not mandatory just for appearing in the preset. A
+---preset's optional `connect` block sets the task's connection endpoint for
 ---adapters that connect over a task-level TCP endpoint (e.g. `remote`/
 ---`java-debug-server`).
----@param assignments string[]  adapter, template name, then "placeholder=value" tokens, e.g. { "codelldb", "program", "target=./a.out" }
+---@param assignments string[]  adapter, preset name, then "placeholder=value" tokens, e.g. { "codelldb", "program", "target=./a.out" }
 ---@return easydap.runner.Run?
 function M.quick_run(assignments)
     local schema = require("easydap.schema")
 
-    -- The adapter and template name are strictly the first two positional
+    -- The adapter and preset name are strictly the first two positional
     -- arguments (`quick_run codelldb program …`); every argument from the
     -- third on is a `placeholder=value` assignment.
-    local adapter, template_name = assignments[1], assignments[2]
+    local adapter, preset_name = assignments[1], assignments[2]
     if not adapter or adapter == "" or adapter:find("=", 1, true) then
-        _warn("quick_run: usage: quick_run <adapter> <template> [placeholder=value]…")
+        _warn("quick_run: usage: quick_run <adapter> <preset> [placeholder=value]…")
         return
     end
     if not require("easydap.adapters")[adapter] then
@@ -382,15 +382,15 @@ function M.quick_run(assignments)
             " (available: " .. table.concat(schema.quick_run_adapters(), ", ") .. ")")
         return
     end
-    if not template_name or template_name == "" or template_name:find("=", 1, true) then
-        _warn("quick_run: usage: quick_run " .. adapter .. " <template> [placeholder=value]…"
-            .. " (templates: " .. table.concat(schema.template_names(adapter), ", ") .. ")")
+    if not preset_name or preset_name == "" or preset_name:find("=", 1, true) then
+        _warn("quick_run: usage: quick_run " .. adapter .. " <preset> [placeholder=value]…"
+            .. " (presets: " .. table.concat(schema.preset_names(adapter), ", ") .. ")")
         return
     end
-    local tmpl = schema.template(adapter, template_name)
-    if not tmpl then
-        _err("quick_run: unknown template " .. template_name .. " for adapter " .. adapter ..
-            " (available: " .. table.concat(schema.template_names(adapter), ", ") .. ")")
+    local preset = schema.preset(adapter, preset_name)
+    if not preset then
+        _err("quick_run: unknown preset " .. preset_name .. " for adapter " .. adapter ..
+            " (available: " .. table.concat(schema.preset_names(adapter), ", ") .. ")")
         return
     end
 
@@ -405,7 +405,7 @@ function M.quick_run(assignments)
         values[tok:sub(1, eq - 1)] = tok:sub(eq + 1)
     end
 
-    local params, connect, err = schema.fill_template(adapter, template_name, values)
+    local params, connect, err = schema.fill_preset(adapter, preset_name, values)
     if not params then
         _err("quick_run: " .. tostring(err))
         return
@@ -415,7 +415,7 @@ function M.quick_run(assignments)
     local task = {
         name       = adapter,
         adapter    = adapter,
-        request    = tmpl.request,
+        request    = preset.request,
         parameters = params,
         host       = connect and connect.host,
         port       = connect and connect.port,

@@ -4,8 +4,8 @@
 ---`attach_schema`: a `native_key -> easydap.ParamSpec` table describing that
 ---adapter's own DAP launch/attach parameters. This module reads those schemas to
 ---coerce raw strings into a native request body (`build`), and reads an adapter's
----`templates` (named `easydap.Template` presets) to fill their `{placeholder}`
----tokens from `quick_run`'s `name=value` inputs (`fill_template`). Rendering a
+---`presets` (named `easydap.Preset` presets) to fill their `{placeholder}`
+---tokens from `quick_run`'s `name=value` inputs (`fill_preset`). Rendering a
 ---schema as a run_file template (for `new_run_file`) lives in `easydap.scaffold`,
 ---which builds on the `group_fields`/`is_group`/`resolve_default` helpers exposed
 ---here. This module speaks each adapter's native keys directly — no portable
@@ -205,7 +205,7 @@ local function _placeholder(value)
     return value:match("^{([%w_]+)}$")
 end
 
----Walk a (possibly nested) plain body table — a template's `parameters` or
+---Walk a (possibly nested) plain body table — a preset's `parameters` or
 ---`connect` — calling `fn(dotted_key, placeholder_name)` for every leaf shaped
 ---like `"{name}"`. Keys are visited in sorted order for a stable traversal.
 ---@param body table
@@ -229,40 +229,40 @@ local function _walk_placeholders(body, fn)
     rec(body, "")
 end
 
----An adapter's declared `templates`, or an empty table.
+---An adapter's declared `presets`, or an empty table.
 ---@param adapter string
----@return table<string, easydap.Template>
-function M.templates(adapter)
+---@return table<string, easydap.Preset>
+function M.presets(adapter)
     local def = require("easydap.adapters")[adapter]
-    return (def and def.templates) or {}
+    return (def and def.presets) or {}
 end
 
----A single named template, or nil.
+---A single named preset, or nil.
 ---@param adapter string
 ---@param name string
----@return easydap.Template?
-function M.template(adapter, name)
-    return M.templates(adapter)[name]
+---@return easydap.Preset?
+function M.preset(adapter, name)
+    return M.presets(adapter)[name]
 end
 
----An adapter's template names, sorted.
+---An adapter's preset names, sorted.
 ---@param adapter string
 ---@return string[]
-function M.template_names(adapter)
+function M.preset_names(adapter)
     local out = {}
-    for name in pairs(M.templates(adapter)) do out[#out + 1] = name end
+    for name in pairs(M.presets(adapter)) do out[#out + 1] = name end
     table.sort(out)
     return out
 end
 
----The distinct placeholder names a template's `parameters`/`connect` declare,
+---The distinct placeholder names a preset's `parameters`/`connect` declare,
 ---sorted, de-duplicated. These are the `name=value` tokens `quick_run` accepts.
 ---@param adapter string
----@param template_name string
+---@param preset_name string
 ---@return string[]
-function M.template_placeholders(adapter, template_name)
-    local tmpl = M.template(adapter, template_name)
-    if not tmpl then return {} end
+function M.preset_placeholders(adapter, preset_name)
+    local preset = M.preset(adapter, preset_name)
+    if not preset then return {} end
     local seen, out = {}, {}
     local function collect(body)
         if not body then return end
@@ -273,34 +273,34 @@ function M.template_placeholders(adapter, template_name)
             end
         end)
     end
-    collect(tmpl.parameters)
-    collect(tmpl.connect)
+    collect(preset.parameters)
+    collect(preset.connect)
     table.sort(out)
     return out
 end
 
 ---Adapter names `quick_run` can drive — those declaring at least one
----template — sorted.
+---preset — sorted.
 ---@return string[]
 function M.quick_run_adapters()
     local out = {}
     for name, def in pairs(require("easydap.adapters")) do
-        if def.templates and next(def.templates) then out[#out + 1] = name end
+        if def.presets and next(def.presets) then out[#out + 1] = name end
     end
     table.sort(out)
     return out
 end
 
----The first `launch` template declaring a `target` placeholder, or nil. Lets
----run_target map a bare `program`/`args` pair onto an adapter's templates
----without hard-coding native key names. Template names are scanned in sorted
+---The first `launch` preset declaring a `target` placeholder, or nil. Lets
+---run_target map a bare `program`/`args` pair onto an adapter's presets
+---without hard-coding native key names. Preset names are scanned in sorted
 ---order so the pick is stable if an adapter ever declares more than one.
 ---@param adapter string
 ---@return string?
-function M.target_template(adapter)
-    for _, name in ipairs(M.template_names(adapter)) do
-        local tmpl = M.templates(adapter)[name]
-        if tmpl.request == "launch" and vim.tbl_contains(M.template_placeholders(adapter, name), "target") then
+function M.target_preset(adapter)
+    for _, name in ipairs(M.preset_names(adapter)) do
+        local preset = M.presets(adapter)[name]
+        if preset.request == "launch" and vim.tbl_contains(M.preset_placeholders(adapter, name), "target") then
             return name
         end
     end
@@ -308,12 +308,12 @@ function M.target_template(adapter)
 end
 
 ---Adapter names that can launch a program target via run_target — those with a
----`target_template` — sorted.
+---`target_preset` — sorted.
 ---@return string[]
 function M.target_adapters()
     local out = {}
     for _, name in ipairs(M.adapter_names()) do
-        if M.target_template(name) then out[#out + 1] = name end
+        if M.target_preset(name) then out[#out + 1] = name end
     end
     return out
 end
@@ -400,9 +400,9 @@ function M.build(adapter, request, values)
     return assemble(schema, "")
 end
 
--- ── Templates (quick_run) ────────────────────────────────────────────────────
+-- ── Presets (quick_run) ────────────────────────────────────────────────────
 
----Fill one placeholder-bearing body (a template's `parameters` or `connect`),
+---Fill one placeholder-bearing body (a preset's `parameters` or `connect`),
 ---coercing each supplied value by the ParamSpec at its dotted native path in
 ---`schema` (falling back to a bare passthrough when the path has no spec — e.g.
 ---a `connect.host`/`connect.port` field, which lives outside the body schema).
@@ -411,7 +411,7 @@ end
 ---is only an error when its ParamSpec marks it `required`; otherwise it falls
 ---back to the spec's `default` (when set) or is simply omitted from the body —
 ---mirroring `M.build`'s own default/required handling.
----@param schema table?  the template's request schema, for spec lookup by path
+---@param schema table?  the preset's request schema, for spec lookup by path
 ---@param body table
 ---@param values table<string, any>
 ---@param missing string[]  required placeholder names with no value, appended in place
@@ -454,27 +454,27 @@ local function _fill_body(schema, body, values, missing, errs, prefix)
     return out
 end
 
----Fill a named template's `{placeholder}` tokens from `values` (placeholder
+---Fill a named preset's `{placeholder}` tokens from `values` (placeholder
 ---name → raw CLI string, or an already-typed Lua value to use verbatim), and
 ---assemble the resulting native request body / task-level connection.
 ---@param adapter string
----@param template_name string
+---@param preset_name string
 ---@param values table<string, any>
 ---@return table? body, {host?:string, port?:integer}? connect, string? err
-function M.fill_template(adapter, template_name, values)
-    local tmpl = M.template(adapter, template_name)
-    if not tmpl then
-        return nil, nil, ("adapter %s has no template %q (available: %s)")
-            :format(adapter, tostring(template_name), table.concat(M.template_names(adapter), ", "))
+function M.fill_preset(adapter, preset_name, values)
+    local preset = M.preset(adapter, preset_name)
+    if not preset then
+        return nil, nil, ("adapter %s has no preset %q (available: %s)")
+            :format(adapter, tostring(preset_name), table.concat(M.preset_names(adapter), ", "))
     end
-    local request_schema = M.schema(adapter, tmpl.request)
+    local request_schema = M.schema(adapter, preset.request)
     local missing, errs = {}, {}
-    local body = _fill_body(request_schema, tmpl.parameters or {}, values, missing, errs)
+    local body = _fill_body(request_schema, preset.parameters or {}, values, missing, errs)
 
     local connect
-    if tmpl.connect then
+    if preset.connect then
         connect = {}
-        for key, v in pairs(tmpl.connect) do
+        for key, v in pairs(preset.connect) do
             local name = _placeholder(v)
             local raw = name and values[name]
             if not name then
@@ -499,6 +499,29 @@ function M.fill_template(adapter, template_name, values)
     if #errs > 0 then return nil, nil, table.concat(errs, "; ") end
     if #missing > 0 then return nil, nil, "missing: " .. table.concat(missing, ", ") end
     return body, connect
+end
+
+---The ParamSpec governing a preset's placeholder — the schema leaf at the
+---native path the placeholder fills in `parameters` — or nil when the
+---placeholder has no governing spec (e.g. a `connect.host`/`connect.port`
+---field, which is task-level rather than part of the request body schema).
+---Lets a consumer (e.g. a task-file LSP) type/validate a placeholder's value
+---without hardcoding native key names.
+---@param adapter string
+---@param preset_name string
+---@param placeholder_name string
+---@return easydap.ParamSpec?
+function M.preset_placeholder_spec(adapter, preset_name, placeholder_name)
+    local preset = M.preset(adapter, preset_name)
+    if not preset or not preset.parameters then return nil end
+    local request_schema = M.schema(adapter, preset.request)
+    local found
+    _walk_placeholders(preset.parameters, function(path, name)
+        if name == placeholder_name and not found then
+            found = request_schema and _find_leaf(request_schema, path) or nil
+        end
+    end)
+    return found
 end
 
 return M

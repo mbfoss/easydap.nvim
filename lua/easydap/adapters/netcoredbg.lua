@@ -22,7 +22,7 @@ return {
         stopAtEntry = { type = "boolean", desc = "stop at entry" },
         justMyCode  = { type = "boolean", desc = "debug only user-written code (default true)" },
     },
-    templates     = {
+    presets     = {
         program = {
             request    = "launch",
             parameters = { program = "{target}", args = "{args}", cwd = "{cwd}", env = "{env}" },
