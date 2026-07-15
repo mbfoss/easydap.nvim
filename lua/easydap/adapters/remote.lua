@@ -11,7 +11,7 @@ return {
             description = "attach to a DAP server listening on host:port",
             request    = "attach",
             parameters = {},
-            connect    = { host = "{host}", port = "{port}" },
+            connect    = { host = "{host}", port = "{port:port}" },
         },
     },
 }

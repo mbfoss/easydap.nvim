@@ -185,18 +185,23 @@ end
 
 ---The `kind` governing a configuration's placeholder (the part after `:` in
 ---`"{name:kind}"`, `""` for a plain string placeholder), or nil when the
----placeholder isn't found in `parameters`.
+---placeholder isn't found in `parameters` or `connect`.
 ---@param adapter string
 ---@param configuration_name string
 ---@param placeholder_name string
 ---@return string?
 function M.configuration_placeholder_kind(adapter, configuration_name, placeholder_name)
     local configuration = M.configuration(adapter, configuration_name)
-    if not configuration or not configuration.parameters then return nil end
+    if not configuration then return nil end
     local found
-    _walk_placeholders(configuration.parameters, function(_, name, kind)
-        if name == placeholder_name and not found then found = kind end
-    end)
+    local function scan(body)
+        if not body or found then return end
+        _walk_placeholders(body, function(_, name, kind)
+            if name == placeholder_name and not found then found = kind end
+        end)
+    end
+    scan(configuration.parameters)
+    scan(configuration.connect)
     return found
 end
 
