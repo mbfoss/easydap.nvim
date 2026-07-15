@@ -11,9 +11,9 @@ return {
             description = "debug a bash script",
             request = "launch",
             placeholders = {
-                script = { type = "file" },
-                cwd    = { type = "cwd" },
-                env    = { type = "env" },
+                script = { type = "file", description = "bash script to debug" },
+                cwd    = { type = "cwd", description = "working directory" },
+                env    = { type = "env", description = "environment variables" },
             },
             parameters = {
                 type = "bashdb",

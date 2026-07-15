@@ -71,10 +71,10 @@ return {
             description = "debug a Python file",
             request = "launch",
             placeholders = {
-                target = { type = "file" },
-                args   = { type = "shell_args" },
-                cwd    = { type = "cwd" },
-                env    = { type = "env" },
+                target = { type = "file", description = "Python file to run" },
+                args   = { type = "shell_args", description = "arguments to the program" },
+                cwd    = { type = "cwd", description = "working directory" },
+                env    = { type = "env", description = "environment variables" },
             },
             parameters = {
                 type            = "python",
@@ -90,7 +90,7 @@ return {
             description = "attach to a running process by pid",
             request = "attach",
             placeholders = {
-                pid = { type = "integer" },
+                pid = { type = "integer", description = "process id to attach to" },
             },
             parameters = {
                 type            = "python",
@@ -106,8 +106,8 @@ return {
             description = "attach to a remote debugpy process over host/port",
             request = "attach",
             placeholders = {
-                host = { type = "host" },
-                port = { type = "port" },
+                host = { type = "host", description = "remote debugpy host" },
+                port = { type = "port", description = "remote debugpy port" },
             },
             parameters = {
                 type = "python",

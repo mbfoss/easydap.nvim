@@ -15,8 +15,8 @@ return {
             description = "attach to an external java-debug server (e.g. via nvim-jdtls)",
             request = "attach",
             placeholders = {
-                host = { type = "host" },
-                port = { type = "port" },
+                host = { type = "host", description = "JDWP host of the debug server" },
+                port = { type = "port", description = "JDWP port of the debug server" },
             },
             parameters = {
                 hostName = "{host}",

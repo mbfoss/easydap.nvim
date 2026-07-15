@@ -10,17 +10,18 @@
 return {
     command = { "gdb", "--interpreter=dap" },
     configurations = {
-        -- One `command` input carries the whole command line; the per-use kind
-        -- overrides split it into `program` (the first word) and `args` (the rest).
+        -- One `command` input carries the whole command line as a raw string; the
+        -- per-use kind overrides split it into `program` (the first word) and
+        -- `args` (the rest), so `command` needs no type of its own.
         launch = {
             description = "debug a native executable",
             request = "launch",
             placeholders = {
-                command     = { type = "shell_args", required = true },
-                cwd         = { type = "cwd" },
-                env         = { type = "env" },
-                stopOnEntry = { type = "boolean" },
-                stopAtMain  = { type = "boolean" },
+                command     = { required = true, description = "command line to debug" },
+                cwd         = { type = "cwd", description = "working directory" },
+                env         = { type = "env", description = "environment variables" },
+                stopOnEntry = { type = "boolean", description = "break at program entry" },
+                stopAtMain  = { type = "boolean", description = "break at the start of main" },
             },
             parameters = {
                 program     = "{command:shell_program}",
@@ -35,7 +36,7 @@ return {
             description = "attach to a running process by pid",
             request    = "attach",
             placeholders = {
-                pid = { type = "integer", required = true },
+                pid = { type = "integer", required = true, description = "process id to attach to" },
             },
             parameters = { pid = "{pid}" },
         },
@@ -45,8 +46,8 @@ return {
             description = "connect to a gdbserver / remote target",
             request    = "attach",
             placeholders = {
-                connection = { type = "string", required = true },
-                target     = { type = "file" },
+                connection = { type = "string", required = true, description = "remote target, e.g. host:port" },
+                target     = { type = "file", description = "local binary for symbols" },
             },
             parameters = {
                 target  = "{connection}",
@@ -57,8 +58,8 @@ return {
             description = "post-mortem debug from a core file",
             request    = "attach",
             placeholders = {
-                corefile = { type = "file", required = true },
-                target   = { type = "file" },
+                corefile = { type = "file", required = true, description = "core file to load" },
+                target   = { type = "file", description = "executable that produced the core" },
             },
             parameters = {
                 coreFile = "{corefile}",

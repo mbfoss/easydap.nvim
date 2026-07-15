@@ -18,16 +18,17 @@
 return {
     command = "codelldb",
     configurations = {
-        -- One `command` input carries the whole command line; the per-use kind
-        -- overrides split it into `program` (the first word) and `args` (the rest).
+        -- One `command` input carries the whole command line as a raw string; the
+        -- per-use kind overrides split it into `program` (the first word) and
+        -- `args` (the rest), so `command` needs no type of its own.
         launch = {
             description = "debug an executable",
             request = "launch",
             placeholders = {
-                command     = { type = "shell_args", required = true },
-                cwd         = { type = "cwd" },
-                env         = { type = "env" },
-                stopOnEntry = { type = "boolean" },
+                command     = { required = true, description = "command line to debug" },
+                cwd         = { type = "cwd", description = "working directory" },
+                env         = { type = "env", description = "environment variables" },
+                stopOnEntry = { type = "boolean", description = "break at program entry" },
             },
             parameters = {
                 name        = "codelldb",
@@ -43,7 +44,7 @@ return {
             description = "attach to a running process by pid",
             request = "attach",
             placeholders = {
-                pid = { type = "integer", required = true },
+                pid = { type = "integer", required = true, description = "process id to attach to" },
             },
             parameters = {
                 name = "codelldb",
@@ -55,8 +56,8 @@ return {
             description = "attach to a process by executable, optionally waiting for it to launch",
             request = "attach",
             placeholders = {
-                program = { type = "file", required = true },
-                waitFor = { type = "boolean" },
+                program = { type = "file", required = true, description = "executable to attach to" },
+                waitFor = { type = "boolean", description = "wait for the process to launch" },
             },
             parameters = {
                 name    = "codelldb",
@@ -69,8 +70,8 @@ return {
             description = "post-mortem debug from a core file (custom launch)",
             request = "launch",
             placeholders = {
-                program  = { type = "file" },
-                corefile = { type = "file" },
+                program  = { type = "file", description = "executable that produced the core" },
+                corefile = { type = "file", description = "core file to load" },
             },
             parameters = {
                 name                  = "codelldb",
@@ -83,9 +84,9 @@ return {
             description = "attach over a gdb-remote (gdbserver) connection (custom launch)",
             request = "launch",
             placeholders = {
-                program = { type = "file" },
-                host    = { type = "host" },
-                port    = { type = "port" },
+                program = { type = "file", description = "executable for symbols" },
+                host    = { type = "host", description = "gdbserver host" },
+                port    = { type = "port", description = "gdbserver port" },
             },
             parameters = {
                 name                  = "codelldb",

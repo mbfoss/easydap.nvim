@@ -8,7 +8,7 @@ return {
             description = "listen for an incoming Xdebug connection",
             request = "launch",
             placeholders = {
-                cwd = { type = "cwd" },
+                cwd = { type = "cwd", description = "working directory" },
             },
             parameters = {
                 type = "php",

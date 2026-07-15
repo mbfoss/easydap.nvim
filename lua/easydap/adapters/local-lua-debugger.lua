@@ -21,10 +21,10 @@ return {
             description = "debug a Lua script",
             request = "launch",
             placeholders = {
-                target = { type = "file" },
-                args   = { type = "shell_args" },
-                cwd    = { type = "cwd" },
-                env    = { type = "env" },
+                target = { type = "file", description = "Lua script to run" },
+                args   = { type = "shell_args", description = "arguments to the script" },
+                cwd    = { type = "cwd", description = "working directory" },
+                env    = { type = "env", description = "environment variables" },
             },
             parameters = {
                 type = "lua-local",

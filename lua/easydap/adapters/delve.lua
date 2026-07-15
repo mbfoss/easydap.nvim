@@ -72,10 +72,10 @@ return {
             description = "debug a Go package/binary",
             request = "launch",
             placeholders = {
-                target = { type = "file" },
-                args   = { type = "shell_args" },
-                cwd    = { type = "cwd" },
-                env    = { type = "env" },
+                target = { type = "file", description = "Go package or binary to run" },
+                args   = { type = "shell_args", description = "arguments to the program" },
+                cwd    = { type = "cwd", description = "working directory" },
+                env    = { type = "env", description = "environment variables" },
             },
             parameters = {
                 mode    = "debug",
@@ -92,7 +92,7 @@ return {
             description = "attach to a running process by pid",
             request = "attach",
             placeholders = {
-                pid = { type = "integer" },
+                pid = { type = "integer", description = "process id to attach to" },
             },
             parameters = {
                 mode      = "local",

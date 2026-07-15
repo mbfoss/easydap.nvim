@@ -110,8 +110,9 @@ Each `easydap.Placeholder` declares one input up front:
 
 | Field      | Meaning                                                                        |
 | ---------- | ------------------------------------------------------------------------------ |
-| `type`     | the coercion applied to the raw `quick_run` string — one of `string`/`boolean`/`integer`/`number`/`file`/`dir`/`cwd`/`env`/`host`/`port`/`list`/`shell_args`/`shell_program`/`shell_rest_args` (`easydap.schema.coerce` does the coercion). It also drives type-aware value completion and the blank a scaffolded run_file is seeded with |
+| `type`     | the coercion applied to the raw `quick_run` string — one of `string`/`boolean`/`integer`/`number`/`file`/`dir`/`cwd`/`env`/`host`/`port`/`list`/`shell_args`/`shell_program`/`shell_rest_args` (`easydap.schema.coerce` does the coercion). It also drives type-aware value completion and the blank a scaffolded run_file is seeded with. Defaults to `string` — omit it for an input taken verbatim, including one whose every use carries a `"{name:kind}"` override, since the declared type is then never consulted |
 | `required` | when `true`, leaving it unset is a `quick_run` error; any other unset placeholder is simply omitted from the body |
+| `description` | a few words on what the input means, e.g. `"process id to attach to"` |
 
 A `parameters` (or `connect`) leaf value is one of:
 

@@ -10,10 +10,10 @@ return {
             description = "debug a .NET assembly",
             request = "launch",
             placeholders = {
-                target = { type = "file" },
-                args   = { type = "shell_args" },
-                cwd    = { type = "cwd" },
-                env    = { type = "env" },
+                target = { type = "file", description = ".NET assembly to run" },
+                args   = { type = "shell_args", description = "arguments to the program" },
+                cwd    = { type = "cwd", description = "working directory" },
+                env    = { type = "env", description = "environment variables" },
             },
             parameters = {
                 program = "{target}",
@@ -26,7 +26,7 @@ return {
             description = "attach to a running process by pid",
             request    = "attach",
             placeholders = {
-                pid = { type = "integer" },
+                pid = { type = "integer", description = "process id to attach to" },
             },
             parameters = { processId = "{pid}" },
         },

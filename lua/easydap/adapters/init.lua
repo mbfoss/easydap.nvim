@@ -24,12 +24,15 @@
 ---One declared input of a configuration — the `name=value` tokens `quick_run`
 ---accepts and the fields `new_run_file` seeds. `type` names the coercion applied
 ---to the raw CLI string (see `easydap.schema.coerce`); it also drives type-aware
----value completion and the blank a scaffolded run_file is seeded with. A
+---value completion and the blank a scaffolded run_file is seeded with. Omit it
+---for an input taken verbatim as a string — including one whose every use carries
+---a `"{name:kind}"` override, since the declared type is then never consulted. A
 ---placeholder with `required = true` must be supplied — leaving it unset is a
 ---`quick_run` error; any other unset placeholder is simply omitted from the body.
 ---@class easydap.Placeholder
----@field type?     "string"|"boolean"|"integer"|"number"|"file"|"dir"|"cwd"|"env"|"host"|"port"|"list"|"shell_args"|"shell_program"|"shell_rest_args"
----@field required? boolean  unset is an error (default false)
+---@field type?        "string"|"boolean"|"integer"|"number"|"file"|"dir"|"cwd"|"env"|"host"|"port"|"list"|"shell_args"|"shell_program"|"shell_rest_args"  default `string`
+---@field required?    boolean  unset is an error (default false)
+---@field description? string   a few words on what the input means
 
 ---A named `quick_run`/`new_run_file` configuration for one adapter.
 ---
