@@ -37,26 +37,32 @@ The code is layered; higher layers depend on lower ones, not the reverse.
 - `proto.lua` — `---@meta` file of DAP spec types; never `require()` it.
 
 **Adapters & tasks**
-- [adapters.lua](lua/easydap/adapters.lua) — built-in adapter definitions as a
-  plain `name -> easydap.AdapterDef` table: native DAP process/connection config
-  plus optional `launch_schema`/`attach_schema` (a `native_key -> ParamSpec` map)
-  describing the adapter's own launch/attach parameters. Users add/override keys
-  directly. The DAP core never reads the schemas — only `easydap.schema` does.
+- [adapters/init.lua](lua/easydap/adapters/init.lua) — built-in adapter
+  definitions as a plain `name -> easydap.AdapterDef` table (one file per adapter
+  under `easydap/adapters/`, assembled here): native DAP process/connection config
+  plus an optional `configurations` table (`name -> easydap.Configuration`) of
+  launch/attach templates. Each `Configuration` is self-describing — a native
+  request body (`parameters`) whose leaves may be literals, zero-arg functions, or
+  `"{placeholder}"`/`"{placeholder:kind}"` tokens. Users add/override keys
+  directly. The DAP core never reads the configurations — only `easydap.schema` does.
 - [task.lua](lua/easydap/task.lua) — task runner (`easydap.TaskTypeDef`); the
   `run` backend for external task runners. Consumes a native task
   (`name`/`adapter`/`request`/`parameters` + optional `host`/`port`/
   `raw_messages`) and sends `parameters` as the DAP request body verbatim.
 - [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug quick_run` and
-  the schema reader for `new_run_file`. Reads the adapters' `launch_schema`/
-  `attach_schema` (each `ParamSpec` has a Lua `type`, an optional data `kind` and
-  value-meaning `role`; a schema entry may be a nested group — a `type = "schema"`
-  spec holding children under `fields`) to assemble a native request body (`build`)
-  and locate role-tagged fields by `role` (`key_of_role`/`quick_roles`, for
-  `quick_run`). Exposes `is_group`/`group_fields`/`resolve_default` for schema
-  traversal. Native keys throughout — no portable/generic field vocabulary.
+  the configuration reader for `new_run_file`. Reads the adapters' `configurations`
+  and walks each `Configuration`'s `parameters`/`connect` body for
+  `"{placeholder}"`/`"{placeholder:kind}"` leaves. `fill_configuration` coerces
+  `quick_run`'s `name=value` inputs by each placeholder's `kind` (`coerce`) and
+  assembles the native request body plus any task-level connection; `required`
+  names left unset are errors, other unset placeholders are omitted. Introspection
+  helpers — `configurations`/`configuration`/`configuration_names`,
+  `configuration_placeholders`/`configuration_placeholder_kinds`, `requests`,
+  `quick_run_adapters` — drive completion and scaffolding. Native keys throughout —
+  no portable/generic field vocabulary.
 - [scaffold.lua](lua/easydap/scaffold.lua) — run-file creation behind `:Debug
-  new_run_file`: renders an adapter's schema (via `easydap.schema`) into a runnable Lua
-  run_file, seeded with defaults/placeholders, then opens it.
+  new_run_file`: renders one of an adapter's `configurations` (via `easydap.schema`)
+  into a runnable Lua run_file, seeded with defaults/placeholders, then opens it.
 
 **Persistence** — [store.lua](lua/easydap/store.lua)
 - A thin path + read/write helper. The project root is the nearest ancestor of

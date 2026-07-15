@@ -10,8 +10,8 @@ return {
             parameters = {
                 name    = "lldb",
                 type    = "lldb-dap",
-                program = "{target:file}",
-                args    = "{args:shell_args}",
+                program = "{command:shell_program}",
+                args    = "{command:shell_rest_args}",
                 cwd     = "{cwd:cwd}",
                 env     = "{env:env}",
             },
