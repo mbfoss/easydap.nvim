@@ -249,9 +249,10 @@ local _OMIT = {}
 ---   `required` miss is recorded);
 --- * a string with placeholder token(s) *embedded* in surrounding text is
 ---   interpolated — each token coerced then stringified in place (so
----   `"target create {program:file}"` becomes `"target create /path/a.out"`);
----   an unset embedded token expands to the empty string (a `required` miss is
----   still recorded);
+---   `"target create {program:file}"` becomes `"target create /path/a.out"`) —
+---   but only when *every* token has a value; if any embedded token is unset the
+---   whole leaf is dropped (returns `_OMIT`), so an optional command string simply
+---   vanishes when its input is absent (a `required` miss is still recorded);
 --- * any other leaf is a literal, resolved via `M.resolve_value` (so a zero-arg
 ---   function default is called at fill time) — this is how a configuration pins
 ---   identity fields (`type`/`name`) or computed defaults directly in `parameters`.
@@ -280,12 +281,15 @@ local function _fill_leaf(v, values, required, missing, errs)
         return val
     end
 
-    -- String with embedded placeholder token(s) → interpolate.
+    -- String with embedded placeholder token(s) → interpolate, but only when
+    -- every token resolves; any unset token drops the whole leaf.
     if type(v) == "string" and v:find(_PLACEHOLDER_PAT) then
-        return (v:gsub(_PLACEHOLDER_PAT, function(pname, pkind)
+        local omit = false
+        local filled = v:gsub(_PLACEHOLDER_PAT, function(pname, pkind)
             local raw = values[pname]
             if raw == nil then
                 if required[pname] then missing[#missing + 1] = pname end
+                omit = true
                 return ""
             elseif type(raw) ~= "string" then
                 return tostring(raw)
@@ -296,7 +300,9 @@ local function _fill_leaf(v, values, required, missing, errs)
                 return ""
             end
             return tostring(val)
-        end))
+        end)
+        if omit then return _OMIT end
+        return filled
     end
 
     -- Plain literal.

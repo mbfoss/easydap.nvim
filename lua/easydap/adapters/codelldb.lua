@@ -62,7 +62,6 @@ return {
                 targetCreateCommands  = { "target create {program:file}" },
                 processCreateCommands = { "target create -c {corefile:file}" },
             },
-            required = { "program", "corefile" },
         },
         gdb_remote = {
             description = "attach over a gdb-remote (gdbserver) connection (custom launch)",
@@ -73,7 +72,6 @@ return {
                 targetCreateCommands  = { "target create {program:file}" },
                 processCreateCommands = { "gdb-remote {host:host}:{port:port}" },
             },
-            required = { "program", "port" },
         },
     },
 }
