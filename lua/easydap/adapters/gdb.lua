@@ -38,7 +38,7 @@ return {
             },
             required = { "connection" },
         },
-        corefile = {
+        core = {
             description = "post-mortem debug from a core file",
             request    = "attach",
             parameters = {
