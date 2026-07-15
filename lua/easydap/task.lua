@@ -39,7 +39,7 @@ local _run_counter = 0
 
 ---@param task easydap.Task  native DAP task (name + adapter + request + parameters, plus optional host/port/raw_messages)
 ---@param callbacks easydap.TaskCallback
----@return fun()
+---@return fun() -- cancel function
 M.start            = function(task, callbacks)
     local add_bufnr = callbacks.add_bufnr or function() end
     local report    = callbacks.report or function() end
