@@ -7,19 +7,18 @@
 ---separate paths that never meet:
 ---
 --- * `quick_run` reads `name=value` arguments, coerces each by its input's declared
----   `type` (`M.coerce`), and calls the configuration's `fill(params, inputs)` to
----   assemble a native request body. An unset input arrives as nil, so a field
----   assigned from it never appears in the body at all; an input marked
----   `required = true` must be supplied. `connect(inputs)` does the same for the
----   task-level TCP endpoint of adapters that need one.
---- * `new_run_file` renders the configuration's `template` — a static native body
----   seeded with example values — into Lua source (see `easydap.scaffold`). A run
----   file's `parameters` goes to the adapter verbatim (see `easydap.task`); it
----   never passes through `fill`.
+---   `type` (`M.coerce`), and calls the configuration's `build(params, connect,
+---   inputs)` to assemble a native request body plus any task-level connection. An
+---   unset input arrives as nil, so a field assigned from it never appears in the
+---   body at all; an input marked `required = true` must be supplied.
+--- * `new_run_file` splices the configuration's `template` — Lua source text for a
+---   native body, seeded with example values — into the generated run file (see
+---   `easydap.scaffold`). A run file's `parameters` goes to the adapter verbatim
+---   (see `easydap.task`); it never passes through `build`.
 ---
----So `fill` is the only thing that builds a body, and `template` is the only thing
----the scaffolder reads. This module speaks each adapter's native keys directly —
----no portable field vocabulary between adapters.
+---So `build` is the only thing that assembles a request, and `template` is the only
+---thing the scaffolder reads. This module speaks each adapter's native keys
+---directly — no portable field vocabulary between adapters.
 
 local str_util = require("easydap.tk.strutil")
 
@@ -82,16 +81,6 @@ function M.coerce(input_type, raw)
         return out
     end
     return raw
-end
-
----Resolve a value that may be a literal or a zero-arg function (so a computed
----template seed like `exepath("lua")` is evaluated when the run file is
----scaffolded, not at module load).
----@param value any
----@return any
-function M.resolve_value(value)
-    if type(value) == "function" then return value() end
-    return value
 end
 
 -- ── Introspection ──────────────────────────────────────────────────────────
@@ -209,7 +198,7 @@ end
 ---Read every declared input from `values`, coercing each by its `type`.
 ---A value that is already a non-string Lua value is taken verbatim. Unset inputs
 ---are simply absent from the result (recorded in `missing` when `required`), which
----is what lets `fill` omit their fields by assigning nil.
+---is what lets `build` omit their fields by assigning nil.
 ---@param configuration easydap.Configuration
 ---@param values table<string, any>  input name → raw CLI string or typed value
 ---@return table<string, any> inputs, string[] missing, string[] errs
@@ -237,8 +226,9 @@ local function _read_inputs(configuration, values)
 end
 
 ---Read a named configuration's inputs from `values` (input name → raw CLI string,
----or an already-typed Lua value to use verbatim) and assemble the resulting native
----request body / task-level connection via the configuration's `fill`/`connect`.
+---or an already-typed Lua value to use verbatim) and hand them to the
+---configuration's `build`, which assembles the native request body and any
+---task-level connection in place.
 ---@param adapter string
 ---@param configuration_name string
 ---@param values table<string, any>
@@ -254,13 +244,13 @@ function M.fill_configuration(adapter, configuration_name, values)
     if #errs > 0 then return nil, nil, table.concat(errs, "; ") end
     if #missing > 0 then return nil, nil, "missing: " .. table.concat(missing, ", ") end
 
-    local body = {}
-    if configuration.fill then configuration.fill(body, inputs) end
+    local body, connect = {}, {}
+    if configuration.build then configuration.build(body, connect, inputs) end
 
     -- No spec governs `connect` (it's task-level, not a body field), so an unset
-    -- host/port is always optional: the resolved AdapterDef's own host/port apply.
-    local connect
-    if configuration.connect then connect = configuration.connect(inputs) end
+    -- host/port is always optional: a `build` that leaves it empty reports none,
+    -- and the resolved AdapterDef's own host/port apply instead.
+    if next(connect) == nil then connect = nil end
     return body, connect
 end
 

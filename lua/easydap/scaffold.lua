@@ -1,22 +1,17 @@
 ---@brief run_file scaffolding for `:Debug new_run_file`.
 ---
 ---Writes a runnable Lua run_file for an adapter + one of its `configurations` by
----rendering that configuration's `template` — a static native request body the
----adapter seeds with example values — into Lua source. The template is the only
----thing this module reads: a run file's `parameters` goes to the adapter verbatim
----(see `easydap.task`), so it never passes through the configuration's `fill`,
----which serves `quick_run` alone. Body assembly and the DAP core stay in
----`easydap.schema`.
+---splicing that configuration's `template` — Lua source text for a native request
+---body, seeded with example values — into a task table. The template is the only
+---thing this module reads, and it is source rather than data, so the adapter
+---already wrote the comments, key order and computed expressions that belong in
+---the generated file; there is nothing to render, only to re-indent. A run file's
+---`parameters` goes to the adapter verbatim (see `easydap.task`), so it never
+---passes through the configuration's `build`, which serves `quick_run` alone.
 
 local schema = require("easydap.schema")
 
 local M = {}
-
----Preferred position of well-known keys in a rendered `parameters` block: the
----identity/target/args/cwd/env fields configurations consistently declare first.
----Keys absent here sort alphabetically after all of these.
----@type table<string, integer>
-local _key_priority = { type = 1, name = 2, program = 3, module = 3, args = 4, cwd = 5, env = 6 }
 
 ---@param msg string
 local function _warn(msg) vim.notify("[easydap] " .. msg, vim.log.levels.WARN) end
@@ -24,63 +19,38 @@ local function _warn(msg) vim.notify("[easydap] " .. msg, vim.log.levels.WARN) e
 ---@param msg string
 local function _err(msg) vim.notify("[easydap] " .. msg, vim.log.levels.ERROR) end
 
----Render a configuration's `template` as the body of a Lua `parameters` table — a
----multi-line source string for a run_file template (see `new_run_file`). Each leaf
----is emitted on its own line: a zero-arg function is resolved via
----`schema.resolve_value` (so a computed seed like `exepath("lua")` lands as a
----concrete value), and everything else is emitted as written. `indent` is the
----column (in spaces) the outermost params sit at. String keys are sorted by
----`_key_priority` (identity/target/args/cwd/env first), then alphabetically, for
----stable, readable output; a nested list's integer keys sort first, in order, and
----its items are emitted bare (no `key =`).
----@param adapter string
----@param configuration_name string
+---Re-indent a configuration's `template` to sit at `indent` spaces inside the
+---generated run file. Surrounding blank lines are dropped and the template's own
+---common leading indent is stripped, so an adapter can write its template at
+---whatever indentation reads best in the adapter file and still have it land
+---correctly nested here. Blank lines within stay blank rather than collecting
+---trailing whitespace.
+---@param template string
 ---@param indent integer
----@return string? lua, string? err
-local function _render_template(adapter, configuration_name, indent)
-    local configuration = schema.configuration(adapter, configuration_name)
-    if not configuration then
-        return nil, ("adapter %s has no configuration %q"):format(adapter, tostring(configuration_name))
-    end
+---@return string
+local function _reindent(template, indent)
+    local lines = vim.split(template, "\n", { plain = true })
+    while lines[1] and lines[1]:match("^%s*$") do table.remove(lines, 1) end
+    while #lines > 0 and lines[#lines]:match("^%s*$") do table.remove(lines) end
 
-    local lines = {}
-    local function emit(fields, pad)
-        local keys = {}
-        for k in pairs(fields) do keys[#keys + 1] = k end
-        table.sort(keys, function(a, b)
-            -- A body node is either a map or a list; when both shapes meet, keep
-            -- list items ahead of named keys and in their own order.
-            local na, nb = type(a) == "number", type(b) == "number"
-            if na ~= nb then return na end
-            if na then return a < b end
-            local pa, pb = _key_priority[a] or math.huge, _key_priority[b] or math.huge
-            if pa ~= pb then return pa < pb end
-            return a < b
-        end)
-        for _, k in ipairs(keys) do
-            local node = fields[k]
-            -- List items are emitted bare; of named keys, bare identifiers stay
-            -- unquoted and anything else needs ["..."].
-            local lhs = ""
-            if type(k) == "string" then
-                lhs = (k:match("^[%a_][%w_]*$") and k or ("[%q]"):format(k)) .. " = "
-            end
-            if type(node) == "table" then
-                lines[#lines + 1] = ("%s%s{"):format(pad, lhs)
-                emit(node, pad .. "    ")
-                lines[#lines + 1] = ("%s},"):format(pad)
-            else
-                lines[#lines + 1] = ("%s%s%s,"):format(pad, lhs, vim.inspect(schema.resolve_value(node)))
-            end
+    local common = math.huge
+    for _, line in ipairs(lines) do
+        if not line:match("^%s*$") then
+            common = math.min(common, #line:match("^ *"))
         end
     end
-    emit(configuration.template or {}, string.rep(" ", indent))
-    return table.concat(lines, "\n")
+    if common == math.huge then common = 0 end
+
+    local pad, out = string.rep(" ", indent), {}
+    for i, line in ipairs(lines) do
+        out[i] = line:match("^%s*$") and "" or (pad .. line:sub(common + 1))
+    end
+    return table.concat(out, "\n")
 end
 
 ---Scaffold a run_file for an `adapter` + one of its `configurations`: write a Lua
----file whose `parameters` is that configuration's `template`, then open it for
----editing. Run it afterwards with `:Debug run_file`. `assignments` is positional:
+---file whose `parameters` is that configuration's `template` source, then open it
+---for editing. Run it afterwards with `:Debug run_file`. `assignments` is positional:
 ---the adapter (required), the configuration name (defaults to the adapter's sole
 ---configuration), then the destination path (defaulting to `<project
 ---root or cwd>/<adapter>_<configuration>.lua`). Fails if the destination already
@@ -148,11 +118,7 @@ function M.new_run_file(assignments)
         return
     end
 
-    local params_src, perr = _render_template(adapter, configuration_name, 8)
-    if not params_src then
-        _err("new_run_file: " .. tostring(perr))
-        return
-    end
+    local params_src = _reindent(configuration.template or "", 8)
 
     local lines = {
         "-- easydap run file",
@@ -162,12 +128,19 @@ function M.new_run_file(assignments)
         ("    request    = %q,"):format(configuration.request),
     }
     -- TCP adapters carry host/port at the task level, not in the body; seed them
-    -- from the adapter's own def, which is what a `connect` configuration overrides.
+    -- from the adapter's own def, which is what `build`'s `connect` overrides.
     if base.host ~= nil or base.port ~= nil then
         lines[#lines + 1] = ("    host       = %q,"):format(base.host or "127.0.0.1")
         lines[#lines + 1] = ("    port       = %d,"):format(base.port or 0)
     end
-    vim.list_extend(lines, { "    parameters = {", params_src, "    },", "}", "" })
+    -- A configuration with nothing to seed (its inputs are all task-level) gets an
+    -- empty body rather than a `{` / blank line / `}` sandwich.
+    if params_src == "" then
+        lines[#lines + 1] = "    parameters = {},"
+    else
+        vim.list_extend(lines, { "    parameters = {", params_src, "    }," })
+    end
+    vim.list_extend(lines, { "}", "" })
 
     local ok, werr = require("easydap.tk.fsutil").write_content(dest, table.concat(lines, "\n"))
     if not ok then

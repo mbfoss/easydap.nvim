@@ -52,34 +52,35 @@
 ---`inputs` declares what the configuration accepts (name → `easydap.Input`); the
 ---two commands then read it along separate paths that never meet:
 ---
----  * `fill(params, inputs)` builds the native request body for `quick_run`,
----    assigning into the empty `params` from the coerced `inputs`. An unset input
----    is nil, and Lua drops nil-valued keys, so `params.cwd = inputs.cwd` omits
----    `cwd` entirely when it wasn't supplied — assign unconditionally and optional
----    fields take care of themselves. Identity fields the adapter pins (`type`/
----    `name`) and fixed defaults are assigned here too, as plain literals.
----  * `template` is what `new_run_file` scaffolds: a static native body, seeded
----    with example values, rendered straight into the generated run file. A leaf
----    may be a literal or a zero-arg function (resolved at scaffold time, e.g.
----    `function() return vim.fn.exepath("lua") end`). It never reaches an adapter
----    through `fill` — a run file's `parameters` is sent verbatim — so seed it with
----    realistic values a reader can edit, not blanks.
+---  * `build(params, connect, inputs)` assembles everything `quick_run` needs, in
+---    place: the native request body in `params`, and — for adapters that connect
+---    over a task-level TCP endpoint (an `AdapterDef` `host`/`port`, e.g.
+---    `remote`/`java-debug-server`) — that endpoint in `connect`. Both start empty;
+---    leaving `connect` untouched keeps the adapter def's own host/port in force.
+---    An unset input is nil, and Lua drops nil-valued keys, so
+---    `params.cwd = inputs.cwd` omits `cwd` entirely when it wasn't supplied —
+---    assign unconditionally and optional fields take care of themselves. Identity
+---    fields the adapter pins (`type`/`name`) and fixed defaults are assigned here
+---    too, as plain literals.
+---  * `template` is what `new_run_file` scaffolds: Lua **source text** for the body
+---    of the generated run file's `parameters` table, spliced in as written (only
+---    re-indented). Because it is source rather than data it carries its own
+---    comments, key order, and computed values as expressions the *run file*
+---    evaluates when loaded (`cwd = vim.fn.getcwd()`), which keeps the generated
+---    file portable instead of baking in one machine's paths. It never reaches an
+---    adapter through `build` — a run file's `parameters` is sent verbatim — so
+---    seed it with realistic values a reader can edit, not blanks.
 ---
 ---Keeping the field list in both is deliberate: they answer different questions
 ---(what to send vs. what to show someone starting a run file), and drift between
----them costs scaffold quality, never `quick_run` correctness.
----
----`connect(inputs)` returns the task-level TCP endpoint for adapters that connect
----over one (an `AdapterDef` `host`/`port`, e.g. `remote`/`java-debug-server`) —
----the task's connection, not a body field. Returning nils leaves the adapter def's
----own host/port in force.
+---them costs scaffold quality, never `quick_run` correctness. The template is
+---unvalidated text — a typo in it surfaces only when the run file is scaffolded.
 ---@class easydap.Configuration
 ---@field description  string
 ---@field request      "launch"|"attach"
 ---@field inputs?      table<string, easydap.Input>  the configuration's declared inputs
----@field template?    table    static native body rendered into a scaffolded run file
----@field fill?        fun(params: table, inputs: table<string, any>)  assemble the native request body
----@field connect?     fun(inputs: table<string, any>): {host?: string, port?: integer}
+---@field build?       fun(params: table, connect: table, inputs: table<string, any>)  assemble body + connection in place
+---@field template?    string   Lua source for the scaffolded run file's `parameters` body
 
 ---A static adapter definition — the launch/attach template for one adapter.
 ---Entries of this module are values of this type. It is NOT the per-run config

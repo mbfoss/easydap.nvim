@@ -67,7 +67,7 @@ return {
     setup    = _debugpy_setup,
     teardown = function(_, ctx) if ctx then ctx.handle.stop() end end,
     configurations = {
-        -- One `command` input carries the whole command line; `fill` splits it into
+        -- One `command` input carries the whole command line; `build` splits it into
         -- `program` (the first word) and `args` (the rest).
         launch = {
             description = "debug a Python file",
@@ -77,16 +77,7 @@ return {
                 cwd     = { type = "cwd", description = "working directory" },
                 env     = { type = "env", description = "environment variables" },
             },
-            template = {
-                type            = "python",
-                program         = "./main.py",
-                args            = { "--verbose" },
-                cwd             = vim.fn.getcwd,
-                env             = { EXAMPLE = "value" },
-                justMyCode      = false,
-                showReturnValue = true,
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.type = "python"
                 if inputs.command then
                     params.program = vim.fn.expand(inputs.command[1] or "")
@@ -97,6 +88,15 @@ return {
                 params.justMyCode      = false
                 params.showReturnValue = true
             end,
+            template = [[
+                type    = "python",
+                program = "./main.py",            -- Python file to run
+                args    = { "--verbose" },        -- arguments passed to it
+                cwd     = vim.fn.getcwd(),        -- working directory
+                env     = { EXAMPLE = "value" },  -- environment variables
+                justMyCode      = false,          -- step into library code too
+                showReturnValue = true,
+            ]],
         },
         attach = {
             description = "attach to a running process by pid",
@@ -104,22 +104,22 @@ return {
             inputs = {
                 pid = { type = "integer", description = "process id to attach to" },
             },
-            template = {
-                type            = "python",
-                processId       = 0,
-                justMyCode      = false,
-                showReturnValue = true,
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.type      = "python"
                 params.processId = inputs.pid
                 params.justMyCode      = false
                 params.showReturnValue = true
             end,
+            template = [[
+                type      = "python",
+                processId = 41234,        -- process id to attach to
+                justMyCode      = false,  -- step into library code too
+                showReturnValue = true,
+            ]],
         },
-        -- The `connect.*` body group targets the remote process — not the
-        -- configuration-level `connect` function (that's reserved for a task-level
-        -- TCP endpoint, which this adapter's def doesn't declare).
+        -- The `connect.*` body group targets the remote process — not a task-level
+        -- TCP endpoint (`build`'s `connect`), which this adapter's def doesn't
+        -- declare: its own adapter port is chosen by `_debugpy_setup`.
         remote = {
             description = "attach to a remote debugpy process over host/port",
             request = "attach",
@@ -127,21 +127,21 @@ return {
                 host = { type = "host", description = "remote debugpy host" },
                 port = { type = "port", description = "remote debugpy port" },
             },
-            template = {
-                type = "python",
-                connect = {
-                    host = "127.0.0.1",
-                    port = 5678,
-                },
-                justMyCode      = false,
-                showReturnValue = true,
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.type    = "python"
                 params.connect = { host = inputs.host, port = inputs.port }
                 params.justMyCode      = false
                 params.showReturnValue = true
             end,
+            template = [[
+                type = "python",
+                connect = {
+                    host = "127.0.0.1",  -- remote debugpy host
+                    port = 5678,         -- remote debugpy port
+                },
+                justMyCode      = false,  -- step into library code too
+                showReturnValue = true,
+            ]],
         },
     },
 }

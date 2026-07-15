@@ -10,7 +10,7 @@
 return {
     command = { "gdb", "--interpreter=dap" },
     configurations = {
-        -- One `command` input carries the whole command line; `fill` splits it into
+        -- One `command` input carries the whole command line; `build` splits it into
         -- GDB's `program` (the first word) and `args` (the rest).
         launch = {
             description = "debug a native executable",
@@ -22,15 +22,7 @@ return {
                 stop_on_entry = { type = "boolean", description = "break at program entry" },
                 stop_at_main  = { type = "boolean", description = "break at the start of main" },
             },
-            template = {
-                program = "./a.out",
-                args    = { "--verbose" },
-                cwd     = vim.fn.getcwd,
-                env     = { EXAMPLE = "value" },
-                stopOnEntry = false,
-                stopAtBeginningOfMainSubprogram = false,
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.program = vim.fn.expand(inputs.command[1] or "")
                 params.args    = { unpack(inputs.command, 2) }
                 params.cwd     = inputs.cwd
@@ -38,6 +30,14 @@ return {
                 params.stopOnEntry = inputs.stop_on_entry
                 params.stopAtBeginningOfMainSubprogram = inputs.stop_at_main
             end,
+            template = [[
+                program = "./a.out",                      -- executable to debug
+                args    = { "--verbose" },                -- arguments passed to it
+                cwd     = vim.fn.getcwd(),                -- working directory
+                env     = { EXAMPLE = "value" },          -- environment variables
+                stopOnEntry = false,                      -- break at program entry
+                stopAtBeginningOfMainSubprogram = false,  -- break at the start of main
+            ]],
         },
         attach = {
             description = "attach to a running process by pid",
@@ -45,10 +45,12 @@ return {
             inputs = {
                 pid = { type = "integer", required = true, description = "process id to attach to" },
             },
-            template = { pid = 0 },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.pid = inputs.pid
             end,
+            template = [[
+                pid = 41234,  -- process id to attach to
+            ]],
         },
         -- The body's `target` key takes the remote `connection` string; the
         -- `target` input is the local binary GDB loads symbols from.
@@ -59,14 +61,14 @@ return {
                 connection = { type = "string", required = true, description = "remote target, e.g. host:port" },
                 target     = { type = "file", description = "local binary for symbols" },
             },
-            template = {
-                target  = "localhost:1234",
-                program = "./a.out",
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.target  = inputs.connection
                 params.program = inputs.target
             end,
+            template = [[
+                target  = "localhost:1234",  -- remote gdbserver, host:port
+                program = "./a.out",         -- local binary for symbols
+            ]],
         },
         core = {
             description = "post-mortem debug from a core file",
@@ -75,14 +77,14 @@ return {
                 corefile = { type = "file", required = true, description = "core file to load" },
                 target   = { type = "file", description = "executable that produced the core" },
             },
-            template = {
-                coreFile = "./core",
-                program  = "./a.out",
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.coreFile = inputs.corefile
                 params.program  = inputs.target
             end,
+            template = [[
+                coreFile = "./core",   -- core file to load
+                program  = "./a.out",  -- executable that produced the core
+            ]],
         },
     },
 }

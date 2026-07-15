@@ -43,11 +43,12 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   plus an optional `configurations` table (`name -> easydap.Configuration`) of
   launch/attach templates. Each `Configuration` is self-describing: an `inputs`
   table declaring what it accepts (`name -> easydap.Input`, each with a `type`,
-  `description`, and optional `required`), a `fill(params, inputs)` that assembles
-  the native request body, a `template` (a static native body seeded with example
-  values, for scaffolding), and an optional `connect(inputs)` returning a
-  task-level `host`/`port`. Users add/override keys directly. The DAP core never
-  reads the configurations — only `easydap.schema` does.
+  `description`, and optional `required`), a `build(params, connect, inputs)` that
+  assembles the native request body — and any task-level `host`/`port` — in place,
+  and a `template` (Lua **source text** for the body a scaffolded run file gets,
+  seeded with example values and its own comments). Users add/override keys
+  directly. The DAP core never reads the configurations — only `easydap.schema`
+  does.
 - [task.lua](lua/easydap/task.lua) — task runner (`easydap.TaskTypeDef`); the
   `run` backend for external task runners. Consumes a native task
   (`name`/`adapter`/`request`/`parameters` + optional `host`/`port`/
@@ -55,25 +56,26 @@ The code is layered; higher layers depend on lower ones, not the reverse.
 - [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug quick_run` and
   the configuration reader for `new_run_file`. `fill_configuration` reads
   `quick_run`'s `name=value` arguments by each input's declared `type` (`coerce`),
-  then calls the configuration's `fill`/`connect` to assemble the native request
-  body and any task-level connection; inputs marked `required` are errors when
-  left unset, other unset inputs arrive at `fill` as nil (so Lua drops the fields
-  assigned from them). Introspection helpers —
+  then calls the configuration's `build` to assemble the native request body and
+  any task-level connection; inputs marked `required` are errors when left unset,
+  other unset inputs arrive at `build` as nil (so Lua drops the fields assigned
+  from them). Introspection helpers —
   `configurations`/`configuration`/`configuration_names`,
   `configuration_input_names`/`configuration_input_types`/`configuration_required`,
   `requests`, `quick_run_adapters` — drive completion and scaffolding. Native keys
   throughout — no portable/generic field vocabulary.
 - [scaffold.lua](lua/easydap/scaffold.lua) — run-file creation behind `:Debug
-  new_run_file`: renders a configuration's `template` (via `easydap.schema`) into a
-  runnable Lua run_file, then opens it.
+  new_run_file`: splices a configuration's `template` source into a runnable Lua
+  run_file (re-indenting it, nothing more) and opens it.
 
-  `fill` and `template` are deliberately separate and never meet: `quick_run` goes
-  `inputs -> fill -> body -> task`, while `new_run_file` goes `template -> Lua
+  `build` and `template` are deliberately separate and never meet: `quick_run` goes
+  `inputs -> build -> body -> task`, while `new_run_file` goes `template -> Lua
   source -> user edits -> task` (a run file's `parameters` is sent verbatim, never
-  filled). One table serving both is what forced the old `"{name}"`/`"{name:transform}"`
-  token grammar, which leaked unsubstituted tokens into scaffolded files. The field
-  list living in both `fill` and `template` is the accepted cost: drift there hurts
-  scaffold quality, never `quick_run` correctness.
+  built). One table serving both is what forced the old `"{name}"`/`"{name:transform}"`
+  token grammar, which leaked unsubstituted tokens into scaffolded files. Two costs
+  are accepted deliberately: the field list lives in both `build` and `template`
+  (drift hurts scaffold quality, never `quick_run` correctness), and the template is
+  unvalidated text (a typo surfaces only when that configuration is scaffolded).
 
 **Persistence** — [store.lua](lua/easydap/store.lua)
 - A thin path + read/write helper. The project root is the nearest ancestor of

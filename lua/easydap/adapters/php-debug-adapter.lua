@@ -10,18 +10,18 @@ return {
             inputs = {
                 cwd = { type = "cwd", description = "working directory" },
             },
-            template = {
-                type = "php",
-                name = "Listen for Xdebug",
-                cwd  = vim.fn.getcwd,
-                port = 9003,
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.type = "php"
                 params.name = "Listen for Xdebug"
                 params.cwd  = inputs.cwd
                 params.port = 9003
             end,
+            template = [[
+                type = "php",
+                name = "Listen for Xdebug",
+                cwd  = vim.fn.getcwd(),  -- working directory
+                port = 9003,             -- port Xdebug connects back on
+            ]],
         },
     },
 }

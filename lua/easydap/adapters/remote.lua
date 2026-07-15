@@ -14,10 +14,13 @@ return {
                 host = { type = "host", description = "DAP server host" },
                 port = { type = "port", description = "DAP server port" },
             },
-            template = {},
-            connect = function(inputs)
-                return { host = inputs.host, port = inputs.port }
+            build = function(_, connect, inputs)
+                connect.host = inputs.host
+                connect.port = inputs.port
             end,
+            -- Nothing to seed: host/port live at the task level, and the scaffolder
+            -- already writes those from the adapter def.
+            template = "",
         },
     },
 }

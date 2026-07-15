@@ -64,7 +64,7 @@ return {
     -- (https://github.com/microsoft/vscode-js-debug/blob/main/OPTIONS.md). js-debug
     -- picks the debuggee's console via `console`, not runInTerminal.
     configurations = {
-        -- One `command` input carries the whole command line; `fill` splits it into
+        -- One `command` input carries the whole command line; `build` splits it into
         -- `program` (the first word) and `args` (the rest).
         launch = {
             description = "debug a Node.js/JS/TS file",
@@ -74,14 +74,7 @@ return {
                 cwd     = { type = "cwd", description = "working directory" },
                 env     = { type = "env", description = "environment variables" },
             },
-            template = {
-                type    = "pwa-node",
-                program = "./index.js",
-                args    = { "--verbose" },
-                cwd     = vim.fn.getcwd,
-                env     = { EXAMPLE = "value" },
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.type = "pwa-node"
                 if inputs.command then
                     params.program = vim.fn.expand(inputs.command[1] or "")
@@ -90,6 +83,13 @@ return {
                 params.cwd = inputs.cwd
                 params.env = inputs.env
             end,
+            template = [[
+                type    = "pwa-node",
+                program = "./index.js",           -- JS/TS file to run
+                args    = { "--verbose" },        -- arguments passed to it
+                cwd     = vim.fn.getcwd(),        -- working directory
+                env     = { EXAMPLE = "value" },  -- environment variables
+            ]],
         },
         attach = {
             description = "attach to a running process by pid",
@@ -97,14 +97,14 @@ return {
             inputs = {
                 pid = { type = "integer", description = "process id to attach to" },
             },
-            template = {
-                type      = "pwa-node",
-                processId = 0,
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.type      = "pwa-node"
                 params.processId = inputs.pid
             end,
+            template = [[
+                type      = "pwa-node",
+                processId = 41234,  -- process id to attach to
+            ]],
         },
         remote = {
             description = "attach to a remote Node.js process over host/port",
@@ -113,16 +113,16 @@ return {
                 host = { type = "host", description = "remote Node.js host" },
                 port = { type = "port", description = "remote Node.js debug port" },
             },
-            template = {
-                type    = "pwa-node",
-                address = "127.0.0.1",
-                port    = 9229,
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.type    = "pwa-node"
                 params.address = inputs.host
                 params.port    = inputs.port
             end,
+            template = [[
+                type    = "pwa-node",
+                address = "127.0.0.1",  -- remote Node.js host
+                port    = 9229,         -- remote Node.js debug port
+            ]],
         },
     },
 }

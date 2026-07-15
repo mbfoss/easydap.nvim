@@ -18,19 +18,18 @@ return {
                 host = { type = "host", description = "JDWP host of the debug server" },
                 port = { type = "port", description = "JDWP port of the debug server" },
             },
-            template = {
-                hostName = "127.0.0.1",
-                port     = 5005,
-                timeout  = 30000,
-            },
-            fill = function(params, inputs)
+            build = function(params, connect, inputs)
                 params.hostName = inputs.host
                 params.port     = inputs.port
                 params.timeout  = 30000
+                connect.host = inputs.host
+                connect.port = inputs.port
             end,
-            connect = function(inputs)
-                return { host = inputs.host, port = inputs.port }
-            end,
+            template = [[
+                hostName = "127.0.0.1",  -- JDWP host of the debug server
+                port     = 5005,         -- JDWP port of the debug server
+                timeout  = 30000,
+            ]],
         },
     },
 }

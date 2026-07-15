@@ -68,7 +68,7 @@ return {
         -- Launch mode defaults to "debug" (LaunchConfig, service/dap/config.go);
         -- `dlvCwd`/per-mode fields (buildFlags, corefilePath, …) aren't set by
         -- this configuration — add them to the run file directly if needed.
-        -- One `command` input carries the whole command line; `fill` splits it into
+        -- One `command` input carries the whole command line; `build` splits it into
         -- `program` (the first word) and `args` (the rest).
         launch = {
             description = "debug a Go package/binary",
@@ -78,14 +78,7 @@ return {
                 cwd     = { type = "cwd", description = "working directory" },
                 env     = { type = "env", description = "environment variables" },
             },
-            template = {
-                mode    = "debug",
-                program = ".",
-                args    = { "--verbose" },
-                cwd     = vim.fn.getcwd,
-                env     = { EXAMPLE = "value" },
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.mode = "debug"
                 if inputs.command then
                     params.program = vim.fn.expand(inputs.command[1] or "")
@@ -94,6 +87,13 @@ return {
                 params.cwd = inputs.cwd
                 params.env = inputs.env
             end,
+            template = [[
+                mode    = "debug",
+                program = ".",                    -- Go package or binary (defaults to the cwd package)
+                args    = { "--verbose" },        -- arguments passed to it
+                cwd     = vim.fn.getcwd(),        -- working directory
+                env     = { EXAMPLE = "value" },  -- environment variables
+            ]],
         },
         -- Only `dlv dap`-served attach mode is "local" (attach to a process the
         -- server can see); "remote" attach is served by `dlv --headless` and
@@ -104,14 +104,14 @@ return {
             inputs = {
                 pid = { type = "integer", description = "process id to attach to" },
             },
-            template = {
-                mode      = "local",
-                processId = 0,
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.mode      = "local"
                 params.processId = inputs.pid
             end,
+            template = [[
+                mode      = "local",
+                processId = 41234,  -- process id to attach to
+            ]],
         },
     },
 }

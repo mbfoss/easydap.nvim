@@ -17,7 +17,7 @@ return {
     -- is set as `program.file`. Field set follows tomblind/local-lua-debugger-vscode's
     -- launch configuration.
     configurations = {
-        -- One `command` input carries the whole command line; `fill` splits it into
+        -- One `command` input carries the whole command line; `build` splits it into
         -- the script (`program.file`) and `args` (the rest).
         launch = {
             description = "debug a Lua script",
@@ -27,19 +27,7 @@ return {
                 cwd     = { type = "cwd", description = "working directory" },
                 env     = { type = "env", description = "environment variables" },
             },
-            template = {
-                type = "lua-local",
-                name = "Debug",
-                program = {
-                    lua           = function() return vim.fn.exepath("lua") end,
-                    communication = "stdio",
-                    file          = "./main.lua",
-                },
-                args = { "--verbose" },
-                cwd  = vim.fn.getcwd,
-                env  = { EXAMPLE = "value" },
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.type = "lua-local"
                 params.name = "Debug"
                 params.program = {
@@ -53,6 +41,18 @@ return {
                 params.cwd = inputs.cwd
                 params.env = inputs.env
             end,
+            template = [[
+                type = "lua-local",
+                name = "Debug",
+                program = {
+                    lua           = vim.fn.exepath("lua"),  -- Lua interpreter to run under
+                    communication = "stdio",
+                    file          = "./main.lua",           -- Lua script to run
+                },
+                args = { "--verbose" },        -- arguments passed to the script
+                cwd  = vim.fn.getcwd(),        -- working directory
+                env  = { EXAMPLE = "value" },  -- environment variables
+            ]],
         },
     },
 }

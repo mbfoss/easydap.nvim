@@ -537,10 +537,9 @@ provision tooling before the session connects (this is how the `debugpy` and
 `js-debug` adapters work).
 
 To make an adapter work with `:Debug quick_run` and `:Debug new_run_file`, give
-it one or more named `configurations`. Each declares an `inputs` table, a `fill`
+it one or more named `configurations`. Each declares an `inputs` table, a `build`
 function that turns those inputs into the adapter's native request body, and a
-`template` — a static native body, seeded with example values, that
-`new_run_file` scaffolds:
+`template` — Lua source text that `new_run_file` scaffolds:
 
 ```lua
 adapters.myadapter = {
@@ -553,16 +552,16 @@ adapters.myadapter = {
         command = { type = "shell_args", required = true, description = "command line to debug" },
         cwd     = { type = "cwd", description = "working directory" },
       },
-      template = {
-        program = "./a.out",
-        args    = { "--verbose" },
-        cwd     = vim.fn.getcwd,
-      },
-      fill = function(params, inputs)
+      build = function(params, connect, inputs)
         params.program = vim.fn.expand(inputs.command[1])
         params.args    = { unpack(inputs.command, 2) }
         params.cwd     = inputs.cwd
       end,
+      template = [[
+        program = "./a.out",        -- executable to debug
+        args    = { "--verbose" },  -- arguments passed to it
+        cwd     = vim.fn.getcwd(),  -- working directory
+      ]],
     },
   },
 }
@@ -570,16 +569,18 @@ adapters.myadapter = {
 
 An input's `type` decides how its `quick_run` string is coerced (`file`, `cwd`,
 `env`, `integer`, `port`, `boolean`, `shell_args`, …), and `required` makes
-leaving it unset an error. Any other unset input simply arrives at `fill` as
+leaving it unset an error. Any other unset input simply arrives at `build` as
 nil, and since Lua drops nil-valued keys, `params.cwd = inputs.cwd` omits `cwd`
 from the body on its own — assign unconditionally and optional fields take care
-of themselves.
+of themselves. `build`'s `connect` argument is for adapters that connect over a
+task-level TCP endpoint (see [`remote.lua`](lua/easydap/adapters/remote.lua));
+leave it untouched otherwise.
 
-`fill` and `template` serve different commands and never meet: `fill` builds the
-body for `quick_run`, while `template` is only ever rendered into a scaffolded
-run file, whose `parameters` goes to the adapter verbatim. Adapters that connect
-over a task-level TCP endpoint add `connect = function(inputs) ... end` returning
-`host`/`port` (see [`remote.lua`](lua/easydap/adapters/remote.lua)).
+`build` and `template` serve different commands and never meet: `build` assembles
+the request for `quick_run`, while `template` is only ever spliced into a
+scaffolded run file, whose `parameters` goes to the adapter verbatim. Because the
+template is source text rather than data, it carries its own comments and keeps
+computed values as expressions the generated run file evaluates when loaded.
 
 See each built-in adapter under
 [`lua/easydap/adapters/`](lua/easydap/adapters/) for fully worked examples

@@ -103,9 +103,8 @@ Each `easydap.Configuration`:
 | ------------- | ------------------------------------------------------------------------------- |
 | `request`     | `"launch"` or `"attach"`                                                        |
 | `inputs`      | what the configuration accepts — `name -> easydap.Input`; see below             |
-| `fill`        | `fun(params, inputs)` — assembles the native request body for `quick_run`       |
-| `template`    | a static native body, seeded with example values, that `new_run_file` scaffolds |
-| `connect`     | `fun(inputs): {host, port}` for adapters that connect over a task-level TCP endpoint (an `AdapterDef` `host`/`port`, e.g. `remote`/`java-debug-server`) — the task's connection, not a body field |
+| `build`       | `fun(params, connect, inputs)` — assembles the native request body, and any task-level TCP endpoint, in place for `quick_run` |
+| `template`    | Lua **source text** for the body `new_run_file` scaffolds, seeded with example values |
 
 Each `easydap.Input` declares one input up front:
 
@@ -115,31 +114,46 @@ Each `easydap.Input` declares one input up front:
 | `required` | when `true`, leaving it unset is a `quick_run` error; any other unset input simply arrives at `fill` as nil |
 | `description` | a few words on what the input means, e.g. `"process id to attach to"` |
 
-### `fill` and `template` are separate paths
+### `build` and `template` are separate paths
 
-They serve different commands and never meet. Keeping them apart is the point of
-the format — each answers one question honestly instead of one table half-answering
-both:
+They serve different commands and never meet:
 
-- **`fill(params, inputs)`** builds the body for `quick_run`. `params` starts
-  empty; assign into it from the coerced `inputs`. Identity fields the adapter
-  pins (`type`/`name`) and fixed defaults are assigned here too, as plain
-  literals. An unset input is nil, and Lua drops nil-valued keys, so
-  `params.cwd = inputs.cwd` omits `cwd` when it wasn't supplied — assign
+```
+quick_run     inputs ─→ build ─→ body ─→ task
+new_run_file  template ─→ Lua source ─→ (you edit it) ─→ task
+```
+
+Keeping them apart is the point of the format — each answers one question honestly
+instead of one table half-answering both. A run file's `parameters` is sent to the
+adapter verbatim (`easydap.task`), so it never passes through `build`, and `build`
+never produces anything the scaffolder reads.
+
+- **`build(params, connect, inputs)`** assembles everything `quick_run` needs, in
+  place. `params` and `connect` both start empty; assign into them from the coerced
+  `inputs`. Identity fields the adapter pins (`type`/`name`) and fixed defaults go
+  here too, as plain literals. An unset input is nil, and Lua drops nil-valued
+  keys, so `params.cwd = inputs.cwd` omits `cwd` when it wasn't supplied — assign
   unconditionally and optional fields take care of themselves. Guard only when a
-  field is *derived* from an input (`if inputs.program then params.targetCreateCommands
-  = { "target create " .. inputs.program } end`), since indexing nil would throw.
-- **`template`** is what `new_run_file` renders into the generated run file. A
-  run file's `parameters` goes to the adapter verbatim (`easydap.task`), so it
-  never passes through `fill`. A leaf may be a literal or a zero-arg function
-  resolved at scaffold time (`vim.fn.getcwd`, `function() return
-  vim.fn.exepath("lua") end`). Seed it with realistic values a reader can edit —
-  `program = "./a.out"`, not `program = ""` — since nothing else in the generated
-  file explains the field.
+  field is *derived* from an input (`if inputs.program then
+  params.targetCreateCommands = { "target create " .. inputs.program } end`), since
+  indexing nil would throw. Leave `connect` untouched unless the adapter takes a
+  task-level TCP endpoint — an empty `connect` leaves the adapter def's own
+  host/port in force.
+- **`template`** is Lua source text for the body of the generated run file's
+  `parameters` table, spliced in as written and only re-indented (write it at
+  whatever indentation reads best in the adapter file). Because it is source rather
+  than data it carries its own comments, key order and computed values —
+  `cwd = vim.fn.getcwd()` stays an expression the *run file* evaluates when loaded,
+  so the generated file is portable instead of baking in one machine's paths. Seed
+  it with realistic values a reader can edit — `program = "./a.out"`, not
+  `program = ""` — and comment each field, since the template is the only thing that
+  explains the generated file.
 
-The field list appears in both, and nothing checks they agree. That's the price:
-drift costs scaffold quality (a field the run file doesn't seed), never
-`quick_run` correctness.
+Two prices are worth naming. The field list appears in both `build` and `template`,
+and nothing checks they agree — drift costs scaffold quality (a field the run file
+doesn't seed), never `quick_run` correctness. And the template is unvalidated text:
+a typo in it surfaces only when someone scaffolds that configuration, so scaffold
+one after editing (`:Debug new_run_file <adapter> <configuration> /tmp/x.lua`).
 
 Input *names* are `snake_case` (`stop_on_entry`, `wait_for`): they are easydap's
 own user-facing vocabulary — the `name=value` tokens typed at `quick_run` — not
@@ -150,10 +164,12 @@ are normal and correct.
 Which names a configuration takes is up to it — there is no portable role
 vocabulary across adapters — but by convention a `launch` configuration takes one
 `command` input (`type = "shell_args"`) carrying the whole command line, and
-`fill` splits it into that adapter's own program/args fields. See each file under
+`build` splits it into that adapter's own program/args fields. See each file under
 [adapters/](lua/easydap/adapters/) for worked examples of every shape, including
 nested `connect` groups (`debugpy`'s `remote` configuration), custom-launch
-command strings (`codelldb`'s `core`) and computed template seeds.
+command strings (`codelldb`'s `core`), a `connect`-only configuration
+(`remote`), and one input feeding both body and connection
+(`java-debug-server`).
 
 ## Conventions
 

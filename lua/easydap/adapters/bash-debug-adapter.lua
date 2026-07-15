@@ -15,23 +15,7 @@ return {
                 cwd    = { type = "cwd", description = "working directory" },
                 env    = { type = "env", description = "environment variables" },
             },
-            template = {
-                type = "bashdb",
-                name = "Launch Bash Script",
-                program = "./run.sh",
-                cwd     = vim.fn.getcwd,
-                env     = { EXAMPLE = "value" },
-                pathBash      = "bash",
-                pathBashdb    = "bash-debug-adapter",
-                pathBashdbLib = function()
-                    return vim.fs.joinpath(vim.fn.stdpath("data"), "mason", "packages", "bash-debug-adapter")
-                end,
-                pathCat      = "cat",
-                pathMkfifo   = "mkfifo",
-                pathPkill    = "pkill",
-                terminalKind = "integrated",
-            },
-            fill = function(params, inputs)
+            build = function(params, _, inputs)
                 params.type    = "bashdb"
                 params.name    = "Launch Bash Script"
                 params.program = inputs.script
@@ -46,6 +30,21 @@ return {
                 params.pathPkill    = "pkill"
                 params.terminalKind = "integrated"
             end,
+            template = [[
+                type = "bashdb",
+                name = "Launch Bash Script",
+                program = "./run.sh",             -- bash script to debug
+                cwd     = vim.fn.getcwd(),        -- working directory
+                env     = { EXAMPLE = "value" },  -- environment variables
+                pathBash      = "bash",
+                pathBashdb    = "bash-debug-adapter",
+                pathBashdbLib = vim.fs.joinpath(
+                    vim.fn.stdpath("data"), "mason", "packages", "bash-debug-adapter"),
+                pathCat      = "cat",
+                pathMkfifo   = "mkfifo",
+                pathPkill    = "pkill",
+                terminalKind = "integrated",
+            ]],
         },
     },
 }
