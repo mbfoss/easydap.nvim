@@ -47,8 +47,11 @@
 ---One declared input of a configuration — the `name=value` arguments `quick_run`
 ---accepts. `type` is what `build` receives; `format` says how the raw CLI string is
 ---read into it, and drives path-aware value completion. Omit both for an input taken
----verbatim as a string. An input with `required = true` must be supplied — leaving it
----unset is a `quick_run` error; any other input simply arrives at `build` as nil.
+---verbatim as a string. An input with `required = true` must be written out as an
+---argument — leaving it unset is a `quick_run` error; any other input simply arrives
+---at `build` as nil, which a `build` is free to answer some other way than by
+---omitting the field (an attach configuration asks the user to pick a process for an
+---unset `pid`, which is why no adapter marks that input `required`).
 ---@class easydap.Input
 ---@field type?        easydap.InputType    default `string`
 ---@field format?      easydap.InputFormat  default: read by `type` alone
@@ -70,6 +73,16 @@
 ---    assign unconditionally and optional fields take care of themselves. Identity
 ---    fields the adapter pins (`type`/`name`) and fixed defaults are assigned here
 ---    too, as plain literals.
+---
+---    Omitting the field is only the *default* answer to an unset input; `build` is
+---    where a configuration decides otherwise, because it alone knows what the
+---    request means. An attach body is nothing without a process, so every attach
+---    `build` resolves an unset `pid` by asking the user to pick one
+---    (`shared.resolve_pid`) — the schema layer just reads a pid as the integer it
+---    is. Such a `build` yields; `fill_configuration` runs it on a coroutine for
+---    exactly that reason and delivers the body once it returns. A `build` that
+---    cannot go on returns an error string (a cancelled picker), which `quick_run`
+---    reports and which aborts the run.
 ---  * `template` is what `new_run_file` scaffolds: Lua **source text** for the body
 ---    of the generated run file's `parameters` table, spliced in as written (only
 ---    re-indented). Because it is source rather than data it carries its own
@@ -87,7 +100,7 @@
 ---@field description  string
 ---@field request      "launch"|"attach"
 ---@field inputs?      table<string, easydap.Input>  the configuration's declared inputs
----@field build?       fun(params: table, connect: table, inputs: table<string, any>)  assemble body + connection in place
+---@field build?       fun(params: table, connect: table, inputs: table<string, any>): string?  assemble body + connection in place; return an error string to abort
 ---@field template?    string   Lua source for the scaffolded run file's `parameters` body
 
 ---A static adapter definition — the launch/attach template for one adapter.

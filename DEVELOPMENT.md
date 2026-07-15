@@ -56,8 +56,9 @@ Re-exports client signals so consumers depend only on `manager`.
   `quick_run`, `rerun`, and the run panel.
 - [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug quick_run` and
   the reader for `new_run_file`. Coerces a configuration's declared `inputs` from
-  `name=value` arguments and calls its `fill`/`connect` (`fill_configuration`) to
-  assemble the resulting native request body / task-level connection.
+  `name=value` arguments and calls its `build` (`fill_configuration`) to assemble
+  the resulting native request body / task-level connection, handing them to a
+  `done` callback — a `build` may stop to ask the user something first.
 - [scaffold.lua](lua/easydap/scaffold.lua) — `:Debug new_run_file`: renders a
   configuration's `template` into a runnable Lua run file and opens it.
 
@@ -112,7 +113,7 @@ Each `easydap.Input` declares one input up front:
 | ---------- | ------------------------------------------------------------------------------ |
 | `type`     | what the input *is* — the Lua type `build` receives: one of `string`/`boolean`/`integer`/`number`/`table`. Defaults to `string` |
 | `format`   | how its raw `quick_run` string is read into that type: one of `file`/`dir`/`cwd`/`host`/`port`/`env`/`list`/`shell_args` (`easydap.schema.coerce` does the reading). It also drives path-aware value completion. Omit it and the string is read by `type` alone — verbatim for a string, `tonumber` for a number/integer, true/1/yes or false/0/no for a boolean. A `table` input always needs one |
-| `required` | when `true`, leaving it unset is a `quick_run` error; any other unset input simply arrives at `fill` as nil |
+| `required` | when `true`, the user must write the value out as an argument; leaving it unset is a `quick_run` error. Any other unset input simply arrives at `build` as nil — which `build` may answer by omitting the field, or some other way: an attach `build` asks the user to pick a process for an unset `pid`, so no adapter marks that input `required` |
 | `description` | a few words on what the input means, e.g. `"process id to attach to"` |
 
 ### `build` and `template` are separate paths
@@ -140,6 +141,26 @@ never produces anything the scaffolder reads.
   indexing nil would throw. Leave `connect` untouched unless the adapter takes a
   task-level TCP endpoint — an empty `connect` leaves the adapter def's own
   host/port in force.
+
+  Omitting the field is only the *default* answer to an unset input; `build` is
+  where a configuration decides otherwise, because it alone knows what the request
+  means. An attach body is nothing without a process, so every attach `build`
+  resolves an unset `pid` by asking the user to pick one:
+
+  ```lua
+  build = function(params, _, inputs)
+      local pid, err = shared.resolve_pid(inputs.pid)
+      if not pid then return err end   -- cancelled: abort the run
+      params.processId = pid
+  end,
+  ```
+
+  The schema layer stays out of this — to it a pid is the integer it is. A `build`
+  that prompts yields, which is why `fill_configuration` runs the `build` call on a
+  coroutine and reports through a `done(body, connect, err)` callback rather than a
+  return: the pid arrives from a `vim.ui.select` callback, long after a return value
+  would have been read. `done` fires synchronously for every `build` that asks
+  nothing. Returning a string from `build` aborts with that error.
 - **`template`** is Lua source text for the body of the generated run file's
   `parameters` table, spliced in as written and only re-indented (write it at
   whatever indentation reads best in the adapter file). Because it is source rather

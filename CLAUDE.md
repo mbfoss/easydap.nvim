@@ -59,9 +59,13 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   type `build` receives) and optional `format` (how the string is read into it) —
   `coerce` —
   then calls the configuration's `build` to assemble the native request body and
-  any task-level connection; inputs marked `required` are errors when left unset,
-  other unset inputs arrive at `build` as nil (so Lua drops the fields assigned
-  from them). Introspection helpers —
+  any task-level connection, delivering them to a `done(body, connect, err)`
+  callback; inputs marked `required` are errors when left unset, other unset inputs
+  arrive at `build` as nil (so Lua drops the fields assigned from them) unless that
+  `build` answers them another way. `build` runs on a coroutine — it is the one
+  thing here allowed to yield, which is how an attach configuration can ask the user
+  to pick a process for an unset `pid` (`shared.resolve_pid`); a `build` that gives
+  up returns an error string. Introspection helpers —
   `configurations`/`configuration`/`configuration_names`,
   `configuration_input_names`/`configuration_input_formats`/`configuration_required`,
   `requests`, `quick_run_adapters` — drive completion and scaffolding. Native keys

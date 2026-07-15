@@ -2,6 +2,9 @@
 -- matches the keys netcoredbg's VS Code protocol handler reads
 -- (Samsung/netcoredbg, src/protocols/vscodeprotocol.cpp); `justMyCode` and
 -- `enableStepFiltering` default to true there. No runInTerminal/console arg.
+
+local shared = require("easydap.shared")
+
 ---@type easydap.AdapterDef
 return {
     command = { "netcoredbg", "--interpreter=vscode" },
@@ -38,7 +41,9 @@ return {
                 pid = { type = "integer", description = "process id to attach to" },
             },
             build = function(params, _, inputs)
-                params.processId = inputs.pid
+                local pid, err = shared.resolve_pid(inputs.pid)
+                if not pid then return err end
+                params.processId = pid
             end,
             template = [[
                 processId = 41234,  -- process id to attach to

@@ -18,6 +18,9 @@
 --
 -- lldb-dap's `gdb-remote-*` are plain body fields (this stdio adapter is not
 -- task-level TCP), so the gdb_remote configuration has no `connect`.
+
+local shared = require("easydap.shared")
+
 ---@type easydap.AdapterDef
 return {
     command = "lldb-dap",
@@ -56,12 +59,14 @@ return {
             description = "attach to a running process by pid",
             request = "attach",
             inputs = {
-                pid = { type = "integer", required = true, description = "process id to attach to" },
+                pid = { type = "integer", description = "process id to attach to" },
             },
             build = function(params, _, inputs)
+                local pid, err = shared.resolve_pid(inputs.pid)
+                if not pid then return err end
                 params.name = "lldb"
                 params.type = "lldb-dap"
-                params.pid  = inputs.pid
+                params.pid  = pid
             end,
             template = [[
                 name = "lldb",

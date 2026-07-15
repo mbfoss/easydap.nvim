@@ -219,7 +219,8 @@ end
 ---Read every declared input from `values`, coercing each by its `type`/`format`.
 ---A value that is already a non-string Lua value is taken verbatim. Unset inputs
 ---are simply absent from the result (recorded in `missing` when `required`), which
----is what lets `build` omit their fields by assigning nil.
+---is what lets `build` omit their fields by assigning nil — or source them some
+---other way, as an attach configuration does for an unset `pid`.
 ---@param configuration easydap.Configuration
 ---@param values table<string, any>  input name → raw CLI string or typed value
 ---@return table<string, any> inputs, string[] missing, string[] errs
@@ -250,29 +251,48 @@ end
 ---or an already-typed Lua value to use verbatim) and hand them to the
 ---configuration's `build`, which assembles the native request body and any
 ---task-level connection in place.
+---
+---The result goes to `done` rather than out through a return, because a `build` is
+---free to source an unset input by asking the user (an attach configuration picks a
+---process for an absent `pid`), and an answer that arrives from a `vim.ui.select`
+---callback cannot be returned to a caller that has already moved on. `done` fires
+---synchronously for every `build` that asks nothing — which is most of them — and
+---once the user answers for the rest. Exactly one call, either way.
 ---@param adapter string
 ---@param configuration_name string
 ---@param values table<string, any>
----@return table? body, {host?:string, port?:integer}? connect, string? err
-function M.fill_configuration(adapter, configuration_name, values)
+---@param done fun(body: table?, connect: {host?:string, port?:integer}?, err: string?)
+function M.fill_configuration(adapter, configuration_name, values, done)
     local configuration = M.configuration(adapter, configuration_name)
     if not configuration then
-        return nil, nil, ("adapter %s has no configuration %q (available: %s)")
-            :format(adapter, tostring(configuration_name), table.concat(M.configuration_names(adapter), ", "))
+        return done(nil, nil, ("adapter %s has no configuration %q (available: %s)")
+            :format(adapter, tostring(configuration_name), table.concat(M.configuration_names(adapter), ", ")))
     end
 
     local inputs, missing, errs = _read_inputs(configuration, values)
-    if #errs > 0 then return nil, nil, table.concat(errs, "; ") end
-    if #missing > 0 then return nil, nil, "missing: " .. table.concat(missing, ", ") end
+    if #errs > 0 then return done(nil, nil, table.concat(errs, "; ")) end
+    if #missing > 0 then return done(nil, nil, "missing: " .. table.concat(missing, ", ")) end
 
     local body, connect = {}, {}
-    if configuration.build then configuration.build(body, connect, inputs) end
+    if not configuration.build then return done(body, nil) end
 
-    -- No spec governs `connect` (it's task-level, not a body field), so an unset
-    -- host/port is always optional: a `build` that leaves it empty reports none,
-    -- and the resolved AdapterDef's own host/port apply instead.
-    if next(connect) == nil then connect = nil end
-    return body, connect
+    -- The coroutine wraps the `build` call and nothing else: `build` is the only
+    -- thing here that can yield (on a picker), and everything after it is just the
+    -- answer being packaged up.
+    local co = coroutine.create(function()
+        local ok, berr = xpcall(configuration.build, debug.traceback, body, connect, inputs)
+        if not ok then return done(nil, nil, berr) end
+        -- `build` gave up — a cancelled picker.
+        if berr then return done(nil, nil, berr) end
+
+        -- No spec governs `connect` (it's task-level, not a body field), so an unset
+        -- host/port is always optional: a `build` that leaves it empty reports none,
+        -- and the resolved AdapterDef's own host/port apply instead.
+        if next(connect) == nil then connect = nil end
+        done(body, connect)
+    end)
+    local ok, err = coroutine.resume(co)
+    if not ok then done(nil, nil, tostring(err)) end
 end
 
 return M

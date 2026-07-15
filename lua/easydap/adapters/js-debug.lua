@@ -1,4 +1,5 @@
 local ui = require("easydap.util.ui_util")
+local shared = require("easydap.shared")
 
 -- JavaScript / TypeScript — starts js-debug's TCP server, then connects to it.
 ---@type easydap.AdapterDef
@@ -98,8 +99,10 @@ return {
                 pid = { type = "integer", description = "process id to attach to" },
             },
             build = function(params, _, inputs)
+                local pid, err = shared.resolve_pid(inputs.pid)
+                if not pid then return err end
                 params.type      = "pwa-node"
-                params.processId = inputs.pid
+                params.processId = pid
             end,
             template = [[
                 type      = "pwa-node",

@@ -11,6 +11,9 @@
 -- The `core`/`gdb_remote` configurations use codelldb's "custom launch" form:
 -- rather than a `program`, they drive LLDB directly through
 -- `targetCreateCommands`/`processCreateCommands`.
+
+local shared = require("easydap.shared")
+
 ---@type easydap.AdapterDef
 return {
     command = "codelldb",
@@ -49,12 +52,14 @@ return {
             description = "attach to a running process by pid",
             request = "attach",
             inputs = {
-                pid = { type = "integer", required = true, description = "process id to attach to" },
+                pid = { type = "integer", description = "process id to attach to" },
             },
             build = function(params, _, inputs)
+                local pid, err = shared.resolve_pid(inputs.pid)
+                if not pid then return err end
                 params.name = "codelldb"
                 params.type = "lldb"
-                params.pid  = inputs.pid
+                params.pid  = pid
             end,
             template = [[
                 name = "codelldb",

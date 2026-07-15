@@ -304,6 +304,10 @@ end
 ---then is leaving it unset an error. A configuration's optional `connect` function
 ---sets the task's connection endpoint for adapters that connect over a task-level
 ---TCP endpoint (e.g. `remote`/`java-debug-server`).
+---
+---Returns nil when the configuration's `build` stops to ask the user something (an
+---attach picking a process for an unset `pid`): there is no run yet to hand back —
+---it starts once they answer.
 ---@param assignments string[]  adapter, configuration name, then "input=value" tokens, e.g. { "codelldb", "launch", "command=./a.out" }
 ---@return easydap.runner.Run?
 function M.quick_run(assignments)
@@ -345,22 +349,29 @@ function M.quick_run(assignments)
         values[tok:sub(1, eq - 1)] = tok:sub(eq + 1)
     end
 
-    local params, connect, err = schema.fill_configuration(adapter, configuration_name, values)
-    if not params then
-        _err("quick_run: " .. tostring(err))
-        return
-    end
+    -- A configuration whose `build` asks the user something (an attach resolving an
+    -- unset `pid`) finishes filling only once they answer, so the run is started from
+    -- the callback. Every other configuration fills synchronously, and `run` is
+    -- assigned before we return it.
+    local run
+    schema.fill_configuration(adapter, configuration_name, values, function(params, connect, err)
+        if not params then
+            _err("quick_run: " .. tostring(err))
+            return
+        end
 
-    ---@type easydap.Task
-    local task = {
-        name       = adapter,
-        adapter    = adapter,
-        request    = configuration.request,
-        parameters = params,
-        host       = connect and connect.host,
-        port       = connect and connect.port,
-    }
-    return M.run(task)
+        ---@type easydap.Task
+        local task = {
+            name       = adapter,
+            adapter    = adapter,
+            request    = configuration.request,
+            parameters = params,
+            host       = connect and connect.host,
+            port       = connect and connect.port,
+        }
+        run = M.run(task)
+    end)
+    return run
 end
 
 ---Cancel every live run. Stops their sessions, or aborts a run still in adapter

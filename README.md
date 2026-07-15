@@ -570,13 +570,20 @@ adapters.myadapter = {
 An input's `type` is the Lua type `build` receives (`string`, `boolean`,
 `integer`, `number`, `table`), and its `format` decides how the `quick_run` string
 is read into that type (`file`, `cwd`, `env`, `port`, `shell_args`, …) — omit the
-format and the string is read by `type` alone. `required` makes
-leaving it unset an error. Any other unset input simply arrives at `build` as
+format and the string is read by `type` alone. `required` makes leaving it unset
+an error — it says the user has to write the value out. Any other unset input
+simply arrives at `build` as
 nil, and since Lua drops nil-valued keys, `params.cwd = inputs.cwd` omits `cwd`
 from the body on its own — assign unconditionally and optional fields take care
 of themselves. `build`'s `connect` argument is for adapters that connect over a
 task-level TCP endpoint (see [`remote.lua`](lua/easydap/adapters/remote.lua));
 leave it untouched otherwise.
+
+Omitting the field is only the default answer to an unset input — `build` decides,
+and it can answer differently. Every attach configuration resolves an unset `pid`
+by asking, so `:Debug quick_run codelldb attach` with no `pid=` pops a process
+picker instead of failing; returning a string from `build` aborts the run with
+that error, which is how a cancelled picker is reported.
 
 `build` and `template` serve different commands and never meet: `build` assembles
 the request for `quick_run`, while `template` is only ever spliced into a

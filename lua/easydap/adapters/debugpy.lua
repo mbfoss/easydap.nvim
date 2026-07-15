@@ -1,4 +1,5 @@
 local ui = require("easydap.util.ui_util")
+local shared = require("easydap.shared")
 
 ---@return integer
 local function _free_port()
@@ -105,8 +106,10 @@ return {
                 pid = { type = "integer", description = "process id to attach to" },
             },
             build = function(params, _, inputs)
+                local pid, err = shared.resolve_pid(inputs.pid)
+                if not pid then return err end
                 params.type      = "python"
-                params.processId = inputs.pid
+                params.processId = pid
                 params.justMyCode      = false
                 params.showReturnValue = true
             end,

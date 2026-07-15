@@ -1,4 +1,5 @@
 local ui = require("easydap.util.ui_util")
+local shared = require("easydap.shared")
 
 -- Go — `dlv dap` is a TCP DAP server, NOT a stdio adapter: it prints
 -- "DAP server listening at: <host>:<port>" and expects the client to connect over
@@ -105,8 +106,10 @@ return {
                 pid = { type = "integer", description = "process id to attach to" },
             },
             build = function(params, _, inputs)
+                local pid, err = shared.resolve_pid(inputs.pid)
+                if not pid then return err end
                 params.mode      = "local"
-                params.processId = inputs.pid
+                params.processId = pid
             end,
             template = [[
                 mode      = "local",

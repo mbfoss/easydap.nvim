@@ -6,6 +6,9 @@
 -- `program` is a parameter common to launch and attach (it maps to GDB's `file`
 -- command, so the adapter can find symbols); the niche `adaSourceCharset` common
 -- parameter is omitted — add it to a run file directly if debugging Ada.
+
+local shared = require("easydap.shared")
+
 ---@type easydap.AdapterDef
 return {
     command = { "gdb", "--interpreter=dap" },
@@ -43,10 +46,12 @@ return {
             description = "attach to a running process by pid",
             request    = "attach",
             inputs = {
-                pid = { type = "integer", required = true, description = "process id to attach to" },
+                pid = { type = "integer", description = "process id to attach to" },
             },
             build = function(params, _, inputs)
-                params.pid = inputs.pid
+                local pid, err = shared.resolve_pid(inputs.pid)
+                if not pid then return err end
+                params.pid = pid
             end,
             template = [[
                 pid = 41234,  -- process id to attach to
