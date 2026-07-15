@@ -71,12 +71,18 @@ return {
         launch = {
             description = "debug a Go package/binary",
             request = "launch",
+            placeholders = {
+                target = { type = "file" },
+                args   = { type = "shell_args" },
+                cwd    = { type = "cwd" },
+                env    = { type = "env" },
+            },
             parameters = {
                 mode    = "debug",
-                program = "{target:file}",
-                args    = "{args:shell_args}",
-                cwd     = "{cwd:cwd}",
-                env     = "{env:env}",
+                program = "{target}",
+                args    = "{args}",
+                cwd     = "{cwd}",
+                env     = "{env}",
             },
         },
         -- Only `dlv dap`-served attach mode is "local" (attach to a process the
@@ -85,9 +91,12 @@ return {
         attach = {
             description = "attach to a running process by pid",
             request = "attach",
+            placeholders = {
+                pid = { type = "integer" },
+            },
             parameters = {
                 mode      = "local",
-                processId = "{pid:integer}",
+                processId = "{pid}",
             },
         },
     },

@@ -67,29 +67,42 @@ return {
         launch = {
             description = "debug a Node.js/JS/TS file",
             request = "launch",
+            placeholders = {
+                target = { type = "file" },
+                args   = { type = "shell_args" },
+                cwd    = { type = "cwd" },
+                env    = { type = "env" },
+            },
             parameters = {
                 type    = "pwa-node",
-                program = "{target:file}",
-                args    = "{args:shell_args}",
-                cwd     = "{cwd:cwd}",
-                env     = "{env:env}",
+                program = "{target}",
+                args    = "{args}",
+                cwd     = "{cwd}",
+                env     = "{env}",
             },
         },
         attach = {
             description = "attach to a running process by pid",
             request = "attach",
+            placeholders = {
+                pid = { type = "integer" },
+            },
             parameters = {
                 type      = "pwa-node",
-                processId = "{pid:integer}",
+                processId = "{pid}",
             },
         },
         remote = {
             description = "attach to a remote Node.js process over host/port",
             request = "attach",
+            placeholders = {
+                host = { type = "host" },
+                port = { type = "port" },
+            },
             parameters = {
                 type    = "pwa-node",
-                address = "{host:host}",
-                port    = "{port:port}",
+                address = "{host}",
+                port    = "{port}",
             },
         },
     },

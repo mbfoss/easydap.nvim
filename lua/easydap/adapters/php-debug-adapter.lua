@@ -7,10 +7,13 @@ return {
         listen = {
             description = "listen for an incoming Xdebug connection",
             request = "launch",
+            placeholders = {
+                cwd = { type = "cwd" },
+            },
             parameters = {
                 type = "php",
                 name = "Listen for Xdebug",
-                cwd  = "{cwd:cwd}",
+                cwd  = "{cwd}",
                 port = 9003,
             },
         },

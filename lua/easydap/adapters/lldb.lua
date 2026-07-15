@@ -22,62 +22,80 @@
 return {
     command = "lldb-dap",
     configurations = {
+        -- One `command` input carries the whole command line; the per-use kind
+        -- overrides split it into `program` (the first word) and `args` (the rest).
         launch = {
             description = "debug an executable",
             request = "launch",
+            placeholders = {
+                command     = { type = "shell_args", required = true },
+                cwd         = { type = "cwd" },
+                env         = { type = "env" },
+                stopOnEntry = { type = "boolean" },
+            },
             parameters = {
                 name        = "lldb",
                 type        = "lldb-dap",
                 program     = "{command:shell_program}",
                 args        = "{command:shell_rest_args}",
-                cwd         = "{cwd:cwd}",
-                env         = "{env:env}",
-                stopOnEntry = "{stopOnEntry:boolean}",
+                cwd         = "{cwd}",
+                env         = "{env}",
+                stopOnEntry = "{stopOnEntry}",
             },
-            required = { "command" },
         },
         attach = {
             description = "attach to a running process by pid",
             request = "attach",
+            placeholders = {
+                pid = { type = "integer", required = true },
+            },
             parameters = {
                 name = "lldb",
                 type = "lldb-dap",
-                pid  = "{pid:integer}",
+                pid  = "{pid}",
             },
-            required = { "pid" },
         },
         attach_by_name = {
             description = "attach to a process by executable, optionally waiting for it to launch",
             request = "attach",
+            placeholders = {
+                program = { type = "file", required = true },
+                waitFor = { type = "boolean" },
+            },
             parameters = {
                 name    = "lldb",
                 type    = "lldb-dap",
-                program = "{program:file}",
-                waitFor = "{waitFor:boolean}",
+                program = "{program}",
+                waitFor = "{waitFor}",
             },
-            required = { "program" },
         },
         core = {
             description = "post-mortem debug from a core file",
             request = "attach",
+            placeholders = {
+                corefile = { type = "file", required = true },
+                program  = { type = "file" },
+            },
             parameters = {
                 name     = "lldb",
                 type     = "lldb-dap",
-                program  = "{program:file}",
-                coreFile = "{corefile:file}",
+                program  = "{program}",
+                coreFile = "{corefile}",
             },
-            required = { "corefile" },
         },
         gdb_remote = {
             description = "attach over a gdb-remote (gdbserver) connection",
             request = "attach",
-            parameters = {
-                name                 = "lldb",
-                type                 = "lldb-dap",
-                ["gdb-remote-host"]  = "{host:host}",
-                ["gdb-remote-port"]  = "{port:port}",
+            placeholders = {
+                port = { type = "port", required = true },
+                host = { type = "host" },
             },
-            required = { "port" },
+            parameters = {
+                name                = "lldb",
+                type                = "lldb-dap",
+                ["gdb-remote-host"] = "{host}",
+                ["gdb-remote-port"] = "{port}",
+            },
         },
     },
 }

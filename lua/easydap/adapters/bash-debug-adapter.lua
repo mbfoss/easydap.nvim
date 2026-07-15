@@ -10,12 +10,17 @@ return {
         bash_script = {
             description = "debug a bash script",
             request = "launch",
+            placeholders = {
+                script = { type = "file" },
+                cwd    = { type = "cwd" },
+                env    = { type = "env" },
+            },
             parameters = {
                 type = "bashdb",
                 name = "Launch Bash Script",
-                program = "{script:file}",
-                cwd     = "{cwd:cwd}",
-                env     = "{env:env}",
+                program = "{script}",
+                cwd     = "{cwd}",
+                env     = "{env}",
                 pathBash      = "bash",
                 pathBashdb    = "bash-debug-adapter",
                 pathBashdbLib = function()

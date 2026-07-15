@@ -41,25 +41,29 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   definitions as a plain `name -> easydap.AdapterDef` table (one file per adapter
   under `easydap/adapters/`, assembled here): native DAP process/connection config
   plus an optional `configurations` table (`name -> easydap.Configuration`) of
-  launch/attach templates. Each `Configuration` is self-describing — a native
-  request body (`parameters`) whose leaves may be literals, zero-arg functions, or
-  `"{placeholder}"`/`"{placeholder:kind}"` tokens. Users add/override keys
-  directly. The DAP core never reads the configurations — only `easydap.schema` does.
+  launch/attach templates. Each `Configuration` is self-describing — a
+  `placeholders` table declaring its inputs (`name -> easydap.Placeholder`, each
+  with a `type` and optional `required`), plus a native request body
+  (`parameters`) whose leaves may be literals, zero-arg functions, or `"{name}"`
+  tokens referring to those placeholders. Users add/override keys directly. The
+  DAP core never reads the configurations — only `easydap.schema` does.
 - [task.lua](lua/easydap/task.lua) — task runner (`easydap.TaskTypeDef`); the
   `run` backend for external task runners. Consumes a native task
   (`name`/`adapter`/`request`/`parameters` + optional `host`/`port`/
   `raw_messages`) and sends `parameters` as the DAP request body verbatim.
 - [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug quick_run` and
   the configuration reader for `new_run_file`. Reads the adapters' `configurations`
-  and walks each `Configuration`'s `parameters`/`connect` body for
-  `"{placeholder}"`/`"{placeholder:kind}"` leaves. `fill_configuration` coerces
-  `quick_run`'s `name=value` inputs by each placeholder's `kind` (`coerce`) and
-  assembles the native request body plus any task-level connection; `required`
-  names left unset are errors, other unset placeholders are omitted. Introspection
+  and fills each `Configuration`'s `parameters`/`connect` body, substituting
+  `"{name}"` tokens. `fill_configuration` coerces `quick_run`'s `name=value` inputs
+  by each placeholder's declared `type` (`coerce`) and assembles the native request
+  body plus any task-level connection; placeholders marked `required` are errors
+  when left unset, other unset placeholders are omitted. A `"{name:kind}"` token
+  overrides the coercion for one use — reserved for one input feeding two fields
+  differently (a `command` line split into `program`/`args`). Introspection
   helpers — `configurations`/`configuration`/`configuration_names`,
-  `configuration_placeholders`/`configuration_placeholder_kinds`, `requests`,
-  `quick_run_adapters` — drive completion and scaffolding. Native keys throughout —
-  no portable/generic field vocabulary.
+  `configuration_placeholders`/`configuration_placeholder_kinds`/
+  `configuration_required`, `requests`, `quick_run_adapters` — drive completion and
+  scaffolding. Native keys throughout — no portable/generic field vocabulary.
 - [scaffold.lua](lua/easydap/scaffold.lua) — run-file creation behind `:Debug
   new_run_file`: renders one of an adapter's `configurations` (via `easydap.schema`)
   into a runnable Lua run_file, seeded with defaults/placeholders, then opens it.

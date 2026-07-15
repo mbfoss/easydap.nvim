@@ -2,10 +2,10 @@
 ---
 ---Writes a runnable Lua run_file for an adapter + one of its `configurations`,
 ---pre-populating `parameters` from that configuration's literal fields (identity
----fields, computed defaults) and a blank, type-appropriate placeholder for
----each of its `{name}`/`{name:kind}` tokens. It renders the configuration — read via
----`easydap.schema` — into Lua source; the DAP core and body assembly stay in
----`easydap.schema`.
+---fields, computed defaults) and a blank, type-appropriate value for each of its
+---`{name}` tokens — shaped by the placeholder's declared `type`. It renders the
+---configuration — read via `easydap.schema` — into Lua source; the DAP core and
+---body assembly stay in `easydap.schema`.
 
 local schema = require("easydap.schema")
 
@@ -28,23 +28,24 @@ local function _err(msg) vim.notify("[easydap] " .. msg, vim.log.levels.ERROR) e
 ---@param kind string?
 ---@return any
 local function _blank(kind)
-    if kind == "list" or kind == "env" or kind == "shell_args" then return {} end
+    if kind == "list" or kind == "env" or kind == "shell_args" or kind == "shell_rest_args" then return {} end
     if kind == "port" or kind == "integer" then return 0 end
     if kind == "number" then return 0 end
     if kind == "boolean" then return false end
-    return "" -- string / file / dir / cwd / host / unset
+    return "" -- string / file / dir / cwd / host / shell_program / unset
 end
 
 ---Render a configuration's `parameters` as the body of a Lua `parameters` table — a
 ---multi-line source string for a run_file template (see `new_run_file`). Each
----leaf is emitted on its own line: a placeholder becomes a blank value shaped
----like its `kind`; a literal (including a zero-arg function default) is
----resolved via `schema.resolve_value` and kept as-is — those are typically
----identity fields the configuration pins itself, so editing them has no effect once
----the file runs through the same configuration again. `indent` is the column (in
----spaces) the outermost params sit at. Keys are sorted by `_key_priority`
----(identity/target/args/cwd/env first), then alphabetically, for stable,
----readable output.
+---leaf is emitted on its own line: a placeholder token becomes a blank value
+---shaped like its type (the placeholder's declared `type`, or the token's own
+---`:kind` where one overrides it); a literal (including a zero-arg function
+---default) is resolved via `schema.resolve_value` and kept as-is — those are
+---typically identity fields the configuration pins itself, so editing them has no
+---effect once the file runs through the same configuration again. `indent` is the
+---column (in spaces) the outermost params sit at. Keys are sorted by
+---`_key_priority` (identity/target/args/cwd/env first), then alphabetically, for
+---stable, readable output.
 ---@param adapter string
 ---@param configuration_name string
 ---@param indent integer
@@ -54,6 +55,7 @@ local function _render_params(adapter, configuration_name, indent)
     if not configuration then
         return nil, ("adapter %s has no configuration %q"):format(adapter, tostring(configuration_name))
     end
+    local kinds = schema.configuration_placeholder_kinds(adapter, configuration_name)
 
     local lines = {}
     local function emit(fields, pad)
@@ -75,8 +77,12 @@ local function _render_params(adapter, configuration_name, indent)
             else
                 local val = node
                 if type(node) == "string" then
+                    -- A whole-string token seeds a blank of its type; the token's
+                    -- own `:kind` wins where it overrides the declared one.
                     local name, kind = node:match("^{([%w_]+):?([%w_]*)}$")
-                    if name then val = _blank(kind) end
+                    if name then
+                        val = _blank(kind ~= "" and kind or kinds[name])
+                    end
                 elseif type(node) == "function" then
                     val = schema.resolve_value(node)
                 end

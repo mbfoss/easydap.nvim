@@ -20,17 +20,23 @@ return {
         launch = {
             description = "debug a Lua script",
             request = "launch",
+            placeholders = {
+                target = { type = "file" },
+                args   = { type = "shell_args" },
+                cwd    = { type = "cwd" },
+                env    = { type = "env" },
+            },
             parameters = {
                 type = "lua-local",
                 name = "Debug",
                 program = {
                     lua           = function() return vim.fn.exepath("lua") end,
                     communication = "stdio",
-                    file          = "{target:file}",
+                    file          = "{target}",
                 },
-                args = "{args:shell_args}",
-                cwd  = "{cwd:cwd}",
-                env  = "{env:env}",
+                args = "{args}",
+                cwd  = "{cwd}",
+                env  = "{env}",
             },
         },
     },

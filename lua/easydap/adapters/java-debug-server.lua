@@ -14,9 +14,13 @@ return {
         attach = {
             description = "attach to an external java-debug server (e.g. via nvim-jdtls)",
             request = "attach",
+            placeholders = {
+                host = { type = "host" },
+                port = { type = "port" },
+            },
             parameters = {
-                hostName = "{host:host}",
-                port     = "{port:port}",
+                hostName = "{host}",
+                port     = "{port}",
                 timeout  = 30000,
             },
             connect = { host = "{host}", port = "{port}" },

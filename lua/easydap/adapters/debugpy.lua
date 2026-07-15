@@ -70,12 +70,18 @@ return {
         launch = {
             description = "debug a Python file",
             request = "launch",
+            placeholders = {
+                target = { type = "file" },
+                args   = { type = "shell_args" },
+                cwd    = { type = "cwd" },
+                env    = { type = "env" },
+            },
             parameters = {
                 type            = "python",
-                program         = "{target:file}",
-                args            = "{args:shell_args}",
-                cwd             = "{cwd:cwd}",
-                env             = "{env:env}",
+                program         = "{target}",
+                args            = "{args}",
+                cwd             = "{cwd}",
+                env             = "{env}",
                 justMyCode      = false,
                 showReturnValue = true,
             },
@@ -83,9 +89,12 @@ return {
         attach = {
             description = "attach to a running process by pid",
             request = "attach",
+            placeholders = {
+                pid = { type = "integer" },
+            },
             parameters = {
                 type            = "python",
-                processId       = "{pid:integer}",
+                processId       = "{pid}",
                 justMyCode      = false,
                 showReturnValue = true,
             },
@@ -96,11 +105,15 @@ return {
         remote = {
             description = "attach to a remote debugpy process over host/port",
             request = "attach",
+            placeholders = {
+                host = { type = "host" },
+                port = { type = "port" },
+            },
             parameters = {
                 type = "python",
                 connect = {
-                    host = "{host:host}",
-                    port = "{port:port}",
+                    host = "{host}",
+                    port = "{port}",
                 },
                 justMyCode      = false,
                 showReturnValue = true,

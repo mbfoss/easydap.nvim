@@ -10,8 +10,12 @@ return {
         connect = {
             description = "attach to a DAP server listening on host:port",
             request    = "attach",
+            placeholders = {
+                host = { type = "host" },
+                port = { type = "port" },
+            },
             parameters = {},
-            connect    = { host = "{host}", port = "{port:port}" },
+            connect    = { host = "{host}", port = "{port}" },
         },
     },
 }

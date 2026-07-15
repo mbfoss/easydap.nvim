@@ -175,13 +175,14 @@ Placeholders are native to each adapter/configuration — e.g. codelldb's
 `launch` configuration takes `command` (a full shell command line) and `cwd`,
 while debugpy's `launch` configuration takes `target`, `args`, `cwd` and
 `env`; debugpy's `attach` configuration takes `pid`, and its `remote`
-configuration takes `host`/`port`. Common placeholder kinds include `file`/
-`dir`/`cwd` (path expansion), `env` (`A=1,B=2`), `shell_args`/
-`shell_program`/`shell_rest_args` (shell-quoted splitting) and `integer`/
-`port`/`boolean`.
+configuration takes `host`/`port`. Each placeholder declares a **type** that
+decides how your value is read: `file`/`dir`/`cwd` (path expansion), `env`
+(`A=1,B=2`), `shell_args`/`shell_program`/`shell_rest_args` (shell-quoted
+splitting) and `integer`/`port`/`boolean`.
 
 Tab-completion offers adapters, then configuration names, then the
-placeholders available for the chosen configuration.
+placeholders available for the chosen configuration — and, once you type `=`,
+path completion for placeholders whose type is path-like.
 
 ### Run files — versionable debug configs
 
@@ -534,9 +535,10 @@ provision tooling before the session connects (this is how the `debugpy` and
 `js-debug` adapters work).
 
 To make an adapter work with `:Debug quick_run` and `:Debug new_run_file`, give
-it one or more named `configurations` — each a `request` plus a native
-`parameters` body whose leaves may be a literal, a computed default (a
-zero-arg function), or a `"{placeholder}"`/`"{placeholder:kind}"` token:
+it one or more named `configurations` — each a `request`, a `placeholders` table
+declaring its inputs, and a native `parameters` body whose leaves may be a
+literal, a computed default (a zero-arg function), or a `"{name}"` token
+referring to a declared placeholder:
 
 ```lua
 adapters.myadapter = {
@@ -544,15 +546,25 @@ adapters.myadapter = {
   configurations = {
     launch = {
       request = "launch",
+      placeholders = {
+        target = { type = "file", required = true },
+        args   = { type = "shell_args" },
+        cwd    = { type = "cwd" },
+      },
       parameters = {
-        program = "{target:file}",
-        args    = "{args:shell_args}",
-        cwd     = "{cwd:cwd}",
+        program = "{target}",
+        args    = "{args}",
+        cwd     = "{cwd}",
       },
     },
   },
 }
 ```
+
+A placeholder's `type` decides how its `quick_run` string is coerced (`file`,
+`cwd`, `env`, `integer`, `port`, `boolean`, `shell_args`, …), and `required`
+makes leaving it unset an error — any other unset placeholder is simply omitted
+from the body.
 
 See each built-in adapter under
 [`lua/easydap/adapters/`](lua/easydap/adapters/) for fully worked examples

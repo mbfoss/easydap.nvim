@@ -304,11 +304,14 @@ local function _register_user_commands()
             local name = arg_lead:sub(1, eq - 1)
             local pfx  = arg_lead:sub(1, eq)
             local val  = arg_lead:sub(eq + 1)
-            -- Completing a placeholder's value: offer file paths for path-like
-            -- placeholders (target/cwd); nothing for the rest.
-            local pathish = name == "target" or name == "cwd"
-            if not pathish then return {} end
-            local comp_type = name == "cwd" and "dir" or "file"
+            -- Completing a placeholder's value: offer paths for a path-typed
+            -- placeholder, per the `type` its configuration declares; nothing
+            -- for the rest.
+            local kind = schema.configuration_placeholder_kinds(adapter, configuration_name)[name]
+            local comp_type = (kind == "file" and "file")
+                or ((kind == "dir" or kind == "cwd") and "dir")
+                or nil
+            if not comp_type then return {} end
             return vim.tbl_map(function(f) return pfx .. f end, vim.fn.getcompletion(val, comp_type))
         end
 

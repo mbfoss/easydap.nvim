@@ -99,12 +99,19 @@ no separate schema of their own: each configuration is wholly self-describing.
 
 Each `easydap.Configuration`:
 
-| Field        | Meaning                                                                         |
-| ------------ | ------------------------------------------------------------------------------- |
-| `request`    | `"launch"` or `"attach"`                                                       |
-| `parameters` | the native request body, sent (mostly) verbatim; see leaf shapes below          |
-| `required`   | placeholder names that must be supplied — a missing one is a `quick_run` error; anything else left unset is simply omitted from the body |
-| `connect`    | placeholder mechanism for adapters that connect over a task-level TCP endpoint (an `AdapterDef` `host`/`port`, e.g. `remote`/`java-debug-server`) — its `host`/`port` placeholders set the task's connection, not a body field |
+| Field          | Meaning                                                                         |
+| -------------- | ------------------------------------------------------------------------------- |
+| `request`      | `"launch"` or `"attach"`                                                       |
+| `placeholders` | the configuration's declared inputs — `name -> easydap.Placeholder`; see below   |
+| `parameters`   | the native request body, sent (mostly) verbatim; see leaf shapes below          |
+| `connect`      | placeholder mechanism for adapters that connect over a task-level TCP endpoint (an `AdapterDef` `host`/`port`, e.g. `remote`/`java-debug-server`) — its `host`/`port` placeholders set the task's connection, not a body field |
+
+Each `easydap.Placeholder` declares one input up front:
+
+| Field      | Meaning                                                                        |
+| ---------- | ------------------------------------------------------------------------------ |
+| `type`     | the coercion applied to the raw `quick_run` string — one of `string`/`boolean`/`integer`/`number`/`file`/`dir`/`cwd`/`env`/`host`/`port`/`list`/`shell_args`/`shell_program`/`shell_rest_args` (`easydap.schema.coerce` does the coercion). It also drives type-aware value completion and the blank a scaffolded run_file is seeded with |
+| `required` | when `true`, leaving it unset is a `quick_run` error; any other unset placeholder is simply omitted from the body |
 
 A `parameters` (or `connect`) leaf value is one of:
 
@@ -113,11 +120,17 @@ A `parameters` (or `connect`) leaf value is one of:
   sends;
 - a **zero-arg function** — a computed default resolved at fill time (e.g.
   `function() return vim.fn.getcwd() end`);
-- a **placeholder string** `"{name}"` (kept as a raw string) or `"{name:kind}"`
-  (coerced from a CLI/`quick_run` string by `kind` — one of `boolean`/
-  `integer`/`number`/`file`/`dir`/`cwd`/`env`/`host`/`port`/`list`/
-  `shell_args`/`shell_program`/`shell_rest_args`; `easydap.schema.coerce` does
-  the coercion).
+- a **`"{name}"` token** naming a declared placeholder, coerced by that
+  placeholder's `type`. Tokens may also be embedded in a longer string
+  (`"target create {program}"`), which interpolates; if any embedded token is
+  unset, the whole leaf is dropped.
+
+The `"{name:kind}"` form overrides the coercion for one use. It exists for the
+case where a single input feeds two fields differently — the `launch`
+configurations of `codelldb`/`gdb`/`lldb` split one `command` command line into
+`program` (`shell_program`, the first word) and `args` (`shell_rest_args`, the
+rest) — and is otherwise unnecessary: prefer a bare `"{name}"` and a declared
+`type`.
 
 Placeholder *names* are native to each adapter/configuration — there is no
 portable role vocabulary across adapters (e.g. codelldb's `launch`

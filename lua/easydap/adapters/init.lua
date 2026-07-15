@@ -21,30 +21,44 @@
 ---@field add_bufnr fun(bufnr: integer, opts?: easydap.AddBufOpts)
 ---@field report    fun(message: string)
 
----A named `quick_run`/`new_run_file` configuration for one adapter. `parameters` is a
----native request body whose leaf values may be:
+---One declared input of a configuration — the `name=value` tokens `quick_run`
+---accepts and the fields `new_run_file` seeds. `type` names the coercion applied
+---to the raw CLI string (see `easydap.schema.coerce`); it also drives type-aware
+---value completion and the blank a scaffolded run_file is seeded with. A
+---placeholder with `required = true` must be supplied — leaving it unset is a
+---`quick_run` error; any other unset placeholder is simply omitted from the body.
+---@class easydap.Placeholder
+---@field type?     "string"|"boolean"|"integer"|"number"|"file"|"dir"|"cwd"|"env"|"host"|"port"|"list"|"shell_args"|"shell_program"|"shell_rest_args"
+---@field required? boolean  unset is an error (default false)
+
+---A named `quick_run`/`new_run_file` configuration for one adapter.
+---
+---`placeholders` declares the configuration's inputs up front (name →
+---`easydap.Placeholder`); `parameters` is a native request body that refers to
+---them. A `parameters` leaf may be:
 ---  * a literal (string/boolean/number/table), for identity fields the
 ---    adapter pins itself (`type`/`name`) or fixed defaults it wants sent
 ---    regardless of user input;
 ---  * a zero-arg function, resolved at fill time (a computed default, e.g.
 ---    `function() return vim.fn.getcwd() end`);
----  * a placeholder string `"{name}"` (kept as a raw string) or `"{name:kind}"`
----    (coerced from a CLI string by `kind` — one of `boolean`/`integer`/
----    `number`/`file`/`dir`/`cwd`/`env`/`host`/`port`/`list`/`shell_args`/
----    `shell_program`/`shell_rest_args`;
----    `easydap.schema.coerce` does the coercion).
----`required` lists placeholder names that must be supplied (a missing one is a
----`quick_run` error; anything else left unset is simply omitted from the body).
+---  * a `"{name}"` token naming a declared placeholder, coerced by that
+---    placeholder's `type`. Tokens may also be embedded in a longer string
+---    (`"target create {program}"`), which interpolates.
+---The `"{name:kind}"` form overrides the coercion for that one use. It exists for
+---the case where a single input feeds two fields differently — a shell command
+---line split into `program` (`shell_program`) and `args` (`shell_rest_args`) —
+---and is otherwise unnecessary: prefer a bare `"{name}"` and a declared `type`.
+---
 ---`connect` is the same placeholder mechanism for adapters that connect over a
 ---task-level TCP endpoint (an `AdapterDef` `host`/`port`, e.g. `remote`/
 ---`java-debug-server`) — its `host`/`port` placeholders set the task's
 ---connection, not a body field.
 ---@class easydap.Configuration
----@field description string
----@field request     "launch"|"attach"
----@field parameters  table    native request body; leaves may be a literal, a zero-arg function, or `"{placeholder}"`/`"{placeholder:kind}"`
----@field required?   string[]                    placeholder names that must be supplied
----@field connect?    {host?: string, port?: string}   task-level connection placeholders
+---@field description    string
+---@field request        "launch"|"attach"
+---@field placeholders?  table<string, easydap.Placeholder>  the configuration's declared inputs
+---@field parameters     table    native request body; leaves may be a literal, a zero-arg function, or a `"{placeholder}"` token
+---@field connect?       {host?: string, port?: string}   task-level connection placeholders
 
 ---A static adapter definition — the launch/attach template for one adapter.
 ---Entries of this module are values of this type. It is NOT the per-run config

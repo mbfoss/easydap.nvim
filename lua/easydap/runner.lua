@@ -300,9 +300,9 @@ end
 ---every argument from `[3]` on is a `placeholder=value` assignment filled into
 ---the configuration via `schema.fill_configuration` (see `schema.configuration_placeholders`
 ---for the set a configuration accepts). A placeholder left unset is simply omitted
----from the assembled body, unless the configuration lists it in `required` — only
----then is leaving it unset an error. A configuration's optional `connect` block sets
----the task's connection endpoint for
+---from the assembled body, unless its `placeholders` entry marks it
+---`required = true` — only then is leaving it unset an error. A configuration's
+---optional `connect` block sets the task's connection endpoint for
 ---adapters that connect over a task-level TCP endpoint (e.g. `remote`/
 ---`java-debug-server`).
 ---@param assignments string[]  adapter, configuration name, then "placeholder=value" tokens, e.g. { "codelldb", "launch", "command=./a.out" }
