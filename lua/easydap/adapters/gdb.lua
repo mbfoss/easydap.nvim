@@ -29,7 +29,7 @@ return {
                 params.program = vim.fn.expand(inputs.command[1] or "")
                 params.args    = { unpack(inputs.command, 2) }
                 params.cwd     = inputs.cwd
-                params.env     = inputs.env
+                params.env     = vim.tbl_extend("force", vim.fn.environ(), inputs.env or {}) -- gdb does not merge env variables on it's own (unlike lldb)
                 params.stopOnEntry = inputs.stop_on_entry
                 params.stopAtBeginningOfMainSubprogram = inputs.stop_at_main
             end,
