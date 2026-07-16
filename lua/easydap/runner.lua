@@ -253,8 +253,10 @@ end
 ---    `quick_run` does — so `values` are the configuration's declared inputs, not a
 ---    raw request body. `build` may open a picker (an attach resolving an unset
 ---    `pid`), so the run starts from the resolve callback.
----  * native: `adapter` + `parameters` (the raw DAP body, sent verbatim). This is the
----    same `easydap.Task` shape `run`/`start_task` take.
+---  * native: `adapter` + `request` (`"launch"`/`"attach"`) + `parameters` (the raw
+---    DAP body, forwarded to the adapter verbatim). No `configuration` — the two are
+---    told apart by whether a `configuration` field is present. This is the same
+---    `easydap.Task` shape `run`/`start_task` take.
 ---
 ---Reports a clear error for every failure mode instead of throwing: missing/empty
 ---path, path not found, non-`.lua` file, load or runtime error, or a file that does
@@ -323,6 +325,8 @@ function M.run_file(path)
         return
     end
 
+    -- Native run file: `request` + `parameters` are already an `easydap.Task`, sent
+    -- to the adapter verbatim.
     M.run(spec)
 end
 

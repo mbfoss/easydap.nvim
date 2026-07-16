@@ -187,15 +187,36 @@ completion for inputs whose type is path-like.
 ### Run files — versionable debug configs
 
 A run file is a Lua file that returns a single task table. Keep it in your
-project and run it whenever you need it:
+project and run it whenever you need it. Two shapes are accepted, told apart by
+whether a `configuration` field is present.
+
+**Inputs-based** — names a `configuration` and fills in its declared inputs. It
+resolves exactly like `:Debug quick_run`, so a required input left unset is an
+error and an attach with no `pid` pops a process picker:
 
 ```lua
 -- debug.lua
 return {
-  name       = "debug app",       -- run/panel label (defaults to "debug")
-  adapter    = "codelldb",        -- an entry in require("easydap.adapters")
+  name          = "debug app",    -- run/panel label (defaults to "debug")
+  adapter       = "codelldb",     -- an entry in require("easydap.adapters")
+  configuration = "launch",       -- one of the adapter's named configurations
+  values        = {               -- the configuration's declared inputs
+    command = "./build/app --verbose",
+    cwd     = vim.fn.getcwd(),
+  },
+}
+```
+
+**Native** — no `configuration`; you supply the adapter's raw DAP body directly
+under `parameters`, forwarded to the adapter verbatim:
+
+```lua
+-- debug.lua
+return {
+  name       = "debug app",
+  adapter    = "codelldb",
   request    = "launch",          -- "launch" or "attach"
-  parameters = {                  -- the adapter's native launch/attach body, sent verbatim
+  parameters = {                  -- the adapter's native launch/attach body, sent as-is
     program = "./build/app",
     args    = { "--verbose" },
     cwd     = "${workspaceFolder}",
@@ -203,7 +224,7 @@ return {
 }
 ```
 
-Run it — pass a file, or a **directory** to pick from its `.lua` files:
+Run either — pass a file, or a **directory** to pick from its `.lua` files:
 
 ```vim
 :Debug run_file debug.lua
@@ -211,22 +232,23 @@ Run it — pass a file, or a **directory** to pick from its `.lua` files:
 :Debug rerun                     " re-launch the most recently run task
 ```
 
-`parameters` is the adapter's **raw** DAP launch/attach body, sent as-is. See
-each adapter's upstream documentation for the fields it accepts.
+For the native shape, see each adapter's upstream documentation for the
+`parameters` fields it accepts.
 
 ### `:Debug new_run_file` — scaffold a run file
 
-Generate a ready-to-edit run file from one of the adapter's configurations,
-seeded with example values for that adapter's native fields.
+Generate a ready-to-edit, inputs-based run file from one of the adapter's
+configurations. Required inputs are written active; every other input is listed
+commented out with its description, so you uncomment just what you need:
 
 ```vim
 :Debug new_run_file codelldb launch
 " → writes <project root>/codelldb_launch.lua and opens it
 ```
 
-Edit the fields, then `:Debug run_file` it. The generated `parameters` is a
-plain native body with no easydap syntax in it — it goes to the adapter
-verbatim, so anything the adapter accepts can be added by hand.
+Fill in the `values`, then `:Debug run_file` it. It resolves through the same
+path as `:Debug quick_run`. (Prefer the native shape above instead? Just drop
+the `configuration`/`values` keys and write `request` + `parameters` by hand.)
 
 ### From Lua
 
@@ -414,7 +436,7 @@ Everything is under the `:Debug` command, with completion for every subcommand.
 | --------------------- | ------------------------------------------------- |
 | `run_file [path]`     | Run a Lua task file, or pick from a directory     |
 | `quick_run …`         | Launch/attach from `input=value` tokens           |
-| `new_run_file …`      | Scaffold a run file from an adapter's schema       |
+| `new_run_file …`      | Scaffold a run file from a configuration's inputs  |
 | `rerun`               | Re-launch the most recently run task              |
 | `view`                | Open/focus the debug panel                        |
 | `continue` / `continue_all` | Continue the active / every session         |
@@ -537,9 +559,8 @@ provision tooling before the session connects (this is how the `debugpy` and
 `js-debug` adapters work).
 
 To make an adapter work with `:Debug quick_run` and `:Debug new_run_file`, give
-it one or more named `configurations`. Each declares an `inputs` table, a `build`
-function that turns those inputs into the adapter's native request body, and a
-`template` — Lua source text that `new_run_file` scaffolds:
+it one or more named `configurations`. Each declares an `inputs` table and a
+`build` function that turns those inputs into the adapter's native request body:
 
 ```lua
 adapters.myadapter = {
@@ -549,23 +570,22 @@ adapters.myadapter = {
       description = "debug an executable",
       request = "launch",
       inputs = {
-        command = { type = "shell_args", required = true, description = "command line to debug" },
-        cwd     = { type = "cwd", description = "working directory" },
+        command = { type = "table", format = "shell_args", required = true, description = "command line to debug" },
+        cwd     = { type = "string", format = "cwd", description = "working directory" },
       },
       build = function(params, connect, inputs)
         params.program = vim.fn.expand(inputs.command[1])
         params.args    = { unpack(inputs.command, 2) }
         params.cwd     = inputs.cwd
       end,
-      template = [[
-        program = "./a.out",        -- executable to debug
-        args    = { "--verbose" },  -- arguments passed to it
-        cwd     = vim.fn.getcwd(),  -- working directory
-      ]],
     },
   },
 }
 ```
+
+Both `:Debug quick_run` and a `:Debug new_run_file` run file resolve through the
+same `build`, so `inputs` is the one place a configuration is described — there is
+no separate scaffold template to keep in sync.
 
 An input's `type` is the Lua type `build` receives (`string`, `boolean`,
 `integer`, `number`, `table`), and its `format` decides how the `quick_run` string
@@ -585,11 +605,10 @@ by asking, so `:Debug quick_run codelldb attach` with no `pid=` pops a process
 picker instead of failing; returning a string from `build` aborts the run with
 that error, which is how a cancelled picker is reported.
 
-`build` and `template` serve different commands and never meet: `build` assembles
-the request for `quick_run`, while `template` is only ever spliced into a
-scaffolded run file, whose `parameters` goes to the adapter verbatim. Because the
-template is source text rather than data, it carries its own comments and keeps
-computed values as expressions the generated run file evaluates when loaded.
+`:Debug new_run_file` scaffolds a run file straight from `inputs`: required inputs
+active, the rest commented out with their descriptions. The resulting file names
+the `configuration` and its `values`, and `:Debug run_file` resolves it through
+`build` — the same path `quick_run` takes.
 
 See each built-in adapter under
 [`lua/easydap/adapters/`](lua/easydap/adapters/) for fully worked examples

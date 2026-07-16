@@ -96,9 +96,11 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   scaffolded file is inputs-based, exactly like `quick_run`: `:Debug run_file`
   resolves it through `resolve_task`/`build` (`values -> build -> task`), so a run
   file and `quick_run` share one description of a configuration — its `inputs` — and
-  cannot drift. `run_file` still also accepts a legacy native task (`adapter` +
-  raw `parameters`, sent verbatim), distinguished by the absence of a
-  `configuration` field.
+  cannot drift. `run_file` accepts two run-file shapes, told apart by whether a
+  `configuration` field is present: the inputs-based one above, and a **native** one
+  (`adapter` + `request` + `parameters`) whose `parameters` is the raw DAP body
+  forwarded to the adapter verbatim — the same `easydap.Task` shape
+  `run`/`start_task` take.
 
 **Persistence** — [store.lua](lua/easydap/store.lua)
 - A thin path + read/write helper. The project root is the nearest ancestor of
