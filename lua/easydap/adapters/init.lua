@@ -3,7 +3,7 @@
 ---The module is a plain table: each key is an adapter name, each value is an
 ---AdapterDef — native DAP process/connection config (command, host/port,
 ---setup/teardown, request, …) plus a `configurations` table of named `easydap.Configuration`
----launch/attach templates. Configurations are what `:Debug new_run_file`/`quick_run`
+---launch/attach descriptions. Configurations are what `:Debug new_run_file`/`quick_run`
 ---read (via `easydap.schema`) to scaffold a run file / assemble a
 ---native request body; the DAP core never touches them.
 ---
@@ -67,58 +67,45 @@
 ---A named configuration for one adapter — what `resolve_task` turns into a runnable
 ---task, and what `new_run_file` scaffolds.
 ---
----`inputs` declares what the configuration accepts (name → `easydap.Input`); the
----two are then read along separate paths that never meet:
+---`inputs` declares what the configuration accepts (name → `easydap.Input`), and
+---`build` turns supplied values into a runnable request. Both `quick_run` and a
+---scaffolded run file resolve the same way — through `resolve_task`/`build` — so a
+---configuration is described in exactly one place: its `inputs`. `new_run_file`
+---seeds a run file's `values` from those inputs (each input's `seed`, described by
+---its `description`); the resolved task is never authored as raw `parameters`.
 ---
----  * `build(params, connect, inputs)` assembles everything a run needs, in
----    place: the native request body in `params`, and — for adapters that connect
----    over a task-level TCP endpoint (an `AdapterDef` `host`/`port`, e.g.
----    `remote`/`java-debug-server`) — that endpoint in `connect`. Both start empty;
----    leaving `connect` untouched keeps the adapter def's own host/port in force.
----    An unset input is nil, and Lua drops nil-valued keys, so
----    `params.cwd = inputs.cwd` omits `cwd` entirely when it wasn't supplied —
----    assign unconditionally and optional fields take care of themselves. Identity
----    fields the adapter pins (`type`/`name`) and fixed defaults are assigned here
----    too, as plain literals. `inputs` arrives already read into each input's
----    declared `type`, whichever form the caller authored it in.
+---`build(params, connect, inputs)` assembles everything a run needs, in place: the
+---native request body in `params`, and — for adapters that connect over a
+---task-level TCP endpoint (an `AdapterDef` `host`/`port`, e.g.
+---`remote`/`java-debug-server`) — that endpoint in `connect`. Both start empty;
+---leaving `connect` untouched keeps the adapter def's own host/port in force. An
+---unset input is nil, and Lua drops nil-valued keys, so `params.cwd = inputs.cwd`
+---omits `cwd` entirely when it wasn't supplied — assign unconditionally and optional
+---fields take care of themselves. Identity fields the adapter pins (`type`/`name`)
+---and fixed defaults are assigned here too, as plain literals. `inputs` arrives
+---already read into each input's declared `type`, whichever form the caller authored
+---it in.
 ---
----    Omitting the field is only the *default* answer to an unset input; `build` is
----    where a configuration decides otherwise, because it alone knows what the
----    request means. An attach body is nothing without a process, so every attach
----    `build` resolves an unset `pid` by asking the user to pick one
----    (`shared.resolve_pid`) — the schema layer just reads a pid as the integer it
----    is. Such a `build` yields; `resolve_task` runs it on a coroutine for exactly
----    that reason and delivers the task once it returns. A `build` that cannot go on
----    returns an error string (a cancelled picker), which aborts the run.
+---Omitting the field is only the *default* answer to an unset input; `build` is
+---where a configuration decides otherwise, because it alone knows what the request
+---means. An attach body is nothing without a process, so every attach `build`
+---resolves an unset `pid` by asking the user to pick one (`shared.resolve_pid`) —
+---the schema layer just reads a pid as the integer it is. Such a `build` yields;
+---`resolve_task` runs it on a coroutine for exactly that reason and delivers the task
+---once it returns. A `build` that cannot go on returns an error string (a cancelled
+---picker), which aborts the run.
 ---
----    A `build` must always resume — return a value or an error string — so that a
----    caller waiting on it hears back. A caller that gives up first cancels its
----    resolve and stops listening, so a `build` parked forever on an unanswered
----    picker strands nothing but itself.
----  * `template` is what `new_run_file` scaffolds: Lua **source text** for the body
----    of the generated run file's `parameters` table, spliced in as written (only
----    re-indented). Because it is source rather than data it carries its own
----    comments, key order, and computed values as expressions the *run file*
----    evaluates when loaded (`cwd = vim.fn.getcwd()`), which keeps the generated
----    file portable instead of baking in one machine's paths. It never reaches an
----    adapter through `build` — a run file's `parameters` is sent verbatim — so
----    seed it with realistic values a reader can edit, not blanks.
----
----Keeping the field list in both is deliberate: they answer different questions
----(what to send vs. what to show someone starting a run file), and drift between
----them costs scaffold quality, never resolve correctness. The template is
----unvalidated text — a typo in it surfaces only when the run file is scaffolded.
----This is the one duplication here that is *not* worth collapsing into data: a
----template carries comments and expressions the run file evaluates when loaded, and
----data cannot express those.
+---A `build` must always resume — return a value or an error string — so that a
+---caller waiting on it hears back. A caller that gives up first cancels its resolve
+---and stops listening, so a `build` parked forever on an unanswered picker strands
+---nothing but itself.
 ---@class easydap.Configuration
 ---@field description  string
 ---@field request      "launch"|"attach"
 ---@field inputs?      table<string, easydap.Input>  the configuration's declared inputs
 ---@field build?       fun(params: table, connect: table, inputs: table<string, any>): string?  assemble body + connection in place; return an error string to abort
----@field template?    string   Lua source for the scaffolded run file's `parameters` body
 
----A static adapter definition — the launch/attach template for one adapter.
+---A static adapter definition — the launch/attach description for one adapter.
 ---Entries of this module are values of this type. It is NOT the per-run config
 ---the DAP layer consumes: the task runner resolves an `AdapterDef` + a task into
 ---an `easydap.dap.Config` (see [dap/client.lua](dap/client.lua)). No

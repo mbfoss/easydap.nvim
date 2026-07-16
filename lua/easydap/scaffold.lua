@@ -1,15 +1,15 @@
 ---@brief run_file scaffolding for `:Debug new_run_file`.
 ---
----Writes a runnable Lua run_file for an adapter + one of its `configurations` by
----splicing that configuration's `template` — Lua source text for a native request
----body, seeded with example values — into a task table. The template is the only
----thing this module reads, and it is source rather than data, so the adapter
----already wrote the comments, key order and computed expressions that belong in
----the generated file; there is nothing to render, only to re-indent. A run file's
----`parameters` goes to the adapter verbatim (see `easydap.task`), so it never
----passes through the configuration's `build`, which serves `quick_run` alone.
+---Writes a runnable Lua run_file for an adapter + one of its `configurations`. The
+---generated file is inputs-based, exactly like `:Debug quick_run`: it names the
+---`adapter` and `configuration` and lists that configuration's declared `inputs`
+---under `values`, each seeded with a starting value (`easydap.inputs`' `seed`) and
+---annotated with its `description`. `:Debug run_file` resolves it through the
+---configuration's `build` (see `easydap.schema`), so a run file and `quick_run`
+---share one description of a configuration — its `inputs` — and never drift.
 
 local schema = require("easydap.schema")
+local inputs_registry = require("easydap.inputs")
 
 local M = {}
 
@@ -19,43 +19,81 @@ local function _warn(msg) vim.notify("[easydap] " .. msg, vim.log.levels.WARN) e
 ---@param msg string
 local function _err(msg) vim.notify("[easydap] " .. msg, vim.log.levels.ERROR) end
 
----Re-indent a configuration's `template` to sit at `indent` spaces inside the
----generated run file. Surrounding blank lines are dropped and the template's own
----common leading indent is stripped, so an adapter can write its template at
----whatever indentation reads best in the adapter file and still have it land
----correctly nested here. Blank lines within stay blank rather than collecting
----trailing whitespace.
----@param template string
----@param indent integer
+---Render a seed value as Lua source. Seeds are simple — strings, numbers,
+---booleans, and (usually empty) tables — so this handles just those, emitting a
+---one-line literal in each case. Array-like and map-like tables are both rendered
+---inline; empty tables become `{}`.
+---@param v any
 ---@return string
-local function _reindent(template, indent)
-    local lines = vim.split(template, "\n", { plain = true })
-    while lines[1] and lines[1]:match("^%s*$") do table.remove(lines, 1) end
-    while #lines > 0 and lines[#lines]:match("^%s*$") do table.remove(lines) end
-
-    local common = math.huge
-    for _, line in ipairs(lines) do
-        if not line:match("^%s*$") then
-            common = math.min(common, #line:match("^ *"))
+local function _lua_literal(v)
+    local t = type(v)
+    if t == "string" then return string.format("%q", v) end
+    if t == "number" or t == "boolean" then return tostring(v) end
+    if t == "table" then
+        if next(v) == nil then return "{}" end
+        local parts = {}
+        if vim.islist(v) then
+            for _, item in ipairs(v) do parts[#parts + 1] = _lua_literal(item) end
+        else
+            local keys = {}
+            for k in pairs(v) do keys[#keys + 1] = k end
+            table.sort(keys)
+            for _, k in ipairs(keys) do
+                parts[#parts + 1] = ("[%q] = %s"):format(k, _lua_literal(v[k]))
+            end
         end
+        return "{ " .. table.concat(parts, ", ") .. " }"
     end
-    if common == math.huge then common = 0 end
+    return "nil"
+end
 
-    local pad, out = string.rep(" ", indent), {}
-    for i, line in ipairs(lines) do
-        out[i] = line:match("^%s*$") and "" or (pad .. line:sub(common + 1))
+---Build the `values = { … }` lines for a configuration: one `name = <seed>,` entry
+---per declared input, sorted by name, each padded and trailed by a `-- description`
+---comment (with `(required)` appended for required inputs). Returns nil when the
+---configuration declares no inputs, so the caller can emit `values = {}` instead of
+---an empty sandwich.
+---@param adapter string
+---@param configuration_name string
+---@return string[]?  the interior lines, already indented to sit inside `values`
+local function _values_lines(adapter, configuration_name)
+    local names = schema.configuration_input_names(adapter, configuration_name)
+    if #names == 0 then return nil end
+    local specs = schema.configuration_inputs(adapter, configuration_name)
+
+    -- Two passes: assemble each `name = <seed>,` assignment, then pad them all to a
+    -- common width so the trailing comments line up.
+    local assigns, width = {}, 0
+    for i, name in ipairs(names) do
+        local assign = ("%s = %s,"):format(name, _lua_literal(inputs_registry.seed(specs[name])))
+        assigns[i] = assign
+        width = math.max(width, #assign)
     end
-    return table.concat(out, "\n")
+
+    local lines = {}
+    for i, name in ipairs(names) do
+        local spec = specs[name]
+        local comment = spec.description or ""
+        if spec.required then
+            comment = comment == "" and "required" or (comment .. " (required)")
+        end
+        local line = "        " .. assigns[i]
+        if comment ~= "" then
+            line = line .. string.rep(" ", width - #assigns[i]) .. "  -- " .. comment
+        end
+        lines[i] = line
+    end
+    return lines
 end
 
 ---Scaffold a run_file for an `adapter` + one of its `configurations`: write a Lua
----file whose `parameters` is that configuration's `template` source, then open it
----for editing. Run it afterwards with `:Debug run_file`. `assignments` is positional:
----the adapter (required), the configuration name (defaults to the adapter's sole
----configuration), then the destination path (defaulting to `<project
----root or cwd>/<adapter>_<configuration>.lua`). Fails if the destination already
----exists, rather than overwriting or picking a different name. Reports a clear
----error for every failure mode instead of throwing.
+---file that names the adapter + configuration and seeds its inputs under `values`,
+---then open it for editing. Run it afterwards with `:Debug run_file`, which resolves
+---the `values` through the configuration's `build` — the same path `quick_run` takes.
+---`assignments` is positional: the adapter (required), the configuration name
+---(defaults to the adapter's sole configuration), then the destination path
+---(defaulting to `<project root or cwd>/<adapter>_<configuration>.lua`). Fails if the
+---destination already exists, rather than overwriting or picking a different name.
+---Reports a clear error for every failure mode instead of throwing.
 ---@param assignments string[]  positional adapter, configuration, path, e.g. { "codelldb", "launch", "./foo.lua" }
 ---@return string? path  the file that was created
 function M.new_run_file(assignments)
@@ -106,7 +144,6 @@ function M.new_run_file(assignments)
             :format(adapter, table.concat(names, ", ")))
         return
     end
-    local configuration = assert(schema.configuration(adapter, configuration_name))
 
     -- Resolve the destination; fail rather than clobber or rename an existing file.
     local root = require("easydap.store").root() or vim.fn.getcwd()
@@ -118,27 +155,22 @@ function M.new_run_file(assignments)
         return
     end
 
-    local params_src = _reindent(configuration.template or "", 8)
-
     local lines = {
         "-- easydap run file",
         "return {",
-        ("    name       = %q,"):format(adapter),
-        ("    adapter    = %q,"):format(adapter),
-        ("    request    = %q,"):format(configuration.request),
+        ("    name          = %q,"):format(adapter),
+        ("    adapter       = %q,"):format(adapter),
+        ("    configuration = %q,"):format(configuration_name),
     }
-    -- TCP adapters carry host/port at the task level, not in the body; seed them
-    -- from the adapter's own def, which is what `build`'s `connect` overrides.
-    if base.host ~= nil or base.port ~= nil then
-        lines[#lines + 1] = ("    host       = %q,"):format(base.host or "127.0.0.1")
-        lines[#lines + 1] = ("    port       = %d,"):format(base.port or 0)
-    end
-    -- A configuration with nothing to seed (its inputs are all task-level) gets an
-    -- empty body rather than a `{` / blank line / `}` sandwich.
-    if params_src == "" then
-        lines[#lines + 1] = "    parameters = {},"
+    -- A configuration with no inputs gets an empty `values` rather than a `{` / blank
+    -- line / `}` sandwich.
+    local values = _values_lines(adapter, configuration_name)
+    if not values then
+        lines[#lines + 1] = "    values        = {},"
     else
-        vim.list_extend(lines, { "    parameters = {", params_src, "    }," })
+        lines[#lines + 1] = "    values        = {"
+        vim.list_extend(lines, values)
+        lines[#lines + 1] = "    },"
     end
     vim.list_extend(lines, { "}", "" })
 

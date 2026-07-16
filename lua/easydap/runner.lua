@@ -245,10 +245,20 @@ local function _run_from_dir(dir)
 end
 
 ---Run a task from a path. A directory opens a picker of the Lua files in it (see
----`_run_from_dir`); a Lua file is loaded and the single task it returns (or that
----its returned function produces) is run. Reports a clear error for every failure
----mode instead of throwing: missing/empty path, path not found, non-`.lua` file,
----load or runtime error, or a file that does not return a task.
+---`_run_from_dir`); a Lua file is loaded and the single value it returns (or that
+---its returned function produces) is run. Two run-file shapes are accepted:
+---
+---  * inputs-based (what `new_run_file` scaffolds): `adapter` + `configuration` +
+---    `values`. It is resolved through the configuration's `build`, exactly as
+---    `quick_run` does — so `values` are the configuration's declared inputs, not a
+---    raw request body. `build` may open a picker (an attach resolving an unset
+---    `pid`), so the run starts from the resolve callback.
+---  * native: `adapter` + `parameters` (the raw DAP body, sent verbatim). This is the
+---    same `easydap.Task` shape `run`/`start_task` take.
+---
+---Reports a clear error for every failure mode instead of throwing: missing/empty
+---path, path not found, non-`.lua` file, load or runtime error, or a file that does
+---not return a task.
 ---@param path string
 function M.run_file(path)
     if type(path) ~= "string" or path == "" then
@@ -277,22 +287,43 @@ function M.run_file(path)
         return
     end
 
-    local ok, task = pcall(chunk)
-    if ok and type(task) == "function" then
-        ok, task = pcall(task)
+    local ok, spec = pcall(chunk)
+    if ok and type(spec) == "function" then
+        ok, spec = pcall(spec)
     end
     if not ok then
-        _err("run: error in " .. resolved .. ": " .. tostring(task))
+        _err("run: error in " .. resolved .. ": " .. tostring(spec))
         return
     end
 
-    if not _is_task(task) then
+    if not _is_task(spec) then
         _err("run: " .. vim.fn.fnamemodify(resolved, ":t") ..
             " must return a task table with an `adapter` field")
         return
     end
 
-    M.run(task)
+    -- An inputs-based run file (what `new_run_file` scaffolds) names a configuration
+    -- and its `values`; resolve it through the configuration's `build`, exactly as
+    -- `quick_run` does. It may open a picker, so the run starts from the callback.
+    if type(spec.configuration) == "string" then
+        local name = vim.fn.fnamemodify(resolved, ":t")
+        require("easydap.schema").resolve_task({
+            adapter       = spec.adapter,
+            configuration = spec.configuration,
+            name          = spec.name,
+            values        = spec.values,
+        }, function(task, err)
+            if not task then
+                _err("run: " .. name .. ": " .. tostring(err))
+                return
+            end
+            task.raw_messages = spec.raw_messages
+            M.run(task)
+        end)
+        return
+    end
+
+    M.run(spec)
 end
 
 ---Launch or attach under an adapter using one of its declared `configurations`.

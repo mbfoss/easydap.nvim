@@ -18,9 +18,6 @@ return {
                 connect.host = inputs.host
                 connect.port = inputs.port
             end,
-            -- Nothing to seed: host/port live at the task level, and the scaffolder
-            -- already writes those from the adapter def.
-            template = "",
         },
     },
 }

@@ -27,12 +27,6 @@ return {
                 params.cwd = inputs.cwd
                 params.env = inputs.env
             end,
-            template = [[
-                program = "./bin/Debug/net8.0/App.dll",  -- .NET assembly to run
-                args    = { "--verbose" },               -- arguments passed to it
-                cwd     = vim.fn.getcwd(),               -- working directory
-                env     = { EXAMPLE = "value" },         -- environment variables
-            ]],
         },
         attach = {
             description = "attach to a running process by pid",
@@ -45,9 +39,6 @@ return {
                 if not pid then return err end
                 params.processId = pid
             end,
-            template = [[
-                processId = 41234,  -- process id to attach to
-            ]],
         },
     },
 }

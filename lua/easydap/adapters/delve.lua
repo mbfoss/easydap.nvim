@@ -88,13 +88,6 @@ return {
                 params.cwd = inputs.cwd
                 params.env = inputs.env
             end,
-            template = [[
-                mode    = "debug",
-                program = ".",                    -- Go package or binary (defaults to the cwd package)
-                args    = { "--verbose" },        -- arguments passed to it
-                cwd     = vim.fn.getcwd(),        -- working directory
-                env     = { EXAMPLE = "value" },  -- environment variables
-            ]],
         },
         -- Only `dlv dap`-served attach mode is "local" (attach to a process the
         -- server can see); "remote" attach is served by `dlv --headless` and
@@ -111,10 +104,6 @@ return {
                 params.mode      = "local"
                 params.processId = pid
             end,
-            template = [[
-                mode      = "local",
-                processId = 41234,  -- process id to attach to
-            ]],
         },
     },
 }

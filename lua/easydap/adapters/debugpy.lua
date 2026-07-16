@@ -89,15 +89,6 @@ return {
                 params.justMyCode      = false
                 params.showReturnValue = true
             end,
-            template = [[
-                type    = "python",
-                program = "./main.py",            -- Python file to run
-                args    = { "--verbose" },        -- arguments passed to it
-                cwd     = vim.fn.getcwd(),        -- working directory
-                env     = { EXAMPLE = "value" },  -- environment variables
-                justMyCode      = false,          -- step into library code too
-                showReturnValue = true,
-            ]],
         },
         attach = {
             description = "attach to a running process by pid",
@@ -113,12 +104,6 @@ return {
                 params.justMyCode      = false
                 params.showReturnValue = true
             end,
-            template = [[
-                type      = "python",
-                processId = 41234,        -- process id to attach to
-                justMyCode      = false,  -- step into library code too
-                showReturnValue = true,
-            ]],
         },
         -- The `connect.*` body group targets the remote process — not a task-level
         -- TCP endpoint (`build`'s `connect`), which this adapter's def doesn't
@@ -136,15 +121,6 @@ return {
                 params.justMyCode      = false
                 params.showReturnValue = true
             end,
-            template = [[
-                type = "python",
-                connect = {
-                    host = "127.0.0.1",  -- remote debugpy host
-                    port = 5678,         -- remote debugpy port
-                },
-                justMyCode      = false,  -- step into library code too
-                showReturnValue = true,
-            ]],
         },
     },
 }

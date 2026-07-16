@@ -41,14 +41,14 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   definitions as a plain `name -> easydap.AdapterDef` table (one file per adapter
   under `easydap/adapters/`, assembled here): native DAP process/connection config
   plus an optional `configurations` table (`name -> easydap.Configuration`) of
-  launch/attach templates. Each `Configuration` is self-describing: an `inputs`
+  launch/attach descriptions. Each `Configuration` is self-describing: an `inputs`
   table declaring what it accepts (`name -> easydap.Input`, each with a `type` and
-  `description`, plus an optional `format` and `required`), a `build(params, connect, inputs)` that
-  assembles the native request body — and any task-level `host`/`port` — in place,
-  and a `template` (Lua **source text** for the body a scaffolded run file gets,
-  seeded with example values and its own comments). Users add/override keys
-  directly. The DAP core never reads the configurations — only `easydap.schema`
-  does.
+  `description`, plus an optional `format` and `required`) and a
+  `build(params, connect, inputs)` that assembles the native request body — and any
+  task-level `host`/`port` — in place. Both `quick_run` and a scaffolded run file
+  resolve the same way (`values -> build -> task`), so `inputs` is the single
+  description of a configuration. Users add/override keys directly. The DAP core
+  never reads the configurations — only `easydap.schema` does.
 - [task.lua](lua/easydap/task.lua) — task runner (`easydap.TaskTypeDef`); the
   `run` backend for external task runners. Consumes a native task
   (`name`/`adapter`/`request`/`parameters` + optional `host`/`port`/
@@ -90,21 +90,15 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   `requests`, `configurable_adapters` — drive completion and scaffolding. Native keys
   throughout — no portable/generic field vocabulary.
 - [scaffold.lua](lua/easydap/scaffold.lua) — run-file creation behind `:Debug
-  new_run_file`: splices a configuration's `template` source into a runnable Lua
-  run_file (re-indenting it, nothing more) and opens it.
-
-  `build` and `template` are deliberately separate and never meet: a run goes
-  `values -> build -> task`, while `new_run_file` goes `template -> Lua
-  source -> user edits -> task` (a run file's `parameters` is sent verbatim, never
-  built). One table serving both is what forced the old `"{name}"`/`"{name:transform}"`
-  token grammar, which leaked unsubstituted tokens into scaffolded files. Two costs
-  are accepted deliberately: the field list lives in both `build` and `template`
-  (drift hurts scaffold quality, never resolve correctness), and the template is
-  unvalidated text (a typo surfaces only when that configuration is scaffolded).
-  This is the one projection of a configuration that is *not* a row in
-  [inputs.lua](lua/easydap/inputs.lua) — a template is source text carrying comments
-  and expressions the run file evaluates when loaded (`cwd = vim.fn.getcwd()`), and
-  data cannot express those.
+  new_run_file`: writes a runnable Lua run_file that names the `adapter` and
+  `configuration` and lists its declared `inputs` under `values`, each seeded (via
+  `easydap.inputs`' `seed`) and commented with its `description`, then opens it. The
+  scaffolded file is inputs-based, exactly like `quick_run`: `:Debug run_file`
+  resolves it through `resolve_task`/`build` (`values -> build -> task`), so a run
+  file and `quick_run` share one description of a configuration — its `inputs` — and
+  cannot drift. `run_file` still also accepts a legacy native task (`adapter` +
+  raw `parameters`, sent verbatim), distinguished by the absence of a
+  `configuration` field.
 
 **Persistence** — [store.lua](lua/easydap/store.lua)
 - A thin path + read/write helper. The project root is the nearest ancestor of

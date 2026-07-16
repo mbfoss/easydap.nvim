@@ -16,12 +16,6 @@ return {
                 params.cwd  = inputs.cwd
                 params.port = 9003
             end,
-            template = [[
-                type = "php",
-                name = "Listen for Xdebug",
-                cwd  = vim.fn.getcwd(),  -- working directory
-                port = 9003,             -- port Xdebug connects back on
-            ]],
         },
     },
 }

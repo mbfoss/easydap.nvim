@@ -465,10 +465,12 @@ function M.run_file(path)
     return runner.run_file(path)
 end
 
----Scaffold a run_file from one of an adapter's configurations — its `template`, a
----native body seeded with example values — and open it for editing. `assignments`
----is positional: the adapter, an optional configuration name (defaults to the
----adapter's sole configuration), and an optional destination path. E.g.
+---Scaffold a run_file for one of an adapter's configurations — an inputs-based file
+---(`adapter`/`configuration`/`values`) whose `values` are the configuration's
+---declared inputs, seeded and commented — and open it for editing. `:Debug run_file`
+---resolves it through `build`, the same path `quick_run` takes. `assignments` is
+---positional: the adapter, an optional configuration name (defaults to the adapter's
+---sole configuration), and an optional destination path. E.g.
 ---`new_run_file({ "codelldb", "launch" })` writes `<root>/codelldb_launch.lua`.
 ---@param assignments string[]  positional adapter, configuration, path, e.g. { "codelldb", "launch", "./foo.lua" }
 function M.new_run_file(assignments)

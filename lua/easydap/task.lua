@@ -3,10 +3,10 @@ local _config      = require "easydap.config"
 local ui_util      = require "easydap.util.ui_util"
 
 ---A debug task — native DAP, sent as-is. `parameters` is the adapter's raw
----launch/attach body, sent verbatim. `:Debug new_run_file` scaffolds a run file
----pre-filled from the adapter's schema (see `easydap.schema`); tasks from a file
----supply `parameters` directly. Mirrors what easytasks sends as `debug.Params`;
----`name` defaults to "debug".
+---launch/attach body, sent verbatim. This is the resolved shape `run`/`start_task`
+---consume; an inputs-based run file (what `:Debug new_run_file` scaffolds) and
+---`:Debug quick_run` both produce it via `easydap.schema`'s `resolve_task`. Mirrors
+---what easytasks sends as `debug.Params`; `name` defaults to "debug".
 ---@class easydap.Task
 ---@field name?         string                     run/panel group name (defaults to "debug")
 ---@field adapter       string                     name of an entry in `easydap.adapters`

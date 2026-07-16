@@ -25,11 +25,6 @@ return {
                 connect.host = inputs.host
                 connect.port = inputs.port
             end,
-            template = [[
-                hostName = "127.0.0.1",  -- JDWP host of the debug server
-                port     = 5005,         -- JDWP port of the debug server
-                timeout  = 30000,
-            ]],
         },
     },
 }

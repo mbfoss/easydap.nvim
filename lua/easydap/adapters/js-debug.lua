@@ -84,13 +84,6 @@ return {
                 params.cwd = inputs.cwd
                 params.env = inputs.env
             end,
-            template = [[
-                type    = "pwa-node",
-                program = "./index.js",           -- JS/TS file to run
-                args    = { "--verbose" },        -- arguments passed to it
-                cwd     = vim.fn.getcwd(),        -- working directory
-                env     = { EXAMPLE = "value" },  -- environment variables
-            ]],
         },
         attach = {
             description = "attach to a running process by pid",
@@ -104,10 +97,6 @@ return {
                 params.type      = "pwa-node"
                 params.processId = pid
             end,
-            template = [[
-                type      = "pwa-node",
-                processId = 41234,  -- process id to attach to
-            ]],
         },
         remote = {
             description = "attach to a remote Node.js process over host/port",
@@ -121,11 +110,6 @@ return {
                 params.address = inputs.host
                 params.port    = inputs.port
             end,
-            template = [[
-                type    = "pwa-node",
-                address = "127.0.0.1",  -- remote Node.js host
-                port    = 9229,         -- remote Node.js debug port
-            ]],
         },
     },
 }

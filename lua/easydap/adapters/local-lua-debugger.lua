@@ -41,18 +41,6 @@ return {
                 params.cwd = inputs.cwd
                 params.env = inputs.env
             end,
-            template = [[
-                type = "lua-local",
-                name = "Debug",
-                program = {
-                    lua           = vim.fn.exepath("lua"),  -- Lua interpreter to run under
-                    communication = "stdio",
-                    file          = "./main.lua",           -- Lua script to run
-                },
-                args = { "--verbose" },        -- arguments passed to the script
-                cwd  = vim.fn.getcwd(),        -- working directory
-                env  = { EXAMPLE = "value" },  -- environment variables
-            ]],
         },
     },
 }

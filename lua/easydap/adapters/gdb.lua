@@ -33,14 +33,6 @@ return {
                 params.stopOnEntry = inputs.stop_on_entry
                 params.stopAtBeginningOfMainSubprogram = inputs.stop_at_main
             end,
-            template = [[
-                program = "./a.out",                      -- executable to debug
-                args    = { "--verbose" },                -- arguments passed to it
-                cwd     = vim.fn.getcwd(),                -- working directory
-                env     = { EXAMPLE = "value" },          -- environment variables
-                stopOnEntry = false,                      -- break at program entry
-                stopAtBeginningOfMainSubprogram = false,  -- break at the start of main
-            ]],
         },
         attach = {
             description = "attach to a running process by pid",
@@ -53,9 +45,6 @@ return {
                 if not pid then return err end
                 params.pid = pid
             end,
-            template = [[
-                pid = 41234,  -- process id to attach to
-            ]],
         },
         -- The body's `target` key takes the remote `connection` string; the
         -- `target` input is the local binary GDB loads symbols from.
@@ -70,10 +59,6 @@ return {
                 params.target  = inputs.connection
                 params.program = inputs.target
             end,
-            template = [[
-                target  = "localhost:1234",  -- remote gdbserver, host:port
-                program = "./a.out",         -- local binary for symbols
-            ]],
         },
         core = {
             description = "post-mortem debug from a core file",
@@ -86,10 +71,6 @@ return {
                 params.coreFile = inputs.corefile
                 params.program  = inputs.target
             end,
-            template = [[
-                coreFile = "./core",   -- core file to load
-                program  = "./a.out",  -- executable that produced the core
-            ]],
         },
     },
 }

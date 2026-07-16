@@ -1,10 +1,11 @@
 ---@brief Schema engine behind `:Debug new_run_file` and `:Debug quick_run`.
 ---
 ---Adapters carry no launch/attach schema of their own — each adapter's
----`configurations` (named `easydap.Configuration` templates, in `easydap.adapters`)
+---`configurations` (named `easydap.Configuration` entries, in `easydap.adapters`)
 ---are wholly self-describing. A configuration declares its inputs up front in an
----`inputs` table — `name -> easydap.Input` — and consumers read them along two
----paths that never meet:
+---`inputs` table — `name -> easydap.Input` — which both `:Debug quick_run` and a
+---scaffolded run file read, then resolve the same way: `resolve_task` runs the
+---configuration's `build` over the supplied values to assemble a runnable task.
 ---
 
 local inputs_registry = require("easydap.inputs")

@@ -38,15 +38,6 @@ return {
                 params.env     = inputs.env
                 params.stopOnEntry = inputs.stop_on_entry
             end,
-            template = [[
-                name    = "codelldb",
-                type    = "lldb",
-                program = "./a.out",              -- executable to debug
-                args    = { "--verbose" },        -- arguments passed to it
-                cwd     = vim.fn.getcwd(),        -- working directory
-                env     = { EXAMPLE = "value" },  -- environment variables
-                stopOnEntry = false,              -- break at program entry
-            ]],
         },
         attach = {
             description = "attach to a running process by pid",
@@ -61,11 +52,6 @@ return {
                 params.type = "lldb"
                 params.pid  = pid
             end,
-            template = [[
-                name = "codelldb",
-                type = "lldb",
-                pid  = 41234,  -- process id to attach to
-            ]],
         },
         attach_by_name = {
             description = "attach to a process by executable, optionally waiting for it to launch",
@@ -80,12 +66,6 @@ return {
                 params.program = inputs.program
                 params.waitFor = inputs.wait_for
             end,
-            template = [[
-                name    = "codelldb",
-                type    = "lldb",
-                program = "./a.out",  -- executable to attach to
-                waitFor = false,      -- wait for the process to launch
-            ]],
         },
         -- A custom launch drives LLDB by command rather than by `program`, so both
         -- inputs land inside a command string instead of a field of their own.
@@ -106,12 +86,6 @@ return {
                     params.processCreateCommands = { "target create -c " .. inputs.corefile }
                 end
             end,
-            template = [[
-                name = "codelldb",
-                type = "lldb",
-                targetCreateCommands  = { "target create ./a.out" },    -- executable that produced the core
-                processCreateCommands = { "target create -c ./core" },  -- core file to load
-            ]],
         },
         gdb_remote = {
             description = "attach over a gdb-remote (gdbserver) connection (custom launch)",
@@ -131,12 +105,6 @@ return {
                     params.processCreateCommands = { ("gdb-remote %s:%d"):format(inputs.host, inputs.port) }
                 end
             end,
-            template = [[
-                name = "codelldb",
-                type = "lldb",
-                targetCreateCommands  = { "target create ./a.out" },      -- executable for symbols
-                processCreateCommands = { "gdb-remote 127.0.0.1:1234" },  -- gdbserver host:port
-            ]],
         },
     },
 }

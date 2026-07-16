@@ -30,21 +30,6 @@ return {
                 params.pathPkill    = "pkill"
                 params.terminalKind = "integrated"
             end,
-            template = [[
-                type = "bashdb",
-                name = "Launch Bash Script",
-                program = "./run.sh",             -- bash script to debug
-                cwd     = vim.fn.getcwd(),        -- working directory
-                env     = { EXAMPLE = "value" },  -- environment variables
-                pathBash      = "bash",
-                pathBashdb    = "bash-debug-adapter",
-                pathBashdbLib = vim.fs.joinpath(
-                    vim.fn.stdpath("data"), "mason", "packages", "bash-debug-adapter"),
-                pathCat      = "cat",
-                pathMkfifo   = "mkfifo",
-                pathPkill    = "pkill",
-                terminalKind = "integrated",
-            ]],
         },
     },
 }
