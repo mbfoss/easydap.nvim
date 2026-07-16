@@ -11,7 +11,7 @@ return {
     profiles       = {
         -- One `command` input carries the whole command line; `build` splits it into
         -- `program` (the first word) and `args` (the rest).
-        launch = {
+        launch_program = {
             description = "debug a .NET assembly",
             request = "launch",
             inputs = {
@@ -28,7 +28,7 @@ return {
                 params.env = inputs.env
             end,
         },
-        attach = {
+        attach_process = {
             description = "attach to a running process by pid",
             request    = "attach",
             inputs = {

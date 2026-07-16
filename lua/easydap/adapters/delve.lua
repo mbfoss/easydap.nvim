@@ -71,7 +71,7 @@ return {
         -- this configuration — add them to the run file directly if needed.
         -- One `command` input carries the whole command line; `build` splits it into
         -- `program` (the first word) and `args` (the rest).
-        launch = {
+        launch_program = {
             description = "debug a Go package/binary",
             request = "launch",
             inputs = {
@@ -92,7 +92,7 @@ return {
         -- Only `dlv dap`-served attach mode is "local" (attach to a process the
         -- server can see); "remote" attach is served by `dlv --headless` and
         -- configured at the connection level, not through this launched-server body.
-        attach = {
+        attach_process = {
             description = "attach to a running process by pid",
             request = "attach",
             inputs = {

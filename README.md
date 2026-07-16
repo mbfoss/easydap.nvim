@@ -162,8 +162,8 @@ version-controlled run files.
 
 ### `:Debug quick_run` — one-shot launch/attach
 
-Each adapter declares one or more named **profiles** (`launch`, `attach`,
-`remote`, …), each declaring the **inputs** it accepts. Supply them as
+Each adapter declares one or more named **profiles** (`launch_program`,
+`attach_process`, `remote`, …), each declaring the **inputs** it accepts. Supply them as
 `input=value` tokens; the adapter and profile name come first as bare
 words:
 
@@ -171,9 +171,9 @@ words:
 :Debug quick_run <adapter> <profile> [input=value ...]
 ```
 
-Inputs are specific to each adapter/profile — e.g. every `launch`
+Inputs are specific to each adapter/profile — e.g. every `launch_program`
 profile takes `command` (a full shell command line, split into the
-adapter's own program/args fields) plus `cwd` and `env`; an `attach`
+adapter's own program/args fields) plus `cwd` and `env`; an `attach_process`
 profile takes `pid`, and a `remote` one takes `host`/`port`. Each input
 declares a **type** that decides how your value is read: `file`/`dir`/`cwd`
 (path expansion), `env` (`A=1,B=2`), `shell_args` (shell-quoted splitting) and
@@ -199,7 +199,7 @@ left unset is an error and an attach with no `pid` pops a process picker:
 return {
   name       = "debug app",    -- run/panel label (defaults to "debug")
   adapter    = "codelldb",     -- an entry in require("easydap.adapters")
-  profile    = "launch",       -- one of the adapter's named profiles
+  profile    = "launch_program", -- one of the adapter's named profiles
   parameters = {               -- answers to the profile's declared inputs
     command = "./build/app --verbose",
     cwd     = vim.fn.getcwd(),

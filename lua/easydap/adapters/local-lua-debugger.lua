@@ -19,7 +19,7 @@ return {
     profiles       = {
         -- One `command` input carries the whole command line; `build` splits it into
         -- the script (`program.file`) and `args` (the rest).
-        launch = {
+        launch_program = {
             description = "debug a Lua script",
             request = "launch",
             inputs = {
