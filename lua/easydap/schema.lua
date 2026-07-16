@@ -3,119 +3,15 @@
 ---Adapters carry no launch/attach schema of their own — each adapter's
 ---`configurations` (named `easydap.Configuration` templates, in `easydap.adapters`)
 ---are wholly self-describing. A configuration declares its inputs up front in an
----`inputs` table — `name -> easydap.Input` — and the two commands read them along
----separate paths that never meet:
+---`inputs` table — `name -> easydap.Input` — and consumers read them along two
+---paths that never meet:
 ---
---- * `quick_run` reads `name=value` arguments, coerces each by its input's declared
----   `type`/`format` (`M.coerce`), and calls the configuration's `build(params, connect,
----   inputs)` to assemble a native request body plus any task-level connection. An
----   unset input arrives as nil, so a field assigned from it never appears in the
----   body at all; an input marked `required = true` must be supplied.
---- * `new_run_file` splices the configuration's `template` — Lua source text for a
----   native body, seeded with example values — into the generated run file (see
----   `easydap.scaffold`). A run file's `parameters` goes to the adapter verbatim
----   (see `easydap.task`); it never passes through `build`.
----
----So `build` is the only thing that assembles a request, and `template` is the only
----thing the scaffolder reads. This module speaks each adapter's native keys
----directly — no portable field vocabulary between adapters.
 
-local str_util = require("easydap.tk.strutil")
+local inputs_registry = require("easydap.inputs")
 
 local M = {}
 
--- ── Coercion ───────────────────────────────────────────────────────────────
-
----Read a raw string into a value of the declared `type`, the way `format` says.
----An absent format reads the string by `type` alone; an absent type is a string.
----@param input_type easydap.InputType?
----@param raw string
----@return any? value, string? err
-local function _by_type(input_type, raw)
-    if input_type == nil or input_type == "" or input_type == "string" then
-        return raw
-    elseif input_type == "integer" then
-        local n = tonumber(raw)
-        if not n or n ~= math.floor(n) then
-            return nil, ("expected an integer, got %q"):format(raw)
-        end
-        return math.floor(n)
-    elseif input_type == "number" then
-        local n = tonumber(raw)
-        if not n then return nil, ("expected a number, got %q"):format(raw) end
-        return n
-    elseif input_type == "boolean" then
-        local low = raw:lower()
-        if low == "true" or low == "1" or low == "yes" then return true end
-        if low == "false" or low == "0" or low == "no" then return false end
-        return nil, ("expected a boolean (true/false), got %q"):format(raw)
-    elseif input_type == "table" then
-        -- Nothing about `table` says how a string becomes one — only a format does.
-        return nil, "a table input needs a format (env/list/shell_args)"
-    end
-    return raw
-end
-
----Read a raw `quick_run` string into a value, by its input's declared `type` and
----`format`. The format, when given, is what does the reading — it always produces
----a value of the input's `type`; without one the string is read by `type` alone.
----@param input easydap.Input
----@param raw string
----@return any? value, string? err
-function M.coerce(input, raw)
-    local format = input.format
-    if format == nil or format == "" then
-        return _by_type(input.type, raw)
-    elseif format == "file" or format == "dir" then
-        -- A single expanded path; `file`/`dir` differ only in the completion
-        -- they drive, not in the coerced value shape.
-        return vim.fn.expand(raw)
-    elseif format == "cwd" then
-        -- Resolve to an absolute path so `.`/relative dirs are anchored to
-        -- Neovim's cwd, not the adapter's own working directory (which may differ).
-        return vim.fn.fnamemodify(vim.fn.expand(raw), ":p")
-    elseif format == "host" then
-        return raw
-    elseif format == "port" then
-        local n, err = _by_type("integer", raw)
-        if err then return nil, err end
-        if n < 0 or n > 65535 then
-            return nil, ("port out of range (0-65535), got %d"):format(n)
-        end
-        return n
-    elseif format == "shell_args" then
-        return str_util.split_shell_args(raw)
-    elseif format == "list" then
-        -- Comma-separated list of verbatim strings (each element kept whole, so
-        -- entries may contain spaces — e.g. full LLDB command lines).
-        return vim.split(raw, ",", { plain = true, trimempty = true })
-    elseif format == "env" then
-        local out = {}
-        for _, pair in ipairs(vim.split(raw, ",", { plain = true, trimempty = true })) do
-            local eq = pair:find("=", 1, true)
-            if not eq then
-                return nil, ("expected VAR=VAL pairs, got %q"):format(pair)
-            end
-            out[pair:sub(1, eq - 1)] = pair:sub(eq + 1)
-        end
-        return out
-    end
-    return raw
-end
-
 -- ── Introspection ──────────────────────────────────────────────────────────
-
----The input → declared `format` map for one configuration (`""` for an input with
----no format, read by its `type` alone).
----@param configuration easydap.Configuration
----@return table<string, string>
-local function _input_formats(configuration)
-    local formats = {}
-    for name, spec in pairs(configuration.inputs or {}) do
-        formats[name] = spec.format or ""
-    end
-    return formats
-end
 
 ---An adapter's declared `configurations`, or an empty table.
 ---@param adapter string
@@ -143,27 +39,26 @@ function M.configuration_names(adapter)
     return out
 end
 
----The input → `format` map a configuration declares (`""` for an input with no
----format). This drives format-aware value completion — which inputs take a path,
----and of what kind; callers that need every input's format should read it once
----rather than looking formats up name-by-name.
+---The inputs a configuration declares (`name -> easydap.Input`), or an empty table.
+---Hand an entry to `easydap.inputs` to learn how to read, describe, seed or complete
+---it; callers that need several inputs should read the table once rather than
+---looking entries up name-by-name.
 ---@param adapter string
 ---@param configuration_name string
----@return table<string, string>
-function M.configuration_input_formats(adapter, configuration_name)
+---@return table<string, easydap.Input>
+function M.configuration_inputs(adapter, configuration_name)
     local configuration = M.configuration(adapter, configuration_name)
-    if not configuration then return {} end
-    return _input_formats(configuration)
+    return (configuration and configuration.inputs) or {}
 end
 
 ---The input names a configuration declares, sorted. These are the `name=value`
----tokens `quick_run` accepts.
+---tokens `quick_run` accepts, and the `parameters` keys a tasks file may set.
 ---@param adapter string
 ---@param configuration_name string
 ---@return string[]
 function M.configuration_input_names(adapter, configuration_name)
     local out = {}
-    for name in pairs(M.configuration_input_formats(adapter, configuration_name)) do
+    for name in pairs(M.configuration_inputs(adapter, configuration_name)) do
         out[#out + 1] = name
     end
     table.sort(out)
@@ -171,25 +66,23 @@ function M.configuration_input_names(adapter, configuration_name)
 end
 
 ---The input names a configuration marks `required = true`, sorted — the ones
----`quick_run` errors on when left unset.
+---`resolve_task` errors on when left unset.
 ---@param adapter string
 ---@param configuration_name string
 ---@return string[]
 function M.configuration_required(adapter, configuration_name)
-    local configuration = M.configuration(adapter, configuration_name)
     local out = {}
-    if not configuration then return out end
-    for name, spec in pairs(configuration.inputs or {}) do
+    for name, spec in pairs(M.configuration_inputs(adapter, configuration_name)) do
         if spec.required then out[#out + 1] = name end
     end
     table.sort(out)
     return out
 end
 
----Adapter names `quick_run`/`new_run_file` can drive — those declaring at
+---Adapter names a configuration-driven front end can offer — those declaring at
 ---least one configuration — sorted.
 ---@return string[]
-function M.quick_run_adapters()
+function M.configurable_adapters()
     local out = {}
     for name, def in pairs(require("easydap.adapters")) do
         if def.configurations and next(def.configurations) then out[#out + 1] = name end
@@ -214,15 +107,16 @@ function M.requests(adapter)
     return out
 end
 
--- ── Filling (quick_run) ────────────────────────────────────────────────────
+-- ── Resolving ──────────────────────────────────────────────────────────────
 
----Read every declared input from `values`, coercing each by its `type`/`format`.
----A value that is already a non-string Lua value is taken verbatim. Unset inputs
----are simply absent from the result (recorded in `missing` when `required`), which
----is what lets `build` omit their fields by assigning nil — or source them some
----other way, as an attach configuration does for an unset `pid`.
+---Read every declared input from `values`. A string is that input's string form and
+---is parsed by its `type`/`format`; any other Lua value is already the typed form
+---and is taken verbatim (see `easydap.inputs` on the two forms). Unset inputs are
+---simply absent from the result (recorded in `missing` when `required`), which is
+---what lets `build` omit their fields by assigning nil — or source them some other
+---way, as an attach configuration does for an unset `pid`.
 ---@param configuration easydap.Configuration
----@param values table<string, any>  input name → raw CLI string or typed value
+---@param values table<string, any>  input name → a value in either authoring form
 ---@return table<string, any> inputs, string[] missing, string[] errs
 local function _read_inputs(configuration, values)
     local inputs, missing, errs = {}, {}, {}
@@ -233,7 +127,7 @@ local function _read_inputs(configuration, values)
         elseif type(raw) ~= "string" then
             inputs[name] = raw
         else
-            local val, cerr = M.coerce(spec, raw)
+            local val, cerr = inputs_registry.parse(spec, raw)
             if cerr then
                 errs[#errs + 1] = name .. ": " .. cerr
             else
@@ -247,52 +141,87 @@ local function _read_inputs(configuration, values)
     return inputs, missing, errs
 end
 
----Read a named configuration's inputs from `values` (input name → raw CLI string,
----or an already-typed Lua value to use verbatim) and hand them to the
----configuration's `build`, which assembles the native request body and any
----task-level connection in place.
----
----The result goes to `done` rather than out through a return, because a `build` is
----free to source an unset input by asking the user (an attach configuration picks a
----process for an absent `pid`), and an answer that arrives from a `vim.ui.select`
----callback cannot be returned to a caller that has already moved on. `done` fires
----synchronously for every `build` that asks nothing — which is most of them — and
----once the user answers for the rest. Exactly one call, either way.
----@param adapter string
----@param configuration_name string
----@param values table<string, any>
----@param done fun(body: table?, connect: {host?:string, port?:integer}?, err: string?)
-function M.fill_configuration(adapter, configuration_name, values, done)
-    local configuration = M.configuration(adapter, configuration_name)
-    if not configuration then
-        return done(nil, nil, ("adapter %s has no configuration %q (available: %s)")
-            :format(adapter, tostring(configuration_name), table.concat(M.configuration_names(adapter), ", ")))
+---What to resolve: an adapter's named configuration, the values for its inputs, and
+---the name the resulting task should run under.
+---@class easydap.ResolveSpec
+---@field adapter       string
+---@field configuration string
+---@field name?         string              run/panel group name for the resolved task
+---@field values?       table<string, any>  input name → a value in either authoring form
+
+---Resolve one of an adapter's named configurations, plus values for its inputs,
+---into a runnable `easydap.Task` — everything `run`/`start_task` needs, with the
+---request kind and any task-level connection already in place. This is the single
+---seam between a configuration and a front end: a caller supplies values and gets
+---back a task, and never has to rejoin the two itself.
+---@param spec easydap.ResolveSpec
+---@param done fun(task: easydap.Task?, err: string?)
+---@return fun() cancel
+function M.resolve_task(spec, done)
+    local settled, cancelled = false, false
+
+    ---@param task easydap.Task?
+    ---@param err string?
+    local function finish(task, err)
+        if settled or cancelled then return end
+        settled = true
+        done(task, err)
     end
 
-    local inputs, missing, errs = _read_inputs(configuration, values)
-    if #errs > 0 then return done(nil, nil, table.concat(errs, "; ")) end
-    if #missing > 0 then return done(nil, nil, "missing: " .. table.concat(missing, ", ")) end
+    local function cancel() cancelled = true end
+
+    local configuration = M.configuration(spec.adapter, spec.configuration)
+    if not configuration then
+        finish(nil, ("adapter %s has no configuration %q (available: %s)")
+            :format(spec.adapter, tostring(spec.configuration),
+                table.concat(M.configuration_names(spec.adapter), ", ")))
+        return cancel
+    end
+
+    local inputs, missing, errs = _read_inputs(configuration, spec.values or {})
+    if #errs > 0 then
+        finish(nil, table.concat(errs, "; "))
+        return cancel
+    end
+    if #missing > 0 then
+        finish(nil, "missing: " .. table.concat(missing, ", "))
+        return cancel
+    end
 
     local body, connect = {}, {}
-    if not configuration.build then return done(body, nil) end
 
-    -- The coroutine wraps the `build` call and nothing else: `build` is the only
-    -- thing here that can yield (on a picker), and everything after it is just the
-    -- answer being packaged up.
-    local co = coroutine.create(function()
-        local ok, berr = xpcall(configuration.build, debug.traceback, body, connect, inputs)
-        if not ok then return done(nil, nil, berr) end
-        -- `build` gave up — a cancelled picker.
-        if berr then return done(nil, nil, berr) end
-
+    ---Package what `build` assembled in place into the task it describes.
+    local function deliver()
         -- No spec governs `connect` (it's task-level, not a body field), so an unset
         -- host/port is always optional: a `build` that leaves it empty reports none,
         -- and the resolved AdapterDef's own host/port apply instead.
-        if next(connect) == nil then connect = nil end
-        done(body, connect)
+        local has_connect = next(connect) ~= nil
+        finish({
+            name       = spec.name,
+            adapter    = spec.adapter,
+            request    = configuration.request,
+            parameters = body,
+            host       = has_connect and connect.host or nil,
+            port       = has_connect and connect.port or nil,
+        })
+    end
+
+    if not configuration.build then
+        deliver()
+        return cancel
+    end
+
+    local co = coroutine.create(function()
+        local ok, berr = xpcall(configuration.build, debug.traceback, body, connect, inputs)
+        if not ok then return finish(nil, berr) end
+        -- `build` gave up — a cancelled picker.
+        if berr then return finish(nil, berr) end
+        deliver()
     end)
     local ok, err = coroutine.resume(co)
-    if not ok then done(nil, nil, tostring(err)) end
+    if not ok then finish(nil, tostring(err)) end
+
+    return cancel
 end
 
 return M

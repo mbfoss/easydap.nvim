@@ -297,13 +297,14 @@ end
 
 ---Launch or attach under an adapter using one of its declared `configurations`.
 ---`assignments[1]`/`[2]` are strictly the adapter and configuration name (`{ "codelldb", "launch", … }`);
----every argument from `[3]` on is an `input=value` assignment, assembled into a
----native body via `schema.fill_configuration` (see `schema.configuration_input_names`
----for the set a configuration accepts). An input left unset is simply omitted from
----the assembled body, unless its `inputs` entry marks it `required = true` — only
----then is leaving it unset an error. A configuration's optional `connect` function
----sets the task's connection endpoint for adapters that connect over a task-level
----TCP endpoint (e.g. `remote`/`java-debug-server`).
+---every argument from `[3]` on is an `input=value` assignment — each value written
+---in its input's string form — resolved into a runnable task by
+---`schema.resolve_task` (see `schema.configuration_input_names` for the set a
+---configuration accepts). An input left unset is simply omitted from the assembled
+---body, unless its `inputs` entry marks it `required = true` — only then is leaving
+---it unset an error. A configuration's `build` sets the task's connection endpoint
+---for adapters that connect over a task-level TCP endpoint (e.g.
+---`remote`/`java-debug-server`).
 ---
 ---Returns nil when the configuration's `build` stops to ask the user something (an
 ---attach picking a process for an unset `pid`): there is no run yet to hand back —
@@ -323,18 +324,12 @@ function M.quick_run(assignments)
     end
     if not require("easydap.adapters")[adapter] then
         _err("quick_run: unknown adapter: " .. adapter ..
-            " (available: " .. table.concat(schema.quick_run_adapters(), ", ") .. ")")
+            " (available: " .. table.concat(schema.configurable_adapters(), ", ") .. ")")
         return
     end
     if not configuration_name or configuration_name == "" or configuration_name:find("=", 1, true) then
         _warn("quick_run: usage: quick_run " .. adapter .. " <configuration> [input=value]…"
             .. " (configurations: " .. table.concat(schema.configuration_names(adapter), ", ") .. ")")
-        return
-    end
-    local configuration = schema.configuration(adapter, configuration_name)
-    if not configuration then
-        _err("quick_run: unknown configuration " .. configuration_name .. " for adapter " .. adapter ..
-            " (available: " .. table.concat(schema.configuration_names(adapter), ", ") .. ")")
         return
     end
 
@@ -350,25 +345,20 @@ function M.quick_run(assignments)
     end
 
     -- A configuration whose `build` asks the user something (an attach resolving an
-    -- unset `pid`) finishes filling only once they answer, so the run is started from
-    -- the callback. Every other configuration fills synchronously, and `run` is
+    -- unset `pid`) resolves only once they answer, so the run is started from the
+    -- callback. Every other configuration resolves synchronously, and `run` is
     -- assigned before we return it.
     local run
-    schema.fill_configuration(adapter, configuration_name, values, function(params, connect, err)
-        if not params then
+    schema.resolve_task({
+        adapter       = adapter,
+        configuration = configuration_name,
+        name          = adapter,
+        values        = values,
+    }, function(task, err)
+        if not task then
             _err("quick_run: " .. tostring(err))
             return
         end
-
-        ---@type easydap.Task
-        local task = {
-            name       = adapter,
-            adapter    = adapter,
-            request    = configuration.request,
-            parameters = params,
-            host       = connect and connect.host,
-            port       = connect and connect.port,
-        }
         run = M.run(task)
     end)
     return run

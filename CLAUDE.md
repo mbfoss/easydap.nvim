@@ -53,35 +53,58 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   `run` backend for external task runners. Consumes a native task
   (`name`/`adapter`/`request`/`parameters` + optional `host`/`port`/
   `raw_messages`) and sends `parameters` as the DAP request body verbatim.
-- [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug quick_run` and
-  the configuration reader for `new_run_file`. `fill_configuration` reads
-  `quick_run`'s `name=value` arguments by each input's declared `type` (the Lua
-  type `build` receives) and optional `format` (how the string is read into it) —
-  `coerce` —
-  then calls the configuration's `build` to assemble the native request body and
-  any task-level connection, delivering them to a `done(body, connect, err)`
-  callback; inputs marked `required` are errors when left unset, other unset inputs
-  arrive at `build` as nil (so Lua drops the fields assigned from them) unless that
-  `build` answers them another way. `build` runs on a coroutine — it is the one
-  thing here allowed to yield, which is how an attach configuration can ask the user
-  to pick a process for an unset `pid` (`shared.resolve_pid`); a `build` that gives
-  up returns an error string. Introspection helpers —
+- [inputs.lua](lua/easydap/inputs.lua) — the input-format registry: one row per
+  `easydap.InputFormat`, each stating every way that format is read — `type` (what
+  `build` receives), `schema` (JSON Schema for the typed authored form), `parse`
+  (the string authored form), `seed` (a scaffolded document's starting value) and
+  `complete` (command-line value completion). Consumers call the four projections
+  (`parse`/`json_schema`/`seed`/`completion`) and **never switch on a format name**;
+  an unknown or absent format falls back to `type` alone. Adding a format is one
+  row here, and every consumer — in both plugins — picks it up.
+
+  A value space has two authoring forms, which is why `values` is a per-input union
+  of string-or-typed: the **string form** (a command line, where everything is text;
+  `parse` reads it) and the **typed form** (a structured file that already has
+  types; `schema` describes it). They are not rival answers to what is legal — they
+  are one value space reached from a CLI or from a typed file, and a single call may
+  mix them per input. `shell_args` is the clearest case: `schema` is a *string* (you
+  write a command line), `type` is a *table* (`build` receives an argument list).
+- [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug quick_run`, the
+  configuration reader for `new_run_file`, and the seam easytasks' `debug` task type
+  runs on. `resolve_task(spec, done)` is that seam: it reads a configuration's
+  declared inputs from `spec.values` (each in either authoring form, parsed via
+  `easydap.inputs`), calls the configuration's `build` to assemble the native
+  request body and any task-level connection, and delivers a **complete
+  `easydap.Task`** — request kind and host/port included — ready for
+  `run`/`start_task`. Callers supply values and get back a task; they never rejoin
+  the two themselves. Inputs marked `required` are errors when left unset, other
+  unset inputs arrive at `build` as nil (so Lua drops the fields assigned from them)
+  unless that `build` answers them another way. `build` runs on a coroutine — it is
+  the one thing here allowed to yield, which is how an attach configuration can ask
+  the user to pick a process for an unset `pid` (`shared.resolve_pid`); a `build`
+  that gives up returns an error string. `done` fires **exactly once**, or never if
+  the returned `cancel` is called first — so a caller that gives up while a picker is
+  still open need not remember that it did. Introspection helpers —
   `configurations`/`configuration`/`configuration_names`,
-  `configuration_input_names`/`configuration_input_formats`/`configuration_required`,
-  `requests`, `quick_run_adapters` — drive completion and scaffolding. Native keys
+  `configuration_inputs`/`configuration_input_names`/`configuration_required`,
+  `requests`, `configurable_adapters` — drive completion and scaffolding. Native keys
   throughout — no portable/generic field vocabulary.
 - [scaffold.lua](lua/easydap/scaffold.lua) — run-file creation behind `:Debug
   new_run_file`: splices a configuration's `template` source into a runnable Lua
   run_file (re-indenting it, nothing more) and opens it.
 
-  `build` and `template` are deliberately separate and never meet: `quick_run` goes
-  `inputs -> build -> body -> task`, while `new_run_file` goes `template -> Lua
+  `build` and `template` are deliberately separate and never meet: a run goes
+  `values -> build -> task`, while `new_run_file` goes `template -> Lua
   source -> user edits -> task` (a run file's `parameters` is sent verbatim, never
   built). One table serving both is what forced the old `"{name}"`/`"{name:transform}"`
   token grammar, which leaked unsubstituted tokens into scaffolded files. Two costs
   are accepted deliberately: the field list lives in both `build` and `template`
-  (drift hurts scaffold quality, never `quick_run` correctness), and the template is
+  (drift hurts scaffold quality, never resolve correctness), and the template is
   unvalidated text (a typo surfaces only when that configuration is scaffolded).
+  This is the one projection of a configuration that is *not* a row in
+  [inputs.lua](lua/easydap/inputs.lua) — a template is source text carrying comments
+  and expressions the run file evaluates when loaded (`cwd = vim.fn.getcwd()`), and
+  data cannot express those.
 
 **Persistence** — [store.lua](lua/easydap/store.lua)
 - A thin path + read/write helper. The project root is the nearest ancestor of

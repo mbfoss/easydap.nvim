@@ -304,19 +304,17 @@ local function _register_user_commands()
             local name = arg_lead:sub(1, eq - 1)
             local pfx  = arg_lead:sub(1, eq)
             local val  = arg_lead:sub(eq + 1)
-            -- Completing an input's value: offer paths for a path-formatted input,
-            -- per the `format` its configuration declares; nothing for the rest.
-            local fmt = schema.configuration_input_formats(adapter, configuration_name)[name]
-            local comp_type = (fmt == "file" and "file")
-                or ((fmt == "dir" or fmt == "cwd") and "dir")
-                or nil
+            -- Completing an input's value: whatever the input's own format says it
+            -- can offer — paths for the path-ish ones, nothing for the rest.
+            local input = schema.configuration_inputs(adapter, configuration_name)[name]
+            local comp_type = require("easydap.inputs").completion(input)
             if not comp_type then return {} end
             return vim.tbl_map(function(f) return pfx .. f end, vim.fn.getcompletion(val, comp_type))
         end
 
         -- No `=` yet: complete the adapter, then the configuration, then input names.
         if not adapter then
-            return schema.quick_run_adapters()
+            return schema.configurable_adapters()
         elseif not configuration_name then
             return schema.configuration_names(adapter)
         end
@@ -349,7 +347,7 @@ local function _register_user_commands()
             local used   = { unpack(rest, 2) }
             local pos    = #used + 1 -- 1-based position of the token being completed
             if pos == 1 then
-                return schema.quick_run_adapters()
+                return schema.configurable_adapters()
             elseif pos == 2 then
                 return schema.configuration_names(used[1])
             end

@@ -54,11 +54,16 @@ Re-exports client signals so consumers depend only on `manager`.
   verbatim.
 - [runner.lua](lua/easydap/runner.lua) — the standalone run frontend: run files,
   `quick_run`, `rerun`, and the run panel.
-- [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug quick_run` and
-  the reader for `new_run_file`. Coerces a configuration's declared `inputs` from
-  `name=value` arguments and calls its `build` (`fill_configuration`) to assemble
-  the resulting native request body / task-level connection, handing them to a
-  `done` callback — a `build` may stop to ask the user something first.
+- [inputs.lua](lua/easydap/inputs.lua) — the input-format registry: one row per
+  format, stating every way it is read (parsed from a command line, described as
+  JSON Schema for a typed file, seeded into a scaffolded document, completed).
+  Nothing else switches on a format name, so adding one is a single row.
+- [schema.lua](lua/easydap/schema.lua) — the engine behind `:Debug quick_run`, the
+  reader for `new_run_file`, and the seam easytasks' `debug` task type runs on.
+  `resolve_task` reads a configuration's declared `inputs` from a table of values
+  and calls its `build`, delivering a complete `easydap.Task` to a `done` callback —
+  a `build` may stop to ask the user something first, and the returned `cancel`
+  drops the answer if the caller has given up by then.
 - [scaffold.lua](lua/easydap/scaffold.lua) — `:Debug new_run_file`: renders a
   configuration's `template` into a runnable Lua run file and opens it.
 
@@ -104,7 +109,7 @@ Each `easydap.Configuration`:
 | ------------- | ------------------------------------------------------------------------------- |
 | `request`     | `"launch"` or `"attach"`                                                        |
 | `inputs`      | what the configuration accepts — `name -> easydap.Input`; see below             |
-| `build`       | `fun(params, connect, inputs)` — assembles the native request body, and any task-level TCP endpoint, in place for `quick_run` |
+| `build`       | `fun(params, connect, inputs)` — assembles the native request body, and any task-level TCP endpoint, in place |
 | `template`    | Lua **source text** for the body `new_run_file` scaffolds, seeded with example values |
 
 Each `easydap.Input` declares one input up front:
@@ -112,9 +117,29 @@ Each `easydap.Input` declares one input up front:
 | Field      | Meaning                                                                        |
 | ---------- | ------------------------------------------------------------------------------ |
 | `type`     | what the input *is* — the Lua type `build` receives: one of `string`/`boolean`/`integer`/`number`/`table`. Defaults to `string` |
-| `format`   | how its raw `quick_run` string is read into that type: one of `file`/`dir`/`cwd`/`host`/`port`/`env`/`list`/`shell_args` (`easydap.schema.coerce` does the reading). It also drives path-aware value completion. Omit it and the string is read by `type` alone — verbatim for a string, `tonumber` for a number/integer, true/1/yes or false/0/no for a boolean. A `table` input always needs one |
-| `required` | when `true`, the user must write the value out as an argument; leaving it unset is a `quick_run` error. Any other unset input simply arrives at `build` as nil — which `build` may answer by omitting the field, or some other way: an attach `build` asks the user to pick a process for an unset `pid`, so no adapter marks that input `required` |
+| `format`   | which authored forms reach that type: one of `file`/`dir`/`cwd`/`host`/`port`/`env`/`list`/`shell_args`, each a row in [inputs.lua](lua/easydap/inputs.lua) that also says how the input is described, seeded and completed. Omit it and the string form is read by `type` alone — verbatim for a string, `tonumber` for a number/integer, true/1/yes or false/0/no for a boolean. A `table` input always needs one |
+| `required` | when `true`, the user must supply the value; leaving it unset is a resolve error. Any other unset input simply arrives at `build` as nil — which `build` may answer by omitting the field, or some other way: an attach `build` asks the user to pick a process for an unset `pid`, so no adapter marks that input `required` |
 | `description` | a few words on what the input means, e.g. `"process id to attach to"` |
+
+#### Two authoring forms
+
+An input declares a *value space*, and there are two ways to write into it:
+
+- the **string form** — a command line, where everything is text. `:Debug quick_run
+  codelldb launch command='./a.out --verbose'` is this.
+- the **typed form** — a structured file that already has types, e.g. an easytasks
+  `tasks.toml` writing `env = { A = "1" }` rather than `env=A=1`.
+
+Both land on the input's declared `type`, so `build` never sees the difference and a
+single call may mix the two per input. They are not rival answers to what is legal —
+they are one value space reached from a CLI or from a typed file.
+
+This is why `format` is more than a parser. `shell_args` is the clearest case: you
+*write* a command line (a string), and `build` *receives* an argument list (a table).
+The [inputs.lua](lua/easydap/inputs.lua) row states both, along with how the input
+gets described to a schema-driven editor, seeded into a scaffolded document, and
+completed on a command line. Adding a format means adding one row — every consumer,
+in easydap and easytasks alike, reads it from there.
 
 ### `build` and `template` are separate paths
 
@@ -130,9 +155,10 @@ instead of one table half-answering both. A run file's `parameters` is sent to t
 adapter verbatim (`easydap.task`), so it never passes through `build`, and `build`
 never produces anything the scaffolder reads.
 
-- **`build(params, connect, inputs)`** assembles everything `quick_run` needs, in
-  place. `params` and `connect` both start empty; assign into them from the coerced
-  `inputs`. Identity fields the adapter pins (`type`/`name`) and fixed defaults go
+- **`build(params, connect, inputs)`** assembles everything a run needs, in
+  place. `params` and `connect` both start empty; assign into them from `inputs`,
+  which arrive already read into each input's declared `type` whichever form the
+  caller wrote them in. Identity fields the adapter pins (`type`/`name`) and fixed defaults go
   here too, as plain literals. An unset input is nil, and Lua drops nil-valued
   keys, so `params.cwd = inputs.cwd` omits `cwd` when it wasn't supplied — assign
   unconditionally and optional fields take care of themselves. Guard only when a
@@ -156,11 +182,12 @@ never produces anything the scaffolder reads.
   ```
 
   The schema layer stays out of this — to it a pid is the integer it is. A `build`
-  that prompts yields, which is why `fill_configuration` runs the `build` call on a
-  coroutine and reports through a `done(body, connect, err)` callback rather than a
+  that prompts yields, which is why `resolve_task` runs the `build` call on a
+  coroutine and reports through a `done(task, err)` callback rather than a
   return: the pid arrives from a `vim.ui.select` callback, long after a return value
   would have been read. `done` fires synchronously for every `build` that asks
-  nothing. Returning a string from `build` aborts with that error.
+  nothing. Returning a string from `build` aborts with that error — so always resume
+  one way or the other, or the caller waiting on you never hears back.
 - **`template`** is Lua source text for the body of the generated run file's
   `parameters` table, spliced in as written and only re-indented (write it at
   whatever indentation reads best in the adapter file). Because it is source rather

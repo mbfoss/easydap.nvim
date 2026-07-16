@@ -29,11 +29,16 @@
 ---| "number"
 ---| "table"    # always needs a `format` to say how the string becomes one
 
----How an input's raw `quick_run` string is read into a value of its `type`
----(`easydap.schema.coerce` does the reading). Omit it and the string is read by
----`type` alone: verbatim for a string, `tonumber` for a number/integer, true/1/yes
----or false/0/no for a boolean. A format never changes the declared `type` — it only
----says how to get there, and which values are legal on the way.
+---Which of the declared formats an input takes — the whole vocabulary lives in
+---[inputs.lua](../inputs.lua), one row per name, and each row states every way that
+---format is read: parsed from a command line, described as JSON Schema for a typed
+---file, seeded into a scaffolded document, completed on a command line. Omit the
+---format and the string form is read by `type` alone: verbatim for a string,
+---`tonumber` for a number/integer, true/1/yes or false/0/no for a boolean.
+---
+---A format never changes the declared `type` — it only says how to get there, and
+---which values are legal on the way. The arrows below are that trip: what you write
+---→ what `build` receives.
 ---@alias easydap.InputFormat
 ---| "file"        # → string: a path, expanded
 ---| "dir"         # → string: a path, expanded
@@ -44,26 +49,28 @@
 ---| "list"        # → table: "a,b" → { "a", "b" }
 ---| "shell_args"  # → table: a shell-quoted command line → a list of arguments
 
----One declared input of a configuration — the `name=value` arguments `quick_run`
----accepts. `type` is what `build` receives; `format` says how the raw CLI string is
----read into it, and drives path-aware value completion. Omit both for an input taken
----verbatim as a string. An input with `required = true` must be written out as an
----argument — leaving it unset is a `quick_run` error; any other input simply arrives
----at `build` as nil, which a `build` is free to answer some other way than by
----omitting the field (an attach configuration asks the user to pick a process for an
----unset `pid`, which is why no adapter marks that input `required`).
+---One declared input of a configuration — a `name=value` argument to `quick_run`, a
+---`parameters` key in an easytasks tasks file. `type` is what `build` receives;
+---`format` says which authored forms reach it (and drives path-aware value
+---completion). Omit both for an input taken verbatim as a string. An input with
+---`required = true` must be supplied — leaving it unset is a resolve error; any
+---other input simply arrives at `build` as nil, which a `build` is free to answer
+---some other way than by omitting the field (an attach configuration asks the user
+---to pick a process for an unset `pid`, which is why no adapter marks that input
+---`required`).
 ---@class easydap.Input
 ---@field type?        easydap.InputType    default `string`
 ---@field format?      easydap.InputFormat  default: read by `type` alone
 ---@field required?    boolean  unset is an error (default false)
 ---@field description? string   a few words on what the input means
 
----A named `quick_run`/`new_run_file` configuration for one adapter.
+---A named configuration for one adapter — what `resolve_task` turns into a runnable
+---task, and what `new_run_file` scaffolds.
 ---
 ---`inputs` declares what the configuration accepts (name → `easydap.Input`); the
----two commands then read it along separate paths that never meet:
+---two are then read along separate paths that never meet:
 ---
----  * `build(params, connect, inputs)` assembles everything `quick_run` needs, in
+---  * `build(params, connect, inputs)` assembles everything a run needs, in
 ---    place: the native request body in `params`, and — for adapters that connect
 ---    over a task-level TCP endpoint (an `AdapterDef` `host`/`port`, e.g.
 ---    `remote`/`java-debug-server`) — that endpoint in `connect`. Both start empty;
@@ -72,17 +79,22 @@
 ---    `params.cwd = inputs.cwd` omits `cwd` entirely when it wasn't supplied —
 ---    assign unconditionally and optional fields take care of themselves. Identity
 ---    fields the adapter pins (`type`/`name`) and fixed defaults are assigned here
----    too, as plain literals.
+---    too, as plain literals. `inputs` arrives already read into each input's
+---    declared `type`, whichever form the caller authored it in.
 ---
 ---    Omitting the field is only the *default* answer to an unset input; `build` is
 ---    where a configuration decides otherwise, because it alone knows what the
 ---    request means. An attach body is nothing without a process, so every attach
 ---    `build` resolves an unset `pid` by asking the user to pick one
 ---    (`shared.resolve_pid`) — the schema layer just reads a pid as the integer it
----    is. Such a `build` yields; `fill_configuration` runs it on a coroutine for
----    exactly that reason and delivers the body once it returns. A `build` that
----    cannot go on returns an error string (a cancelled picker), which `quick_run`
----    reports and which aborts the run.
+---    is. Such a `build` yields; `resolve_task` runs it on a coroutine for exactly
+---    that reason and delivers the task once it returns. A `build` that cannot go on
+---    returns an error string (a cancelled picker), which aborts the run.
+---
+---    A `build` must always resume — return a value or an error string — so that a
+---    caller waiting on it hears back. A caller that gives up first cancels its
+---    resolve and stops listening, so a `build` parked forever on an unanswered
+---    picker strands nothing but itself.
 ---  * `template` is what `new_run_file` scaffolds: Lua **source text** for the body
 ---    of the generated run file's `parameters` table, spliced in as written (only
 ---    re-indented). Because it is source rather than data it carries its own
@@ -94,8 +106,11 @@
 ---
 ---Keeping the field list in both is deliberate: they answer different questions
 ---(what to send vs. what to show someone starting a run file), and drift between
----them costs scaffold quality, never `quick_run` correctness. The template is
+---them costs scaffold quality, never resolve correctness. The template is
 ---unvalidated text — a typo in it surfaces only when the run file is scaffolded.
+---This is the one duplication here that is *not* worth collapsing into data: a
+---template carries comments and expressions the run file evaluates when loaded, and
+---data cannot express those.
 ---@class easydap.Configuration
 ---@field description  string
 ---@field request      "launch"|"attach"

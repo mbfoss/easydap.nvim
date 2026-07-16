@@ -82,7 +82,7 @@ function M.new_run_file(assignments)
     local base = require("easydap.adapters")[adapter]
     if not base then
         _err("new_run_file: unknown adapter: " .. adapter ..
-            " (available: " .. table.concat(schema.quick_run_adapters(), ", ") .. ")")
+            " (available: " .. table.concat(schema.configurable_adapters(), ", ") .. ")")
         return
     end
 
