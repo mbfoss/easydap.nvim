@@ -143,7 +143,7 @@ end
 ---@class ezdap.ResolveSpec
 ---@field adapter       string
 ---@field profile string
----@field name?         string              run/panel group name for the resolved task
+---@field name?         string              run group name for the resolved task
 ---@field values?       table<string, any>  input name → a value in either authoring form
 
 ---Resolve one of an adapter's named profiles, plus values for its inputs, into a

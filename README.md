@@ -44,8 +44,8 @@ adapter, set a breakpoint, and start stepping.
   variables, watch expressions and breakpoints in one navigable view.
 - **Inline variable values** — see values right in the source while stopped,
   in several placement styles.
-- **Integrated run panel** — REPL, program output, adapter terminal and an
-  optional raw-DAP-message log, paged in a single split.
+- **Run buffers on the session** — REPL, program output, adapter terminal and an
+  optional raw-DAP-message log, listed under their session in the debug view.
 - **Reverse debugging** — step back and reverse-continue when the adapter
   supports it.
 - **Power moves** — jump-to-cursor, restart frame, step-into-targets,
@@ -196,7 +196,7 @@ left unset is an error and an attach with no `pid` pops a process picker:
 ```lua
 -- debug.lua
 return {
-  name       = "debug app",    -- run/panel label (defaults to "debug")
+  name       = "debug app",    -- run label (defaults to "debug")
   adapter    = "codelldb",     -- an entry in require("ezdap.adapters")
   profile    = "launch_program", -- one of the adapter's named profiles
   parameters = {               -- answers to the profile's declared inputs
@@ -345,14 +345,15 @@ logpoint, disabled, exception). The full list of subcommands is in the
 ### Debug panel (`:Debug view`)
 
 The main panel is a tree of **sessions → threads → stack frames → scopes →
-variables**, plus **watch expressions** and **breakpoints**. It opens
-automatically when a session starts; open or focus it any time with `:Debug view`.
+variables**, plus **watch expressions** and **breakpoints**. A session row
+expands to the **buffers** its run spawned. It opens automatically when a session
+starts; open or focus it any time with `:Debug view`.
 
 Inside the panel:
 
 | Key   | Action                                                                       |
 | ----- | ---------------------------------------------------------------------------- |
-| `<CR>`| Expand/collapse, select a session, switch to a frame, or jump to a breakpoint's source |
+| `<CR>`| Expand/collapse, select a session, open a session buffer, switch to a frame, or jump to a breakpoint's source |
 | `K`   | Show the full value / frame details / exception info / breakpoint details    |
 | `i`   | Add a watch expression, a function breakpoint, or a data breakpoint (on a variable) |
 | `d`   | Remove the watch expression or breakpoint under the cursor                   |
@@ -368,20 +369,21 @@ While stopped, ezdap renders variable values inline in the source. Choose the
 placement with the `inline_vars` option (`inline`, `eol`, `eol_right_align`,
 `right_align`, or `off`). See [Configuration](#configuration).
 
-### Run panel (`:Debug panel`)
+### Run buffers
 
-Each run gets a bottom split hosting its buffers, paged via a winbar:
+A run's buffers are listed under its session row in the debug view; `<CR>` on one
+opens it in a regular window:
 
-- **Messages** — adapter/run progress
 - **REPL** — evaluate DAP expressions interactively
 - **Output** — the debuggee's output
 - **Terminal** — when the adapter launches the debuggee in a terminal
 - **DAP Messages** — raw protocol log (enable with `raw_messages = true` on the task)
 
+Run progress is appended to a scratch buffer named `ezdap://reports`, reachable
+with `:b ezdap://reports`.
+
 ```vim
-:Debug panel            " toggle the run panel
-:Debug panel next       " next tab (also: previous, jump)
-:Debug panel clean      " drop finished runs
+:Debug clean            " drop finished runs and wipe their buffers
 ```
 
 ### Inspect, disassembly & REPL
@@ -493,7 +495,7 @@ Everything is under the `:Debug` command, with completion for every subcommand.
 | `session` / `thread` / `terminate_thread` / `frame` | Selection pickers   |
 | `inspect`             | Hover a value (word under cursor or selection)    |
 | `disassemble`         | Open the disassembly view                         |
-| `panel [action]`      | Run panel: `toggle` / `jump` / `next` / `previous` / `clean` |
+| `clean`               | Drop finished runs and wipe their buffers         |
 | `project`             | Report the resolved project root                  |
 | `breakpoint …`        | Breakpoint subcommands (below)                    |
 
@@ -567,13 +569,8 @@ map("n", "<F9>",   "<Cmd>Debug breakpoint<CR>",        { desc = "Debug: toggle b
 map("n", "<leader>dc", "<Cmd>Debug breakpoint condition<CR>", { desc = "Debug: conditional breakpoint" })
 map("n", "<leader>dl", "<Cmd>Debug breakpoint logpoint<CR>",  { desc = "Debug: logpoint" })
 map("n", "<leader>dr", "<Cmd>Debug rerun<CR>",                { desc = "Debug: re-run last" })
-map("n", "<leader>du", "<Cmd>Debug view<CR>",                 { desc = "Debug: focus panel" })
-map("n", "<leader>dp", "<Cmd>Debug panel<CR>",                { desc = "Debug: toggle run panel" })
+map("n", "<leader>du", "<Cmd>Debug view<CR>",                 { desc = "Debug: focus debug view" })
 map("n", "<leader>dq", "<Cmd>Debug stop<CR>",                 { desc = "Debug: stop" })
-
--- Count-prefixed panel jump: `2<leader>dj` jumps to run panel tab 2.
--- With no count, `count1` defaults to 1, so a bare `<leader>dj` jumps to tab 1.
-map("n", "<leader>dj", function() vim.cmd("Debug panel jump " .. vim.v.count1) end, { desc = "Debug: jump to run panel tab [count]" })
 
 map("n", "<leader>di", "<Cmd>Debug inspect<CR>",              { desc = "Debug: inspect" })
 map("x", "<leader>di", "<Cmd>Debug inspect<CR>",              { desc = "Debug: inspect selection" })
@@ -628,7 +625,7 @@ to spawn or a `host`/`port` to connect to.
 `config` — most usefully `config.host`/`config.port`, which is how an adapter
 that is really a TCP server gets started and then connected to. It reports
 progress with `ctx.report(msg)`, registers any terminal buffers it spawns with
-`ctx.add_bufnr(bufnr, opts)` so they show up in the run panel, and must call
+`ctx.add_bufnr(bufnr, opts)` so they are listed under the session, and must call
 `callback(err, state)` exactly once — an `err` string aborts the run. Whatever
 `state` it passes comes back as the second argument to `teardown`, which is
 where you stop what you started:

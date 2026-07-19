@@ -188,7 +188,7 @@ local function _register_user_commands()
         "stop", "terminate", "terminate_all",
         "session", "thread", "terminate_thread", "frame",
         "inspect", "disassemble",
-        "project", "panel",
+        "project", "clean",
     }
 
     ---@type ezdap.tk.usercmd.run_fn
@@ -250,22 +250,8 @@ local function _register_user_commands()
             cmd.debug.frame()
         elseif sub == "project" then
             M.project_info()
-        elseif sub == "panel" then
-            local runner = require("ezdap.runner")
-            local action = args[2]
-            if action == "jump" then
-                runner.panel_jump(tonumber(args[3]))
-            elseif action == "next" then
-                runner.panel_next()
-            elseif action == "previous" or action == "prev" then
-                runner.panel_prev()
-            elseif action == "clean" then
-                runner.panel_clean()
-            elseif action == nil or action == "" or action == "toggle" then
-                if count then runner.panel_jump(count) else runner.panel_toggle() end
-            else
-                vim.notify("[ezdap] unknown panel command: " .. tostring(action), vim.log.levels.WARN)
-            end
+        elseif sub == "clean" then
+            require("ezdap.runner").clean()
         elseif sub == "breakpoint" then
             _bp_run({ unpack(args, 2) })
         else
@@ -348,12 +334,6 @@ local function _register_user_commands()
                 return schema.profile_names(used[1])
             end
             return {}
-        end
-        if rest[1] == "panel" and #rest == 1 then
-            return { "toggle", "jump", "next", "previous", "clean" }
-        end
-        if rest[1] == "panel" and rest[2] == "jump" and #rest == 2 then
-            return require("ezdap.runner").panel_tab_numbers()
         end
         return {}
     end

@@ -1,12 +1,13 @@
-local OutputBuffer = require "ezdap.ui.OutputBuffer"
-local _config      = require "ezdap.config"
-local ui_util      = require "ezdap.util.ui_util"
+local OutputBuffer    = require "ezdap.ui.OutputBuffer"
+local _config         = require "ezdap.config"
+local ui_util         = require "ezdap.util.ui_util"
+local session_buffers = require "ezdap.session_buffers"
 
 ---A debug task — native DAP, sent as-is. `parameters` is the adapter's raw
 ---launch/attach body. This is the resolved shape `run`/`start_task` consume, which
 ---run files and `:Debug quick_run` both produce via `ezdap.schema`'s `resolve_task`.
 ---@class ezdap.Task
----@field name?         string                     run/panel group name (defaults to "debug")
+---@field name?         string                     run group name (defaults to "debug")
 ---@field adapter       string                     name of an entry in `ezdap.adapters`
 ---@field request?      "launch"|"attach"          defaults to "launch"
 ---@field parameters?   table                      native DAP launch/attach body (the adapter's own keys), sent verbatim
@@ -39,9 +40,31 @@ local _run_counter = 0
 ---@param callbacks ezdap.TaskCallback
 ---@return fun() -- cancel function
 M.start            = function(task, callbacks)
-    local add_bufnr = callbacks.add_bufnr or function() end
-    local report    = callbacks.report or function() end
-    local on_done   = callbacks.on_done or function() end
+    local host_add_bufnr = callbacks.add_bufnr or function() end
+    local report         = callbacks.report or function() end
+    local on_done        = callbacks.on_done or function() end
+
+    local sessions       = {} ---@type table<integer, ezdap.dap.Session>
+
+    -- Every buffer this run spawns, registered against each session the run
+    -- produces (buffers usually exist before the first session does) so the debug
+    -- view can list a session's buffers.
+    local buf_entries    = {} ---@type ezdap.SessionBuffer[]
+
+    ---@param bufnr integer
+    ---@param opts? ezdap.AddBufOpts
+    local function add_bufnr(bufnr, opts)
+        opts                          = opts or {}
+        buf_entries[#buf_entries + 1] = {
+            bufnr    = bufnr,
+            label    = opts.label or vim.fn.fnamemodify(vim.api.nvim_buf_get_name(bufnr), ":t"),
+            priority = opts.priority or 0,
+        }
+        for id in pairs(sessions) do
+            session_buffers.set(id, buf_entries)
+        end
+        host_add_bufnr(bufnr, opts)
+    end
 
 
     _run_counter   = _run_counter + 1
@@ -121,7 +144,6 @@ M.start            = function(task, callbacks)
         out_buf:append(lines)
     end
 
-    local _sessions     = {} ---@type table<integer, ezdap.dap.Session>
     local _cancel_early = false
     local unsub_progress ---@type fun()
 
@@ -154,7 +176,8 @@ M.start            = function(task, callbacks)
 
         manager.start(config, {
             on_session = function(id, sess)
-                _sessions[id] = sess
+                sessions[id] = sess
+                session_buffers.set(id, buf_entries)
                 if _cancel_early then
                     sess:stop()
                     return
@@ -193,7 +216,7 @@ M.start            = function(task, callbacks)
                 end
 
                 sess:on("terminated", function()
-                    _sessions[id] = nil
+                    sessions[id] = nil
                     if unsub then unsub() end
                     if unsub_progress then unsub_progress() end
                     if _teardown then pcall(_teardown, config, setup_result) end
@@ -222,8 +245,8 @@ M.start            = function(task, callbacks)
     end)
 
     return function()
-        if next(_sessions) then
-            for _, sess in pairs(_sessions) do
+        if next(sessions) then
+            for _, sess in pairs(sessions) do
                 sess:stop()
             end
         else

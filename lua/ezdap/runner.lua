@@ -1,10 +1,13 @@
-local ui_util  = require "ezdap.util.ui_util"
 ---@brief Standalone task runner for ezdap.
 ---
 ---Runs a debug task without easytasks by supplying ezdap's own run callbacks
 ---to `ezdap.task.start`. `ezdap.task` stays provider-agnostic: easytasks
 ---supplies its own callbacks via its backend; this module is the standalone
----equivalent (buffer presentation, progress, run lifecycle).
+---equivalent (progress, run lifecycle).
+---
+---A run's buffers are reached through the debug view, which lists them under
+---their session row (see `ezdap.session_buffers`); this module only tracks them
+---so a finished run's buffers can be wiped.
 ---
 ---One task per file: a run file returns a single task (or a function
 ---returning one):
@@ -13,9 +16,9 @@ local ui_util  = require "ezdap.util.ui_util"
 
 local M        = {}
 
----A run: a unique id (used as its panel group), the task name, a cancel
----function, the buffers it spawned (REPL, Output, Terminal, DAP messages), and
----whether it has finished. Runs are tracked together so tasks can run in parallel.
+---A run: a unique id, the task name, a cancel function, the buffers it spawned
+---(REPL, Output, Terminal, DAP messages), and whether it has finished. Runs are
+---tracked together so tasks can run in parallel.
 ---@class ezdap.runner.Run
 ---@field id     string
 ---@field name   string
@@ -43,21 +46,14 @@ local function _is_task(v)
     return type(v) == "table" and type(v.adapter) == "string"
 end
 
--- Run panel: a single bottom split (ezdap.ui.Panel) hosts every buffer a run
--- registers and pages between them via a winbar. Run progress goes to the report
--- page; pre-flight errors stay on vim.notify, happening before any panel exists.
+-- Run progress is appended to a scratch report buffer, reachable by name
+-- (`:b ezdap://reports`); nothing opens it. Pre-flight errors stay on vim.notify,
+-- happening before the run exists.
 
 local _report_buf ---@type integer?
-local _panel ---@type ezdap.ui.Panel?
 
 ---Cap on the report buffer's line count; `_report` trims oldest lines past this.
 local _MAX_REPORT_LINES = 10000
-
----@return ezdap.ui.Panel
-local function _get_panel()
-    if not _panel then _panel = require("ezdap.ui.Panel").new() end
-    return _panel
-end
 
 ---@return integer
 local function _report_bufnr()
@@ -75,16 +71,9 @@ local function _report_bufnr()
     return _report_buf
 end
 
----Show the shared report page in the run panel. Group-less, so it renders before
----any run group. Priority -1 keeps it visible during setup while real program
----output (Output 0, Terminal 10) surfaces over it once it arrives.
-local function _report_open()
-    _get_panel():add(_report_bufnr(), { label = "Messages", priority = -1, autoscroll = true })
-end
-
----Append timestamped lines to the report buffer. The panel autoscrolls the page
----while it is the active one. Oldest lines are trimmed past `_MAX_REPORT_LINES`
----so the buffer never grows unbounded across a long session.
+---Append timestamped lines to the report buffer, which every run shares. Oldest
+---lines are trimmed past `_MAX_REPORT_LINES` so the buffer never grows unbounded
+---across a long session.
 ---@param msg string
 local function _report(msg)
     local stamp = os.date("%H:%M:%S")
@@ -105,10 +94,10 @@ local function _report(msg)
     vim.bo[buf].modifiable = false
 end
 
----Remove a run's group from the panel and wipe the buffers it spawned.
+---Wipe the buffers a run spawned. The debug view drops them from its session rows
+---once they are gone.
 ---@param run ezdap.runner.Run
 local function _remove_run(run)
-    _get_panel():remove_group(run.id)
     for _, b in ipairs(run.bufnrs) do
         if vim.api.nvim_buf_is_valid(b) then
             pcall(vim.api.nvim_buf_delete, b, { force = true })
@@ -116,9 +105,9 @@ local function _remove_run(run)
     end
 end
 
----Drop any finished run of the same name from the panel and wipe its buffers, so
----re-running a task replaces its own previous run. Live runs and finished runs of
----other tasks are left untouched, so parallel runs accumulate as separate groups.
+---Drop any finished run of the same name and wipe its buffers, so re-running a
+---task replaces its own previous run. Live runs and finished runs of other tasks
+---are left untouched, so parallel runs accumulate independently.
 ---@param name string
 local function _clear_finished(name)
     local kept = {}
@@ -132,9 +121,9 @@ local function _clear_finished(name)
     _runs = kept
 end
 
----Drop every finished run from the panel and wipe their buffers, leaving live
----runs untouched. Bound to `:Debug panel clean`.
-function M.panel_clean()
+---Drop every finished run and wipe their buffers, leaving live runs untouched.
+---Bound to `:Debug clean`.
+function M.clean()
     local kept, finished = {}, {}
     for _, r in ipairs(_runs) do
         if r.done then
@@ -149,9 +138,9 @@ function M.panel_clean()
     end
 end
 
----Run a debug task. Tasks may run in parallel: each run gets its own panel group
----and does not cancel the others. Re-running a task replaces its own previous
----finished run. Returns nil when `task` is not a valid task table.
+---Run a debug task. Tasks may run in parallel: starting one does not cancel the
+---others. Re-running a task replaces its own previous finished run. Returns nil
+---when `task` is not a valid task table.
 ---@param task ezdap.Task
 ---@return ezdap.runner.Run?
 function M.run(task)
@@ -177,20 +166,13 @@ function M.run(task)
     }
     _runs[#_runs + 1] = run
 
-    _report_open()
     _report("▶ " .. task.name)
 
     local cancel = require("ezdap.task").start(task, {
-        add_bufnr = function(bufnr, opts)
-            opts = opts or {}
+        -- Tracked only so `clean` can wipe them; `ezdap.task` is what registers
+        -- them against the run's sessions for the debug view to list.
+        add_bufnr = function(bufnr, _)
             run.bufnrs[#run.bufnrs + 1] = bufnr
-            _get_panel():add(bufnr, {
-                label       = opts.label,
-                priority    = opts.priority,
-                autoscroll  = opts.autoscroll,
-                group       = run.id,
-                group_label = run.name,
-            })
         end,
         report    = _report,
         on_done   = function(ok)
@@ -400,56 +382,6 @@ function M.active()
         if not _runs[i].done then return _runs[i] end
     end
     return nil
-end
-
----The run panel, or nil (with a hint) before the first run when none exists yet.
----@return ezdap.ui.Panel?
-local function _panel_or_warn()
-    if not _panel then
-        _warn("run panel: nothing to show yet (run a task first)")
-        return nil
-    end
-    return _panel
-end
-
----Show or hide the run panel. Hosted buffers persist while hidden, so toggling
----it back restores the same tabs.
-function M.panel_toggle()
-    local p = _panel_or_warn()
-    if p then p:toggle() end
-end
-
----Jump to the n-th panel tab (1-based, matching the numbers shown in the winbar).
----@param n integer?
-function M.panel_jump(n)
-    local p = _panel_or_warn()
-    if not p then return end
-    if type(n) ~= "number" then
-        _warn("panel jump: expected a tab number, e.g. :Debug panel jump 2")
-        return
-    end
-    p:show_index(n)
-end
-
----Show the next panel tab, wrapping.
-function M.panel_next()
-    local p = _panel_or_warn()
-    if p then p:next() end
-end
-
----Show the previous panel tab, wrapping.
-function M.panel_prev()
-    local p = _panel_or_warn()
-    if p then p:prev() end
-end
-
----Tab numbers as strings, for `:Debug panel jump` completion. Empty when no panel.
----@return string[]
-function M.panel_tab_numbers()
-    if not _panel then return {} end
-    local out = {}
-    for i = 1, _panel:tab_count() do out[i] = tostring(i) end
-    return out
 end
 
 return M
