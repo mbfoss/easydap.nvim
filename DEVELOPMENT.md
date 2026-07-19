@@ -117,7 +117,7 @@ Each `ezdap.Input` declares one input up front:
 | Field      | Meaning                                                                        |
 | ---------- | ------------------------------------------------------------------------------ |
 | `type`     | what the input *is* — the Lua type `build` receives: one of `string`/`boolean`/`integer`/`number`/`table`. Defaults to `string` |
-| `format`   | which authored forms reach that type: one of `file`/`dir`/`cwd`/`host`/`port`/`env`/`list`/`shell_args`, each a row in [inputs.lua](lua/ezdap/inputs.lua) that also says how the input is described, seeded and completed. Omit it and the string form is read by `type` alone — verbatim for a string, `tonumber` for a number/integer, true/1/yes or false/0/no for a boolean. A `table` input always needs one |
+| `format`   | which authored forms reach that type: one of `file`/`dir`/`cwd`/`host`/`port`/`map`/`list`, each a row in [inputs.lua](lua/ezdap/inputs.lua) that also says how the input is described, seeded and completed. Omit it and the string form is read by `type` alone — verbatim for a string, `tonumber` for a number/integer, true/1/yes or false/0/no for a boolean. A `table` input always needs one |
 | `required` | when `true`, the user must supply the value; leaving it unset is a resolve error. Any other unset input simply arrives at `build` as nil — which `build` may answer by omitting the field, or some other way: an attach `build` asks the user to pick a process for an unset `pid`, so no adapter marks that input `required` |
 | `description` | a few words on what the input means, e.g. `"process id to attach to"` |
 
@@ -134,12 +134,19 @@ Both land on the input's declared `type`, so `build` never sees the difference a
 single call may mix the two per input. They are not rival answers to what is legal —
 they are one value space reached from a CLI or from a typed file.
 
-This is why `format` is more than a parser. `shell_args` is the clearest case: you
-*write* a command line (a string), and `build` *receives* an argument list (a table).
-The [inputs.lua](lua/ezdap/inputs.lua) row states both, along with how the input
-gets described to a schema-driven editor, seeded into a scaffolded document, and
-completed on a command line. Adding a format means adding one row — every consumer,
-in ezdap and easytasks alike, reads it from there.
+This is why `format` is more than a parser. `map` is the clearest case: you write
+`"A=1,B=2"` on a command line or an object of the same pairs in a typed file, and
+`build` receives one table either way. The [inputs.lua](lua/ezdap/inputs.lua) row
+states both forms, along with how the input gets described to a schema-driven
+editor, seeded into a scaffolded document, and completed on a command line. Adding
+a format means adding one row — every consumer, in ezdap and easytasks alike, reads
+it from there.
+
+Both forms must describe the *same* value. A transformation into a different shape
+is not a second spelling and doesn't belong in a row: splitting a command line into
+`program` + `args` lived here as a `shell_args` format until it moved to the launch
+`build`s that wanted it (`shared.split_command`, which takes a command line or an
+argument list).
 
 ### `build` and `template` are separate paths
 
@@ -212,8 +219,8 @@ are normal and correct.
 
 Which names a profile takes is up to it — there is no portable role
 vocabulary across adapters — but by convention a `launch` profile takes one
-`command` input (`type = "shell_args"`) carrying the whole command line, and
-`build` splits it into that adapter's own program/args fields. See each file under
+`command` input (a plain `string`) carrying the whole command line, and `build`
+splits it into that adapter's own program/args fields via `shared.split_command`. See each file under
 [adapters/](lua/ezdap/adapters/) for worked examples of every shape, including
 nested `connect` groups (`debugpy`'s `remote` profile), custom-launch
 command strings (`codelldb`'s `core`), a `connect`-only profile

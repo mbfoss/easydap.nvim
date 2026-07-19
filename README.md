@@ -176,7 +176,7 @@ profile takes `command` (a full shell command line, split into the
 adapter's own program/args fields) plus `cwd` and `env`; an `attach_process`
 profile takes `pid`, and a `remote` one takes `host`/`port`. Each input
 declares a **type** that decides how the value is read: `file`/`dir`/`cwd`
-(path expansion), `env` (`A=1,B=2`), `shell_args` (shell-quoted splitting) and
+(path expansion), `map` (`A=1,B=2`), `list` (`a,b`) and
 `integer`/`port`/`boolean`. An input left out is simply omitted from the
 request, unless the profile marks it required.
 
@@ -234,6 +234,50 @@ Run either — pass a file, or a **directory** to pick from its `.lua` files:
 
 For the native shape, see each adapter's upstream documentation for the
 `parameters` fields it accepts.
+
+### Why inputs, and not just raw DAP parameters?
+
+The raw shape above is always available, and nothing is hidden behind the
+profile one — so why do profiles declare `inputs` at all?
+
+Because **raw DAP parameters are not a thing you can ask someone for.** The DAP
+spec deliberately says nothing about the body of a `launch` or `attach` request:
+it is whatever that adapter decided. `lldb-dap` wants `program` + `args`;
+`debugpy` wants `module` or `program` and spells its environment `env`; delve
+wants a `mode`; js-debug nests half of it. There is no field list to complete
+against, no way to know which combination is valid, and no way to tell that
+`waitFor` is meaningless unless you are attaching by name. A raw table is the
+right thing to *send* and the wrong thing to *type*.
+
+A declared input fixes that by adding the one thing the raw body lacks — a
+description of itself:
+
+- **Completion knows what to offer.** `:Debug quick_run lldb launch_program <Tab>`
+  lists that profile's inputs, and `command=<Tab>` completes paths, because the
+  input said it was path-like. A raw table can only be completed by guessing.
+- **Errors arrive before the adapter starts.** A required input left unset, a
+  port outside 0–65535, a malformed `A=1,B=2` — all are caught while resolving,
+  where the message can name the input. Send a bad raw body and you get whatever
+  the adapter says on stderr, if anything.
+- **Scaffolding is derived, not templated.** `:Debug new_run_file` writes a run
+  file straight from `inputs` — every field with its description — so there is no
+  template to drift out of sync with what the adapter accepts.
+- **One value, two places to write it.** An input can be answered on a command
+  line or in a typed run file, and both land at the same `build` (`env` is
+  `A=1,B=2` in one and a table in the other). That is why `quick_run` and a run
+  file can't disagree: they resolve through the same declaration.
+- **A profile can answer for you.** Inputs are declarations, so a profile can do
+  something smarter than "omit the field" when one is missing — every attach
+  profile with no `pid` opens a process picker. A raw body has nowhere to put
+  that behaviour.
+
+What ezdap deliberately does **not** do is invent a portable vocabulary on top.
+There is no generic `stopOnEntry`-for-everyone field that gets translated per
+adapter; each profile's `build` writes that adapter's own native keys, and the
+input names sit close to them. The goal is to make the adapter's real interface
+askable — not to hide it behind a lowest common denominator. When you outgrow a
+profile, drop to `configuration` and write the body yourself; the two shapes
+produce the same task.
 
 ### `:Debug new_run_file` — scaffold a run file
 
@@ -570,13 +614,13 @@ adapters.myadapter = {
       description = "debug an executable",
       request = "launch",
       inputs = {
-        command = { type = "table", format = "shell_args", required = true, description = "command line to debug" },
+        command = { type = "string", required = true, description = "command line to debug" },
         cwd     = { type = "string", format = "cwd", description = "working directory" },
       },
       build = function(params, connect, inputs)
-        params.program = vim.fn.expand(inputs.command[1])
-        params.args    = { unpack(inputs.command, 2) }
-        params.cwd     = inputs.cwd
+        -- shared.split_command reads a command line (or a list) into the pair
+        params.program, params.args = require("ezdap.shared").split_command(inputs.command)
+        params.cwd = inputs.cwd
       end,
     },
   },
@@ -589,8 +633,8 @@ no separate scaffold template to keep in sync.
 
 An input's `type` is the Lua type `build` receives (`string`, `boolean`,
 `integer`, `number`, `table`), and its `format` decides how the `quick_run` string
-is read into that type (`file`, `cwd`, `env`, `port`, `shell_args`, …) — omit the
-format and the string is read by `type` alone. `required` makes leaving it unset
+is read into that type (`file`, `dir`, `cwd`, `host`, `port`, `map`, `list`) — omit
+the format and the string is read by `type` alone. `required` makes leaving it unset
 an error — it says the user has to write the value out. Any other unset input
 simply arrives at `build` as
 nil, and since Lua drops nil-valued keys, `params.cwd = inputs.cwd` omits `cwd`
