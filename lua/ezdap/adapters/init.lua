@@ -47,7 +47,6 @@
 ---| "port"        # → integer: range-checked (0-65535)
 ---| "map"         # → table: "A=1,B=2" → { A = "1", B = "2" }
 ---| "list"        # → table: "a,b" → { "a", "b" }
----| "shell_args"  # → table: a shell-quoted command line → a list of arguments
 
 ---One declared input of a profile — a `name=value` argument to `quick_run`, a
 ---`parameters` key in an easytasks tasks file. `type` is what `build` receives;

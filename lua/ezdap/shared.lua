@@ -1,6 +1,26 @@
 -- shared functions - Public API
 
+local str_util = require("ezdap.tk.strutil")
+
 local M = {}
+
+---Split a `command` input into the `program`/`args` pair a launch body wants.
+---
+---A command line is one string that stands for two different fields, so reading it
+---is the launching profile's job, not an input format's: `ezdap.inputs` describes
+---values that are *written* two ways, not values that become something else. Every
+---launch `build` wants the same split, so it lives here rather than in each.
+---
+---The first word is expanded (`~`, `$VAR`) as the program; the rest are its
+---arguments, verbatim. A list is accepted as-is, so a typed run file may write the
+---arguments out instead of quoting them into one line. An unset command yields an
+---empty program, which the adapter reports far better than a nil index would.
+---@param command string|string[]|nil  a command line, or an argument list
+---@return string program, string[] args
+function M.split_command(command)
+    local argv = str_util.cmd_to_string_array(command or "")
+    return vim.fn.expand(argv[1] or ""), { unpack(argv, 2) }
+end
 
 ---The process id to attach to: the one already given, or one picked interactively.
 ---What an attach profile's `build` calls for its `pid` input, which is why

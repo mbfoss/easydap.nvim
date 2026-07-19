@@ -55,10 +55,11 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   `raw_messages`) and sends `parameters` as the DAP request body verbatim.
 - [inputs.lua](lua/ezdap/inputs.lua) — the input-format registry: one row per
   `ezdap.InputFormat`, each stating every way that format is read — `type` (what
-  `build` receives), `schema` (JSON Schema for the typed authored form), `parse`
-  (the string authored form), `seed` (a scaffolded document's starting value) and
-  `complete` (command-line value completion). Consumers call the four projections
-  (`parse`/`json_schema`/`seed`/`completion`) and **never switch on a format name**;
+  `build` receives), `item_type` (what one element of a collection becomes),
+  `schema` (JSON Schema for the typed authored form), `parse` (the string authored
+  form), `seed` (a scaffolded document's starting value) and `complete`
+  (command-line value completion). Consumers call the five projections
+  (`parse`/`json_schema`/`seed`/`completion`/`item_type`) and **never switch on a format name**;
   an unknown or absent format falls back to `type` alone. Adding a format is one
   row here, and every consumer — in both plugins — picks it up.
 
@@ -67,8 +68,14 @@ The code is layered; higher layers depend on lower ones, not the reverse.
   `parse` reads it) and the **typed form** (a structured file that already has
   types; `schema` describes it). They are not rival answers to what is legal — they
   are one value space reached from a CLI or from a typed file, and a single call may
-  mix them per input. `shell_args` is the clearest case: `schema` is a *string* (you
-  write a command line), `type` is a *table* (`build` receives an argument list).
+  mix them per input. `map` is the clearest case: `"A=1,B=2"` on a command line, an
+  object of the same pairs in a typed file, one table at `build`.
+
+  Both forms must describe the *same* value: a row whose forms disagree about what
+  the value is doesn't belong here. Splitting a command line into `program` + `args`
+  is such a case — a transformation into a different shape, not a second spelling —
+  and it lived here as a `shell_args` format until it moved to the launch `build`s
+  that wanted it (`shared.split_command`, which takes a command line or a list).
 - [schema.lua](lua/ezdap/schema.lua) — the engine behind `:Debug quick_run`, the
   profile reader for `new_run_file`, and the seam easytasks' `debug` task type
   runs on. `resolve_task(spec, done)` is that seam: it reads a profile's

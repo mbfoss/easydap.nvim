@@ -15,14 +15,13 @@ return {
             description = "debug a .NET assembly",
             request = "launch",
             inputs = {
-                command = { type = "table", format = "shell_args", description = "command line to debug" },
+                command = { type = "string", description = "command line to debug" },
                 cwd     = { type = "string", format = "cwd", description = "working directory" },
                 env     = { type = "table", format = "map", description = "environment variables" },
             },
             build = function(params, _, inputs)
                 if inputs.command then
-                    params.program = vim.fn.expand(inputs.command[1] or "")
-                    params.args    = { unpack(inputs.command, 2) }
+                    params.program, params.args = shared.split_command(inputs.command)
                 end
                 params.cwd = inputs.cwd
                 params.env = inputs.env

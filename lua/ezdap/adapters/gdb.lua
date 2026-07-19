@@ -19,15 +19,14 @@ return {
             description = "debug a native executable",
             request = "launch",
             inputs = {
-                command       = { type = "table", format = "shell_args", required = true, description = "command line to debug" },
+                command       = { type = "string", required = true, description = "command line to debug" },
                 cwd           = { type = "string", format = "cwd", description = "working directory" },
                 env           = { type = "table", format = "map", description = "environment variables" },
                 stop_on_entry = { type = "boolean", description = "break at program entry" },
                 stop_at_main  = { type = "boolean", description = "break at the start of main" },
             },
             build = function(params, _, inputs)
-                params.program = vim.fn.expand(inputs.command[1] or "")
-                params.args    = { unpack(inputs.command, 2) }
+                params.program, params.args = shared.split_command(inputs.command)
                 params.cwd     = inputs.cwd
                 params.env     = vim.tbl_extend("force", vim.fn.environ(), inputs.env or {}) -- gdb does not merge env variables on it's own (unlike lldb)
                 params.stopOnEntry = inputs.stop_on_entry

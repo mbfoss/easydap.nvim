@@ -18,15 +18,20 @@
 ---`type` is what `build` receives, and both forms land there. They are not rival
 ---answers to "what is legal": they are one value space reached from a typed file
 ---or from an untyped command line, which is why a caller may mix the two per input
----(easytasks writes `shell_args` in string form and `list` in typed form in the
----same task). `shell_args` shows the distinction plainly — you *write* a command
----line (`schema` is a string), `build` *receives* a list of arguments (`type` is a
----table), and `parse` bridges the two.
+---(easytasks may write one input in string form and the next in typed form in the
+---same task). `map` shows it plainly — `"A=1,B=2"` on a command line, an object of
+---the same pairs in a typed file, and `build` receives the same table either way.
 ---
----Nothing outside this module switches on a format name; consumers call the four
+---A format's two forms describe *one* value, so a row whose forms disagree about
+---what the value even is doesn't belong here. Splitting a command line into
+---arguments is such a case: it is a transformation of one string into a different
+---shape, not a second way of writing the same value, and it lived here for a while
+---as `shell_args` — declaring a `string` schema against a `table` type, the only
+---row that had to be explained twice. It is now where it belongs, in the `build`
+---that wants the split (`shared.split_command`).
+---
+---Nothing outside this module switches on a format name; consumers call the
 ---projections below and let an unknown or absent format fall back to `type` alone.
-
-local str_util = require("ezdap.tk.strutil")
 
 local M = {}
 
@@ -38,12 +43,17 @@ local M = {}
 ---`host` is): the raw string is then read by `type` alone. `seed` is a starting
 ---value for a scaffolded document — it is deep-copied on the way out, so a row may
 ---hold a mutable default.
+---
+---`item_type` is what one element of a collection format becomes — the entries of
+---a `list`, the values of a `map` (whose keys are always strings). Every
+---`table`-typed row declares one; a scalar row has no elements and declares none.
 ---@class ezdap.FormatDef
----@field type      ezdap.InputType   what `build` receives
----@field schema    table               JSON Schema for the typed authored form
----@field parse?    fun(raw: string): any?, string?  the string authored form → a value of `type`
----@field seed?     any                 starting value for a scaffolded document
----@field complete? "file"|"dir"        value completion kind, for command lines
+---@field type       ezdap.InputType   what `build` receives
+---@field item_type? ezdap.InputType   what one element becomes, for a collection
+---@field schema     table               JSON Schema for the typed authored form
+---@field parse?     fun(raw: string): any?, string?  the string authored form → a value of `type`
+---@field seed?      any                 starting value for a scaffolded document
+---@field complete?  "file"|"dir"        value completion kind, for command lines
 
 ---Read a raw string as a value of `input_type`. This is the no-format path — the
 ---string form of a format-less input, and the fallback for a row without a `parse`.
@@ -70,7 +80,7 @@ local function _by_type(input_type, raw)
         return nil, ("expected a boolean (true/false), got %q"):format(raw)
     elseif input_type == "table" then
         -- Nothing about `table` says how a string becomes one — only a format does.
-        return nil, "a table input needs a format (map/list/shell_args)"
+        return nil, "a table input needs a format (map/list)"
     end
     return raw
 end
@@ -133,9 +143,8 @@ M.formats = {
     cwd        = { type = "string",  schema = { type = "string" }, parse = _abspath, seed = "", complete = "dir" },
     host       = { type = "string",  schema = { type = "string" }, seed = "" },
     port       = { type = "integer", schema = { type = "integer", minimum = 0, maximum = 65535 }, parse = _port, seed = 0 },
-    map        = { type = "table",   schema = { type = "object", additionalProperties = { type = "string" } }, parse = _map,  seed = {} },
-    list       = { type = "table",   schema = { type = "array", items = { type = "string" } },    parse = _list, seed = {} },
-    shell_args = { type = "table",   schema = { type = "string" }, parse = str_util.split_shell_args, seed = "" },
+    map        = { type = "table",   item_type = "string", schema = { type = "object", additionalProperties = { type = "string" } }, parse = _map,  seed = {} },
+    list       = { type = "table",   item_type = "string", schema = { type = "array", items = { type = "string" } },    parse = _list, seed = {} },
 }
 
 -- ── Projections ────────────────────────────────────────────────────────────
@@ -203,6 +212,15 @@ end
 function M.completion(input)
     local def = _def(input)
     return def and def.complete or nil
+end
+
+---What one element of an input's value becomes — a `list` entry, a `map` value.
+---Nil for an input that isn't a collection, and for a format-less one.
+---@param input ezdap.Input?
+---@return ezdap.InputType?
+function M.item_type(input)
+    local def = _def(input)
+    return def and def.item_type or nil
 end
 
 return M
