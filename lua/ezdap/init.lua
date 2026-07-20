@@ -180,7 +180,7 @@ local function _register_user_commands()
     local _debug_subs = {
         "run_file", "quick_run", "new_run_file", "rerun",
         "breakpoint",
-        "view", "continue", "continue_all",
+        "view", "output", "continue", "continue_all",
         "step_over", "next", "step_in", "step_out", "step_back",
         "step_into_targets", "reverse_continue",
         "jump_to_cursor", "restart_frame", "exception_info",
@@ -204,6 +204,8 @@ local function _register_user_commands()
             M.rerun()
         elseif sub == "view" then
             cmd.view.toggle()
+        elseif sub == "output" then
+            cmd.view.output_toggle()
         elseif sub == "continue" then
             cmd.debug.continue()
         elseif sub == "continue_all" then

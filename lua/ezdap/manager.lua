@@ -1027,4 +1027,9 @@ function M.view.toggle()
     require("ezdap").open_debug_view()
 end
 
+---Toggle the bottom output window, which holds the run's highest-priority buffer.
+function M.view.output_toggle()
+    require("ezdap.ui.output_win").toggle()
+end
+
 return M

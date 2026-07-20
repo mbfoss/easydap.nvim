@@ -1,0 +1,178 @@
+---@brief The single bottom split that shows a run's buffer.
+---
+---A run spawns several buffers (Terminal, Output, REPL, adapter log, DAP
+---messages); `ezdap.runner` registers each here with a priority, and this window
+---holds the highest-priority live one. One window is reused for all of them:
+---registering a buffer swaps the occupant rather than opening a second split.
+
+local fixedwin = require("ezdap.tk.fixedwin")
+local config   = require("ezdap.config")
+
+local M        = {}
+
+---One buffer a run registered for display, as passed to `ezdap.AddBufOpts`.
+---@class ezdap.ui.output_win.Entry
+---@field bufnr    integer
+---@field priority integer
+---@field seq      integer  registration order; breaks priority ties toward the newest
+
+---@type ezdap.ui.output_win.Entry[]
+local _entries = {}
+local _seq     = 0
+
+---@type integer?
+local _win     = nil
+---@type integer?
+local _shown   = nil
+---The buffer the window held when it was closed, live only for the tick of the
+---close: nvim closes the window before announcing the buffer's deletion, so this
+---is how `refresh` tells that close apart from the user closing the window.
+---@type integer?
+local _closed_with = nil
+---@type number?
+local _ratio   = nil
+
+local _augroup = vim.api.nvim_create_augroup("ezdap.output_win", { clear = true })
+
+-- `vim.wo[win].opt = val` also writes nvim's hidden global default, leaking this
+-- window's settings into every future window. Force `scope = "local"`.
+---@param win integer
+---@param opt string
+---@param val any
+local function _setlocal(win, opt, val)
+    vim.api.nvim_set_option_value(opt, val, { win = win, scope = "local" })
+end
+
+---Drop `bufnr`, plus any entry whose buffer is already gone. Buffer numbers are
+---reused, so a stale entry eventually names an unrelated buffer.
+---@param bufnr? integer  a buffer being deleted, still valid at this point
+local function _prune(bufnr)
+    for i = #_entries, 1, -1 do
+        local b = _entries[i].bufnr
+        if b == bufnr or not vim.api.nvim_buf_is_valid(b) then
+            table.remove(_entries, i)
+        end
+    end
+end
+
+---The buffer the window should hold: the highest-priority one, the newest of
+---them when several share a priority.
+---@return integer?  bufnr
+local function _target()
+    local best ---@type ezdap.ui.output_win.Entry?
+    for _, e in ipairs(_entries) do
+        if not best or e.priority > best.priority
+            or (e.priority == best.priority and e.seq > best.seq) then
+            best = e
+        end
+    end
+    return best and best.bufnr
+end
+
+---@return integer?  the window, when open
+local function _open_win()
+    if _win and vim.api.nvim_win_is_valid(_win) then return _win end
+    return nil
+end
+
+---@param bufnr integer
+local function _display(bufnr)
+    local win = _open_win()
+    if not win or _shown == bufnr then return end
+    vim.api.nvim_win_set_buf(win, bufnr)
+    _shown = bufnr
+    _setlocal(win, "number", false)
+    _setlocal(win, "relativenumber", false)
+    _setlocal(win, "signcolumn", "no")
+end
+
+---Open the window (a no-op when already open) and show the target buffer.
+---@param focus? boolean  leave the cursor in the window; default false
+function M.open(focus)
+    _prune()
+    local bufnr = _target()
+    if not bufnr then return end
+    local win = _open_win()
+    if win then
+        if focus then vim.api.nvim_set_current_win(win) end
+        _display(bufnr)
+        return
+    end
+    -- fixedwin owns the split, its height pinning and the resize/ratio tracking;
+    -- we only swap in the run's buffer. Its on_delete fires on WinClosed, so
+    -- closing by any route — ours, `:q` — records the height and drops the state.
+    _win = fixedwin.create_fixed_win("height", _ratio or config.output_win_height_ratio,
+        function(ratio)
+            _ratio       = ratio
+            _closed_with = _shown
+            _win, _shown = nil, nil
+            -- Only a deletion of the buffer just closed with reopens the window,
+            -- and only on this tick — a `:q` a moment earlier must not.
+            vim.schedule(function() _closed_with = nil end)
+        end,
+        { enter = focus or false })
+    _shown = nil
+    _display(bufnr)
+end
+
+---Close the window, keeping the registry — the next registered buffer (or an
+---explicit `open`) brings it back at the height it was left at.
+function M.close()
+    local win = _open_win()
+    if win then vim.api.nvim_win_close(win, true) end
+    _win, _shown = nil, nil
+end
+
+function M.toggle()
+    if _open_win() then M.close() else M.open(true) end
+end
+
+---Bring the window in line with the registry: show the highest-priority live
+---buffer, or close once the run's last buffer is gone. A buffer's deletion takes
+---the window with it, so `deleted` reopens it for the next buffer in line.
+---@param deleted? integer  a buffer being deleted, to forget before deciding
+function M.refresh(deleted)
+    _prune(deleted)
+    local reopen = deleted ~= nil and deleted == _closed_with
+    _closed_with = nil
+    local bufnr  = _target()
+    if not bufnr then
+        M.close()
+    elseif _open_win() then
+        _display(bufnr)
+    elseif reopen then
+        M.open(false)
+    end
+end
+
+---Register a buffer for display. It takes the window immediately when it
+---outranks the current occupant, and the window opens on the first registration
+---unless `output_win_auto_open` is off.
+---@param bufnr integer
+---@param opts? ezdap.AddBufOpts
+function M.add(bufnr, opts)
+    if not vim.api.nvim_buf_is_valid(bufnr) then return end
+    opts                    = opts or {}
+    _seq                    = _seq + 1
+    _entries[#_entries + 1] = {
+        bufnr    = bufnr,
+        priority = opts.priority or 0,
+        seq      = _seq,
+    }
+
+    vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
+        group    = _augroup,
+        buffer   = bufnr,
+        once     = true,
+        callback = function() M.refresh(bufnr) end,
+    })
+
+    if config.output_win_auto_open then M.open(false) else M.refresh() end
+end
+
+---@return integer? winid  the window, when open
+function M.winid()
+    return _open_win()
+end
+
+return M

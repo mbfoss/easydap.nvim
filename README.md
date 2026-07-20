@@ -345,9 +345,9 @@ logpoint, disabled, exception). The full list of subcommands is in the
 ### Debug panel (`:Debug view`)
 
 The main panel is a tree of **sessions → threads → stack frames → scopes →
-variables**, plus **watch expressions** and **breakpoints**. A session row
-expands to the **buffers** its run spawned. It opens automatically when a session
-starts; open or focus it any time with `:Debug view`.
+variables**, plus **watch expressions** and **breakpoints**. It opens
+automatically when a session starts; open or focus it any time with
+`:Debug view`.
 
 Inside the panel:
 
@@ -362,6 +362,15 @@ Inside the panel:
 | `c`   | Change a value / breakpoint condition / exception break mode / data access type |
 | `g?`  | Show this keymap cheatsheet                                                  |
 | `zo` `zc` `za` `zO` `zC` | Fold controls (expand / collapse / toggle / all)          |
+
+### Output window (`:Debug output`)
+
+A run spawns several buffers — Terminal, Output, REPL, adapter log, DAP messages.
+They share one bottom split, which holds whichever of them has the highest
+priority (the Terminal outranks the Output, which outranks the REPL). It opens on
+the run's first buffer, follows along as higher-priority buffers appear or the
+shown one is deleted, and closes with the run's last buffer. `:Debug output`
+toggles it; `output_win_auto_open` and `output_win_height_ratio` tune it.
 
 ### Inline variable values
 
@@ -447,6 +456,10 @@ require("ezdap").setup({
   antiflicker_delay   = 200,
   -- Max lines kept in Output / DAP-message buffers (0 = unlimited).
   output_max_lines    = 10000,
+  -- Open the bottom output window as soon as a run registers its first buffer.
+  output_win_auto_open = true,
+  -- Height of the bottom output window, as a fraction of the editor's lines.
+  output_win_height_ratio = 0.25,
 
   -- Inline value placement: "inline" | "eol" | "eol_right_align" | "right_align" | "off"
   inline_vars         = "eol",
@@ -483,6 +496,7 @@ Everything is under the `:Debug` command, with completion for every subcommand.
 | `new_run_file …`      | Scaffold a run file from a profile's inputs        |
 | `rerun`               | Re-launch the most recently run task              |
 | `view`                | Open/focus the debug panel                        |
+| `output`              | Toggle the bottom output window                   |
 | `continue` / `continue_all` | Continue the active / every session         |
 | `step_over` (`next`) / `step_in` / `step_out` | Stepping             |
 | `step_into_targets`   | Pick a call target to step into                   |

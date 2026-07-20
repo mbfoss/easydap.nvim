@@ -5,7 +5,9 @@
 ---supplies its own callbacks via its backend; this module is the standalone
 ---equivalent (progress, run lifecycle).
 ---
----A run's buffers are tracked here only so a finished run's buffers can be wiped.
+---A run's buffers are shown in the shared bottom window (`ezdap.ui.output_win`),
+---which holds whichever of them has the highest priority; they are tracked here
+---as well so a finished run's buffers can be wiped.
 ---
 ---One task per file: a run file returns a single task (or a function
 ---returning one):
@@ -179,9 +181,10 @@ function M.run(task)
     _report("▶ " .. task.name)
 
     local cancel = require("ezdap.task").start(task, {
-        -- Tracked only so `clean` can wipe them.
-        add_bufnr = function(bufnr, _)
+        -- Shown in the shared bottom window, and tracked so `clean` can wipe them.
+        add_bufnr = function(bufnr, opts)
             run.bufnrs[#run.bufnrs + 1] = bufnr
+            require("ezdap.ui.output_win").add(bufnr, opts)
         end,
         report    = _report,
         on_done   = function(ok)
