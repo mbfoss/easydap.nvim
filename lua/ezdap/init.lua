@@ -253,7 +253,7 @@ local function _register_user_commands()
         elseif sub == "project" then
             M.project_info()
         elseif sub == "clean" then
-            require("ezdap.runner").clean()
+            M.clean()
         elseif sub == "report" then
             require("ezdap.runner").report_open()
         elseif sub == "breakpoint" then
@@ -479,6 +479,15 @@ end
 function M.rerun()
     _require_setup("rerun")
     require("ezdap.runner").rerun()
+end
+
+---Drop every finished run — wiping its buffers — and the rows of the sessions
+---they produced, leaving live runs and sessions untouched. The debug view is
+---only cleaned when it exists; cleaning is no reason to create one.
+function M.clean()
+    _require_setup("clean")
+    require("ezdap.runner").clean()
+    if _debug_view then _debug_view:clear_finished_sessions() end
 end
 
 ---Report whether the cwd is inside a project and, if so, the resolved root and

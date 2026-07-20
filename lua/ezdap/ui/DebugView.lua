@@ -569,21 +569,42 @@ end
 
 -- Session rows
 
+---A session row whose session has ended and is only kept for its history.
+---@param data ezdap.DebugView.ItemData?
+---@return boolean
+local function _is_finished(data)
+    local info = data and data.session_info
+    return info ~= nil and (info.state == "terminated" or info.state == "exited")
+end
+
+---Drop the rows of finished sessions matching `pred`.
+---@private
+---@param pred fun(data: ezdap.DebugView.ItemData): boolean
+function DebugView:_drop_finished_rows(pred)
+    for _, item_id in ipairs(self._tree:get_children_ids(_roots.sessions)) do
+        local item = self._tree:get_item(item_id)
+        local data = item and item.data
+        if data and _is_finished(data) and pred(data) then
+            self._tree:remove_item(item_id)
+        end
+    end
+end
+
 ---Drop the rows of terminated sessions that a newly started session's name
 ---reclaims — a re-run of the same target takes over its predecessor's row
 ---rather than stacking a second one beside it.
 ---@param id number  the new session, left alone
 ---@param name string
 function DebugView:_reclaim_session_rows(id, name)
-    for _, item_id in ipairs(self._tree:get_children_ids(_roots.sessions)) do
-        local item = self._tree:get_item(item_id)
-        local data = item and item.data
-        local info = data and data.session_info
-        if data and info and data.session_id ~= id and data.name == name
-            and (info.state == "terminated" or info.state == "exited") then
-            self._tree:remove_item(item_id)
-        end
-    end
+    self:_drop_finished_rows(function(data)
+        return data.session_id ~= id and data.name == name
+    end)
+end
+
+---Drop every finished session row, leaving live sessions untouched. Bound to
+---`:Debug clean`, alongside the run cleanup that wipes their buffers.
+function DebugView:clear_finished_sessions()
+    self:_drop_finished_rows(function() return true end)
 end
 
 ---@param id number
