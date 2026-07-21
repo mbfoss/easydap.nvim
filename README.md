@@ -332,8 +332,12 @@ Enable/disable without removing, and clear in bulk:
 :Debug breakpoint toggle_enabled  " enable/disable the breakpoint at the cursor
 :Debug breakpoint disable_all
 :Debug breakpoint clear_file      " remove every breakpoint in the current file
-:Debug breakpoint clear_all
+:Debug breakpoint clear_all       " remove every breakpoint everywhere
 ```
+
+`clear_all` removes all source, function and exception-type breakpoints across
+every file. Adapter exception filters have no removed state, so they are turned
+off instead.
 
 Gutter signs distinguish each kind (verified vs. pending, conditional,
 logpoint, disabled, exception). The full list of subcommands is in the
@@ -528,7 +532,8 @@ Everything is under the `:Debug` command, with completion for every subcommand.
 | `logpoint`           | Set/clear a log message (logpoint)                 |
 | `enable` / `disable` / `toggle_enabled` | Per-breakpoint enable state     |
 | `enable_all` / `disable_all` | Bulk enable/disable                        |
-| `clear_file` / `clear_all` / `clear_fn` | Bulk removal                    |
+| `clear_file` / `clear_fn` | Clear the current file / function breakpoints |
+| `clear_all`          | Clear every breakpoint; disables exception filters |
 | `fn [name]`          | Toggle a function breakpoint                        |
 | `exception_filter`   | Toggle an adapter exception filter                 |
 | `exception_type [name] [mode]` | Break on a named exception type          |

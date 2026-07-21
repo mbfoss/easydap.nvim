@@ -413,11 +413,14 @@ function M.breakpoint.clear_file()
     for _, bp in ipairs(bps.for_source(file)) do bps.remove(file, bp.line, bp.column) end
 end
 
+---Removes every source, function and exception-name breakpoint. Exception
+---filters are adapter-supplied rows, so they are disabled rather than removed.
 function M.breakpoint.clear_all()
-    local bps  = require("ezdap.dap.breakpoints")
-    local file = vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
-    for _, bp in ipairs(bps.for_source(file)) do bps.remove(file, bp.line, bp.column) end
+    local bps = require("ezdap.dap.breakpoints")
+    for _, bp in ipairs(bps.all()) do bps.remove(bp.source, bp.line, bp.column) end
     for _, bp in ipairs(bps.function_breakpoints()) do bps.remove_function(bp.name) end
+    for _, bp in ipairs(bps.exception_name_breakpoints()) do bps.remove_exception_name(bp.name) end
+    for _, bp in ipairs(bps.exception_breakpoints()) do bps.set_exception_enabled(bp.filter, false) end
 end
 
 function M.breakpoint.clear_fn()
