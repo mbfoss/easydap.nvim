@@ -18,11 +18,17 @@ The code is layered; higher layers depend on lower ones, not the reverse.
 **Public API** — [init.lua](lua/ezdap/init.lua)
 - `setup`, `run` (task entry point), `debug_view`/`open_debug_view`, user commands.
 
-**Command surface / active session** — [manager.lua](lua/ezdap/manager.lua)
+**Active session** — [manager.lua](lua/ezdap/manager.lua)
 - Owns the "which session is active" concept that keymaps and UI subscribe to.
-- Wraps the session-id-explicit `dap/client` with active-session helpers and
-  exposes user-facing command tables: `M.debug.*`, `M.breakpoint.*`, `M.view.*`.
+- Wraps the session-id-explicit `dap/client` with active-session helpers and the
+  session-control primitives built on them (`continue`/`next`/`step_*`, selection,
+  `evaluate`, `with_capability`, …).
 - Re-exports client signals so consumers depend only on `manager`, never `client`.
+
+**Command surface** — [command.lua](lua/ezdap/command.lua)
+- The user-facing command tables `M.debug.*`, `M.breakpoint.*`, `M.view.*` reached
+  through `:Debug …`. Sits on top of `manager` and owns the command-level UI —
+  pickers, prompts, notifications, cursor handling.
 
 **DAP core** — [lua/ezdap/dap/](lua/ezdap/dap/)
 - `client.lua` — session registry & lifecycle; session spawning and session-level events.

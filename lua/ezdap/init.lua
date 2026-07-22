@@ -90,7 +90,7 @@ local function _warn_if_unpersisted()
 end
 
 local function _register_user_commands()
-    local cmd      = require("ezdap.manager")
+    local cmd      = require("ezdap.command")
     local usercmd  = require("ezdap.tk.usercmd")
 
     local _bp_subs = {
