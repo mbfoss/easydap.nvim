@@ -18,17 +18,28 @@ merges config, wires autocmds/signals, and registers the `:Debug` user command.
 The code is layered; **higher layers depend on lower ones, never the reverse**.
 Layers communicate through `Signal`s (pub/sub), not direct back-references: lower
 layers emit, higher layers subscribe. `manager` is the single dependency surface
-for the UI and commands — prefer it over importing `dap/client` directly.
+for the UI and commands — prefer it over importing `dap/client` or
+`dap/breakpoints` directly.
 
 **Public API** — [lua/ezdap/init.lua](lua/ezdap/init.lua)
 `setup`, the run entry points (`run`, `run_file`, `quick_run`, `new_run_file`,
-`rerun`), the debug/disassembly view accessors, and the user commands.
+`rerun`), the debug/disassembly view accessors, and registration of the `:Debug`
+user command (dispatching to the command surface).
 
-**Command surface / active session** — [lua/ezdap/manager.lua](lua/ezdap/manager.lua)
+**Active session / programmatic API** — [lua/ezdap/manager.lua](lua/ezdap/manager.lua)
 Owns the "which session is active" concept that keymaps and UI subscribe to.
-Wraps the session-id-explicit `dap/client` with active-session helpers and
-exposes the user-facing command tables `M.debug.*`, `M.breakpoint.*`, `M.view.*`.
-Re-exports client signals so consumers depend only on `manager`.
+Wraps the session-id-explicit `dap/client` with the active-session notion, taking
+operation details directly as arguments (`continue`/`next`/`step_*`, selection,
+`evaluate`, `goto_targets`/`restart_frame`/…, a `capable` predicate). Performs
+**no** user interaction — no prompts, pickers or notifications. Re-exports the
+client signals and the breakpoint registry (`manager.breakpoints`) so consumers
+depend only on `manager`.
+
+**Command surface** — [lua/ezdap/command.lua](lua/ezdap/command.lua)
+The user-facing command tables `M.debug.*`, `M.breakpoint.*`, `M.view.*` reached
+through `:Debug …`. Owns all user interaction — pickers, prompts, notifications,
+cursor reads — and resolves it into the concrete details it hands to `manager`,
+its only path to the DAP layer.
 
 **DAP core** — [lua/ezdap/dap/](lua/ezdap/dap/)
 - `client.lua` — session registry & lifecycle; spawning and session-level events.
