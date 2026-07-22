@@ -4,11 +4,14 @@
 ---pickers, prompts, notifications and cursor handling.
 
 local select   = require("ezdap.util.select")
-local client   = require("ezdap.dap.client")
 local inputwin = require("ezdap.tk.inputwin")
 local manager  = require("ezdap.manager")
 
 local M        = {}
+
+-- Everything reaching the DAP layer goes through `manager` (the programmatic API);
+-- this module owns only the user interaction — cursor reads, prompts, pickers and
+-- notifications — resolving those into the concrete details `manager` takes.
 
 -- Helpers
 
@@ -26,6 +29,24 @@ local function _cursor_location()
         return nil, 0
     end
     return file, vim.api.nvim_win_get_cursor(0)[1]
+end
+
+---Run `fn(sess)` on the active session, but only if it advertises `capability`.
+---Shows an error when the adapter lacks the capability, a warning when there is
+---no active session. Use for any command gated on a DAP capability.
+---@param capability string  e.g. "supportsRestartFrame"
+---@param label      string  human-readable command name for the error message
+---@param fn         fun(sess: ezdap.dap.Session)
+local function _with_capability(capability, label, fn)
+    local sess = manager.session()
+    if not sess then
+        vim.notify("[dap] no active session", vim.log.levels.WARN); return
+    end
+    if not sess:capable(capability) then
+        vim.notify("[dap] adapter does not support " .. label, vim.log.levels.ERROR)
+        return
+    end
+    fn(sess)
 end
 
 -- Live sessions now push breakpoint changes themselves by subscribing to
@@ -58,7 +79,7 @@ M.breakpoint = {}
 ---@param row  integer
 ---@return integer?
 local function _existing_bp_line(file, row)
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     for _, bp in ipairs(bps.for_source(file)) do
         -- Column breakpoints are managed by their own command, not the line toggle.
         if bp.column == nil then
@@ -75,7 +96,7 @@ end
 ---@param row  integer
 ---@return integer?
 local function _moved_bp_target(file, row)
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     for _, bp in ipairs(bps.for_source(file)) do
         if bp.column == nil and bp.line == row then
             local st = manager.bp_status(bp.internal_id)
@@ -87,7 +108,7 @@ end
 function M.breakpoint.toggle()
     local file, row = _cursor_location()
     if not file then return end
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     -- Toggling off matches the line you see, which may be the adapter-resolved
     -- line rather than the stored one.
     local existing = _existing_bp_line(file, row)
@@ -135,7 +156,7 @@ end
 ---@param row    integer
 ---@param column integer
 local function _toggle_column_bp(file, row, column)
-    local bps    = require("ezdap.dap.breakpoints")
+    local bps    = manager.breakpoints
     local exists = false
     for _, bp in ipairs(bps.for_source(file)) do
         if bp.line == row and bp.column == column then
@@ -163,7 +184,7 @@ function M.breakpoint.column()
 
     -- If a column bp already exists at this position, clear it directly so
     -- existing bps can always be removed even when a session is active.
-    local bps_mod    = require("ezdap.dap.breakpoints")
+    local bps_mod    = manager.breakpoints
     for _, bp in ipairs(bps_mod.for_source(file)) do
         if bp.line == row and bp.column == col then
             _toggle_column_bp(file, row, col)
@@ -203,14 +224,14 @@ end
 function M.breakpoint.add(condition)
     local file, row = _cursor_location()
     if not file then return end
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     bps.add(file, row, { condition = condition })
 end
 
 function M.breakpoint.remove()
     local file, row = _cursor_location()
     if not file then return end
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     -- Remove the breakpoint shown at the cursor (resolved or stored line).
     local existing = _existing_bp_line(file, row)
     if existing then
@@ -221,14 +242,14 @@ end
 function M.breakpoint.clear_file()
     local file, _ = _cursor_location()
     if not file then return end
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     for _, bp in ipairs(bps.for_source(file)) do bps.remove(file, bp.line, bp.column) end
 end
 
 ---Removes every source, function and exception-name breakpoint. Exception
 ---filters are adapter-supplied rows, so they are disabled rather than removed.
 function M.breakpoint.clear_all()
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     for _, bp in ipairs(bps.all()) do bps.remove(bp.source, bp.line, bp.column) end
     for _, bp in ipairs(bps.function_breakpoints()) do bps.remove_function(bp.name) end
     for _, bp in ipairs(bps.exception_name_breakpoints()) do bps.remove_exception_name(bp.name) end
@@ -236,14 +257,14 @@ function M.breakpoint.clear_all()
 end
 
 function M.breakpoint.clear_fn()
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     for _, bp in ipairs(bps.function_breakpoints()) do bps.remove_function(bp.name) end
 end
 
 function M.breakpoint.enable()
     local file, row = _cursor_location()
     if not file then return end
-    local bps   = require("ezdap.dap.breakpoints")
+    local bps   = manager.breakpoints
     local found = false
     for _, bp in ipairs(bps.for_source(file)) do
         if bp.line == row then
@@ -259,7 +280,7 @@ end
 function M.breakpoint.disable()
     local file, row = _cursor_location()
     if not file then return end
-    local bps   = require("ezdap.dap.breakpoints")
+    local bps   = manager.breakpoints
     local found = false
     for _, bp in ipairs(bps.for_source(file)) do
         if bp.line == row then
@@ -276,7 +297,7 @@ end
 function M.breakpoint.toggle_enabled()
     local file, row = _cursor_location()
     if not file then return end
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     local bp
     for _, b in ipairs(bps.for_source(file)) do
         if b.line == row then
@@ -290,17 +311,17 @@ function M.breakpoint.toggle_enabled()
 end
 
 function M.breakpoint.enable_all()
-    require("ezdap.dap.breakpoints").enable_all()
+    manager.breakpoints.enable_all()
 end
 
 function M.breakpoint.disable_all()
-    require("ezdap.dap.breakpoints").disable_all()
+    manager.breakpoints.disable_all()
 end
 
 function M.breakpoint.condition()
     local file, row = _cursor_location()
     if not file then return end
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     local bp
     for _, b in ipairs(bps.for_source(file)) do
         if b.line == row then
@@ -321,7 +342,7 @@ end
 function M.breakpoint.logpoint()
     local file, row = _cursor_location()
     if not file then return end
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     local bp
     for _, b in ipairs(bps.for_source(file)) do
         if b.line == row then
@@ -337,7 +358,7 @@ end
 
 ---@param name? string
 function M.breakpoint.fn(name)
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     local function _toggle(n)
         local found = false
         for _, bp in ipairs(bps.function_breakpoints()) do
@@ -357,7 +378,7 @@ function M.breakpoint.fn(name)
 end
 
 function M.breakpoint.exception_filter()
-    local bps = require("ezdap.dap.breakpoints")
+    local bps = manager.breakpoints
     local all = bps.exception_breakpoints()
     if #all == 0 then
         vim.notify("[dap] no exception filters available (start a session first)", vim.log.levels.WARN)
@@ -377,7 +398,7 @@ end
 ---@param name?       string
 ---@param break_mode? string
 function M.breakpoint.exception_type(name, break_mode)
-    local bps    = require("ezdap.dap.breakpoints")
+    local bps    = manager.breakpoints
     local _modes = { "always", "unhandled", "userUnhandled", "never" }
     local function _toggle(n, mode)
         local result = bps.toggle_exception_name(n, mode)
@@ -415,7 +436,7 @@ function M.breakpoint.exception_type(name, break_mode)
 end
 
 function M.breakpoint.list()
-    local bps      = require("ezdap.dap.breakpoints")
+    local bps      = manager.breakpoints
     local cur_path = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
     local cur_line = vim.api.nvim_win_get_cursor(0)[1]
     local initial ---@type integer?
@@ -547,7 +568,7 @@ M.debug = {}
 
 function M.debug.continue() manager.continue() end
 
-function M.debug.continue_all() client.continue_all() end
+function M.debug.continue_all() manager.continue_all() end
 
 function M.debug.step_over() manager.next() end
 
@@ -565,14 +586,12 @@ function M.debug.restart() manager.restart() end
 
 function M.debug.stop() manager.stop() end
 
-function M.debug.terminate_all() client.quit() end
+function M.debug.terminate_all() manager.terminate_all() end
 
 ---Step into a specific call on the current line. Prompts when the line has
 ---multiple call targets; falls back to a plain step-in when unsupported or
 ---there is only one target.
 function M.debug.step_into_targets()
-    local id = manager.active_id()
-    if not id then return end
     local sess = manager.session()
     if not sess then
         vim.notify("[dap] no active session", vim.log.levels.WARN); return
@@ -581,19 +600,19 @@ function M.debug.step_into_targets()
     if not frame then
         vim.notify("[dap] no selected frame", vim.log.levels.WARN); return
     end
-    client.step_in_targets(id, frame.id, function(targets, _)
+    manager.step_in_targets(frame.id, function(targets, _)
         if not targets or #targets == 0 then
             manager.step_in(); return
         end
         if #targets == 1 then
-            client.step_in(id, manager.granularity(), targets[1].id)
+            manager.step_in(targets[1].id)
             return
         end
         select.open({
             prompt = "Step into",
             items  = vim.tbl_map(function(t) return { label = t.label, data = t } end, targets),
         }, function(t)
-            if t then client.step_in(id, manager.granularity(), t.id) end
+            if t then manager.step_in(t.id) end
         end)
     end)
 end
@@ -601,7 +620,7 @@ end
 ---Jump-to-cursor: set the next statement to execute to the line under the
 ---cursor in the current buffer. Prompts when the line has multiple targets.
 function M.debug.jump_to_cursor()
-    manager.with_capability("supportsGotoTargetsRequest", "jump to cursor", function(_, id)
+    _with_capability("supportsGotoTargetsRequest", "jump to cursor", function()
         local path = vim.api.nvim_buf_get_name(0)
         if path == "" then
             vim.notify("[dap] current buffer has no file", vim.log.levels.WARN); return
@@ -609,14 +628,14 @@ function M.debug.jump_to_cursor()
         local line = vim.api.nvim_win_get_cursor(0)[1]
         ---@type ezdap.dap.proto.Source
         local source = { path = path, name = vim.fn.fnamemodify(path, ":t") }
-        client.goto_targets(id, source, line, function(targets, err)
+        manager.goto_targets(source, line, function(targets, err)
             if not targets or #targets == 0 then
                 vim.notify("[dap] no jump target at this line" .. (err and (": " .. err) or ""),
                     vim.log.levels.WARN)
                 return
             end
             if #targets == 1 then
-                client.set_next_statement(id, targets[1].id)
+                manager.set_next_statement(targets[1].id)
                 return
             end
             select.open({
@@ -625,7 +644,7 @@ function M.debug.jump_to_cursor()
                     return { label = t.label .. (t.line and ("  :" .. t.line) or ""), data = t }
                 end, targets),
             }, function(t)
-                if t then client.set_next_statement(id, t.id) end
+                if t then manager.set_next_statement(t.id) end
             end)
         end)
     end)
@@ -633,19 +652,19 @@ end
 
 ---Restart execution of the currently selected stack frame.
 function M.debug.restart_frame()
-    manager.with_capability("supportsRestartFrame", "restart frame", function(sess, id)
+    _with_capability("supportsRestartFrame", "restart frame", function(sess)
         local frame = sess:current_stack_frame()
         if not frame then
             vim.notify("[dap] no selected frame", vim.log.levels.WARN); return
         end
-        client.restart_frame(id, frame.id)
+        manager.restart_frame(frame.id)
     end)
 end
 
 ---Show detailed information about the exception at the current stop in a float.
 function M.debug.exception_info()
-    manager.with_capability("supportsExceptionInfoRequest", "exception info", function(_, id)
-        client.exception_info(id, function(body, err)
+    _with_capability("supportsExceptionInfoRequest", "exception info", function()
+        manager.exception_info(function(body, err)
             if not body then
                 vim.notify("[dap] " .. (err or "no exception info available"), vim.log.levels.WARN)
                 return
@@ -772,7 +791,7 @@ end
 
 ---Prompt for a thread and terminate it (requires supportsTerminateThreadsRequest).
 function M.debug.terminate_thread()
-    manager.with_capability("supportsTerminateThreadsRequest", "terminate thread", function(sess, id)
+    _with_capability("supportsTerminateThreadsRequest", "terminate thread", function(sess)
         local threads = sess.threads
         if #threads == 0 then
             vim.notify("[dap] no threads available", vim.log.levels.WARN); return
@@ -783,7 +802,7 @@ function M.debug.terminate_thread()
                 return { label = t.id .. ": " .. t.name .. "  [" .. t.status .. "]", data = t }
             end, threads),
         }, function(t)
-            if t then client.terminate_threads(id, { t.id }) end
+            if t then manager.terminate_threads({ t.id }) end
         end)
     end)
 end

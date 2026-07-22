@@ -18,17 +18,21 @@ The code is layered; higher layers depend on lower ones, not the reverse.
 **Public API** — [init.lua](lua/ezdap/init.lua)
 - `setup`, `run` (task entry point), `debug_view`/`open_debug_view`, user commands.
 
-**Active session** — [manager.lua](lua/ezdap/manager.lua)
+**Active session / programmatic API** — [manager.lua](lua/ezdap/manager.lua)
 - Owns the "which session is active" concept that keymaps and UI subscribe to.
-- Wraps the session-id-explicit `dap/client` with active-session helpers and the
-  session-control primitives built on them (`continue`/`next`/`step_*`, selection,
-  `evaluate`, `with_capability`, …).
-- Re-exports client signals so consumers depend only on `manager`, never `client`.
+- Wraps the session-id-explicit `dap/client` with the active-session notion, taking
+  operation details directly as arguments (`continue`/`next`/`step_*`, selection,
+  `evaluate`, `goto_targets`/`restart_frame`/…, `capable` predicate). Performs **no**
+  user interaction — no prompts, pickers or notifications.
+- The single DAP-layer dependency surface for consumers: re-exports client signals
+  and the breakpoint registry (`manager.breakpoints`) so they never import
+  `dap/client` or `dap/breakpoints` directly.
 
 **Command surface** — [command.lua](lua/ezdap/command.lua)
 - The user-facing command tables `M.debug.*`, `M.breakpoint.*`, `M.view.*` reached
-  through `:Debug …`. Sits on top of `manager` and owns the command-level UI —
-  pickers, prompts, notifications, cursor handling.
+  through `:Debug …`. Owns all user interaction — pickers, prompts, notifications,
+  cursor reads — and resolves it into the concrete details it hands to `manager`.
+  Reaches the DAP layer only through `manager`.
 
 **DAP core** — [lua/ezdap/dap/](lua/ezdap/dap/)
 - `client.lua` — session registry & lifecycle; session spawning and session-level events.
