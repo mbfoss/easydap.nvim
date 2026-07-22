@@ -950,7 +950,7 @@ function M.debug.thread()
     select.open({
         prompt = "Select thread",
         items  = vim.tbl_map(function(t)
-            return { label = t.id .. ": " .. t.name .. "  [" .. t.status .. "]", data = t }
+            return { label = "[" .. t.status .. "] " .. t.id .. ": " .. t.name, data = t }
         end, threads),
     }, function(t)
         if t then M.select_thread(t.id) end
