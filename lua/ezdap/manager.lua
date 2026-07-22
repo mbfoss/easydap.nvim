@@ -1015,6 +1015,7 @@ function M.debug.frame()
     select.open({
         prompt         = "Select frame",
         enable_preview = true,
+        list_wrap      = false,
         items          = items,
         initial        = initial,
     }, function(data)
