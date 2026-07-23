@@ -144,9 +144,13 @@ local function _fmt_expression(data, chunks)
     chunks[#chunks + 1] = { val, (data.is_na or data.greyout) and "NonText" or "@string" }
 end
 
+-- Columns the tree prefix (indent + expand padding) eats before a depth-1 row.
+local _BP_PREFIX_W = 4
+
 ---@param data ezdap.DebugView.ItemData
 ---@param chunks ezdap.DebugView.Chunk[]
-local function _fmt_breakpoint(data, chunks)
+---@param width integer  available DebugView window width
+local function _fmt_breakpoint(data, chunks, width)
     local icon, hl
     if data.disabled then
         icon, hl = "ø", "NonText"
@@ -168,26 +172,50 @@ local function _fmt_breakpoint(data, chunks)
         icon, hl = "●", "DiagnosticOk"
     end
     chunks[#chunks + 1] = { icon .. " ", hl }
-    chunks[#chunks + 1] = { data.name, data.disabled and "NonText" or nil }
+    local name_hl = data.disabled and "NonText" or nil
+
     if data.bp_kind == "exception_type" and data.unsupported then
+        chunks[#chunks + 1] = { data.name, name_hl }
         chunks[#chunks + 1] = { "  [unsupported]", "DiagnosticWarn" }
-    elseif data.bp_kind == "exception_type" and data.break_mode then
-        chunks[#chunks + 1] = { " [" .. data.break_mode .. "]", "Comment" }
+    elseif data.bp_kind == "exception_type" then
+        chunks[#chunks + 1] = { data.name, name_hl }
+        if data.break_mode then
+            chunks[#chunks + 1] = { " [" .. data.break_mode .. "]", "Comment" }
+        end
     elseif data.bp_kind == "function" then
+        chunks[#chunks + 1] = { data.name, name_hl }
         chunks[#chunks + 1] = { " [fn]", "Comment" }
-    else
-        if data.bp_kind == "data" and data.access_type then
+    elseif data.bp_kind == "data" then
+        chunks[#chunks + 1] = { data.name, name_hl }
+        if data.access_type then
             chunks[#chunks + 1] = { " [" .. data.access_type .. "]", "Comment" }
         end
+    else
+        -- Source breakpoint: crop only the directory prefix (from the left), keeping
+        -- the filename:line and the condition/logpoint suffix always intact.
+        local suffix = {}
         if data.condition then
-            chunks[#chunks + 1] = { " • if: " .. data.condition, "Comment" }
+            suffix[#suffix + 1] = { " • if: " .. data.condition, "Comment" }
         end
         if data.hit_condition then
-            chunks[#chunks + 1] = { " • hit: " .. data.hit_condition, "Comment" }
+            suffix[#suffix + 1] = { " • hit: " .. data.hit_condition, "Comment" }
         end
         if data.log_message then
-            chunks[#chunks + 1] = { " • log: " .. data.log_message, "Comment" }
+            suffix[#suffix + 1] = { " • log: " .. data.log_message, "Comment" }
         end
+
+        local dir, tail = data.name:match("^(.*/)(.-)$")
+        if not dir then dir, tail = "", data.name end
+        local used = _BP_PREFIX_W + 2 + vim.fn.strdisplaywidth(tail)
+        for _, c in ipairs(suffix) do used = used + vim.fn.strdisplaywidth(c[1]) end
+        local budget = (width or config.debug_value_max_len) - used
+        if dir ~= "" and #dir > budget then
+            dir = str_util.crop_for_ui(dir, budget, true)
+        end
+
+        chunks[#chunks + 1] = { dir, name_hl }
+        chunks[#chunks + 1] = { tail, name_hl }
+        for _, c in ipairs(suffix) do chunks[#chunks + 1] = c end
     end
 end
 
@@ -959,11 +987,17 @@ function DebugView:_load_breakpoints()
 
     local items = {}
 
+    -- Conditional source breakpoints and function breakpoints render before plain
+    -- file breakpoints, so build source rows into two buckets split on condition.
+    local plain_src = {}
+
     for _, bp in ipairs(breakpoints.all()) do
         local short       = vim.fn.fnamemodify(bp.source, ":~:.")
         local path        = _roots.breakpoints .. "/src/" .. bp.internal_id
         local src_st      = manager.bp_status(bp.internal_id)
-        items[#items + 1] = {
+        local conditional = bp.condition or bp.hit_condition or bp.log_message
+        local bucket      = conditional and items or plain_src
+        bucket[#bucket + 1] = {
             id         = path,
             expandable = false,
             expanded   = false,
@@ -1002,6 +1036,11 @@ function DebugView:_load_breakpoints()
                 verified = fn_st and fn_st.verified,
             },
         }
+    end
+
+    -- Plain file breakpoints follow the conditional + function rows.
+    for _, item in ipairs(plain_src) do
+        items[#items + 1] = item
     end
 
     for _, bp in ipairs(breakpoints.exception_breakpoints()) do
