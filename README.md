@@ -374,7 +374,7 @@ They share one bottom split, which holds whichever of them has the highest
 priority (the Terminal outranks the Output, which outranks the REPL). It opens on
 the run's first buffer, follows along as higher-priority buffers appear or the
 shown one is deleted, and closes with the run's last buffer. `:Debug output`
-toggles it; `output_win_auto_open` and `output_win_height_ratio` tune it.
+toggles it; `panel_auto_open` and `panel_height_ratio` tune it.
 
 ### Inline variable values
 
@@ -457,9 +457,11 @@ require("ezdap").setup({
   -- Max lines kept in Output / DAP-message buffers (0 = unlimited).
   output_max_lines    = 10000,
   -- Open the bottom output window as soon as a run registers its first buffer.
-  output_win_auto_open = true,
+  panel_auto_open = true,
   -- Height of the bottom output window, as a fraction of the editor's lines.
-  output_win_height_ratio = 0.25,
+  panel_height_ratio = 0.25,
+  -- Width of the debug panel on first open, as a fraction of the editor's columns.
+  debug_view_width_ratio = 0.3,
 
   -- Inline value placement: "inline" | "eol" | "eol_right_align" | "right_align" | "off"
   inline_vars         = "eol",

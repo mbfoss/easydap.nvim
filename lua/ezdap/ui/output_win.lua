@@ -101,7 +101,7 @@ function M.open(focus)
     -- fixedwin owns the split, its height pinning and the resize/ratio tracking;
     -- we only swap in the run's buffer. Its on_delete fires on WinClosed, so
     -- closing by any route — ours, `:q` — records the height and drops the state.
-    _win = fixedwin.create_fixed_win("height", _ratio or config.output_win_height_ratio,
+    _win = fixedwin.create_fixed_win("height", _ratio or config.panel_height_ratio,
         function(ratio)
             _ratio       = ratio
             _closed_with = _shown
@@ -147,7 +147,7 @@ end
 
 ---Register a buffer for display. It takes the window immediately when it
 ---outranks the current occupant, and the window opens on the first registration
----unless `output_win_auto_open` is off.
+---unless `panel_auto_open` is off.
 ---@param bufnr integer
 ---@param opts? ezdap.AddBufOpts
 function M.add(bufnr, opts)
@@ -167,7 +167,7 @@ function M.add(bufnr, opts)
         callback = function() M.refresh(bufnr) end,
     })
 
-    if config.output_win_auto_open then M.open(false) else M.refresh() end
+    if config.panel_auto_open then M.open(false) else M.refresh() end
 end
 
 ---@return integer? winid  the window, when open

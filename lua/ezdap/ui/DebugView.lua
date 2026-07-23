@@ -12,10 +12,6 @@ local fixedwin    = require("ezdap.tk.fixedwin")
 local ui          = require("ezdap.tk.ui")
 local ui_util     = require("ezdap.util.ui_util")
 
--- Fraction of the editor width the view occupies on first open; thereafter the
--- last-used ratio (tracked by fixedwin across resizes) is reused.
-local _DEFAULT_WIDTH_RATIO = 0.2
-
 ---@alias ezdap.DebugView.ItemKind
 ---| "root"
 ---| "session"
@@ -1122,7 +1118,7 @@ function DebugView:_open(focus)
     -- fixedwin owns the split's creation, width pinning, resize/ratio tracking
     -- and re-pinning across layout changes; we only layer on the view-specific
     -- window options and swap in the tree buffer.
-    local win = fixedwin.create_fixed_win("width", self._width_ratio or _DEFAULT_WIDTH_RATIO,
+    local win = fixedwin.create_fixed_win("width", self._width_ratio or config.debug_view_width_ratio,
         function(ratio) self._width_ratio = ratio end,
         { enter = focus })
     vim.api.nvim_win_set_buf(win, bufnr)

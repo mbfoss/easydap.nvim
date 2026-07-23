@@ -28,8 +28,9 @@
 ---@field stack_trace_limit    integer   max number of call-stack frames shown in DebugView; extended when the current frame is deeper so it stays visible
 ---@field antiflicker_delay    integer   milliseconds to wait before clearing stale UI (inline vars, DebugView) to avoid flicker during step-through
 ---@field output_max_lines     integer   max lines kept in the Output and DAP-messages buffers; oldest lines are trimmed past this (0 = unlimited)
----@field output_win_auto_open boolean   open the bottom output window as soon as a run registers its first buffer
----@field output_win_height_ratio number  height of the bottom output window, as a fraction of the editor's lines
+---@field panel_auto_open boolean   open the bottom output window as soon as a run registers its first buffer
+---@field panel_height_ratio number  height of the bottom output window, as a fraction of the editor's lines
+---@field debug_view_width_ratio number  width of the debug panel on first open, as a fraction of the editor's columns
 ---@field inline_vars          ezdap.InlineVarsMode  placement of inline variable values
 ---@field raw_messages         boolean   capture raw DAP protocol messages in a dedicated buffer; a debugging aid, off by default
 ---@field signs ezdap.Signs
@@ -42,8 +43,9 @@ local M = {
 	stack_trace_limit   = 10,
 	antiflicker_delay   = 200,
 	output_max_lines    = 10000,
-	output_win_auto_open = true,
-	output_win_height_ratio = 0.25,
+	panel_auto_open = true,
+	panel_height_ratio = 0.25,
+	debug_view_width_ratio = 0.3,
 	inline_vars         = "eol",
 	raw_messages        = false,
 	signs = {
