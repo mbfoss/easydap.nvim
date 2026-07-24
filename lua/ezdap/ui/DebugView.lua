@@ -987,6 +987,48 @@ function DebugView:_load_breakpoints()
 
     local items = {}
 
+    local active_sess = manager.session()
+    local ex_opts_unsupported = active_sess ~= nil
+        and not (active_sess.capabilities and active_sess.capabilities.supportsExceptionOptions)
+
+    -- Exception breakpoints render before all other kinds.
+    for _, bp in ipairs(breakpoints.exception_breakpoints()) do
+        local path = _roots.breakpoints .. "/exc/" .. bp.filter
+        items[#items + 1] = {
+            id         = path,
+            expandable = false,
+            expanded   = false,
+            data       = {
+                kind      = "breakpoint",
+                path      = path,
+                name      = bp.label,
+                bp_kind   = "exception_filter",
+                bp_filter = bp.filter,
+                disabled  = bp.disabled,
+            },
+        }
+    end
+
+    for _, bp in ipairs(breakpoints.exception_name_breakpoints()) do
+        local path = _roots.breakpoints .. "/excn/" .. bp.internal_id
+        items[#items + 1] = {
+            id         = path,
+            expandable = false,
+            expanded   = false,
+            data       = {
+                kind        = "breakpoint",
+                path        = path,
+                name        = bp.name,
+                bp_kind     = "exception_type",
+                bp_id       = bp.internal_id,
+                bp_ex_name  = bp.name,
+                break_mode  = bp.break_mode,
+                disabled    = bp.disabled,
+                unsupported = ex_opts_unsupported,
+            },
+        }
+    end
+
     -- Conditional source breakpoints and function breakpoints render before plain
     -- file breakpoints, so build source rows into two buckets split on condition.
     local plain_src = {}
@@ -1038,52 +1080,6 @@ function DebugView:_load_breakpoints()
         }
     end
 
-    -- Plain file breakpoints follow the conditional + function rows.
-    for _, item in ipairs(plain_src) do
-        items[#items + 1] = item
-    end
-
-    for _, bp in ipairs(breakpoints.exception_breakpoints()) do
-        local path = _roots.breakpoints .. "/exc/" .. bp.filter
-        items[#items + 1] = {
-            id         = path,
-            expandable = false,
-            expanded   = false,
-            data       = {
-                kind      = "breakpoint",
-                path      = path,
-                name      = bp.label,
-                bp_kind   = "exception_filter",
-                bp_filter = bp.filter,
-                disabled  = bp.disabled,
-            },
-        }
-    end
-
-    local active_sess = manager.session()
-    local ex_opts_unsupported = active_sess ~= nil
-        and not (active_sess.capabilities and active_sess.capabilities.supportsExceptionOptions)
-
-    for _, bp in ipairs(breakpoints.exception_name_breakpoints()) do
-        local path = _roots.breakpoints .. "/excn/" .. bp.internal_id
-        items[#items + 1] = {
-            id         = path,
-            expandable = false,
-            expanded   = false,
-            data       = {
-                kind        = "breakpoint",
-                path        = path,
-                name        = bp.name,
-                bp_kind     = "exception_type",
-                bp_id       = bp.internal_id,
-                bp_ex_name  = bp.name,
-                break_mode  = bp.break_mode,
-                disabled    = bp.disabled,
-                unsupported = ex_opts_unsupported,
-            },
-        }
-    end
-
     if active_sess then
         for i, bp in ipairs(active_sess:data_breakpoints()) do
             local path        = _roots.breakpoints .. "/data/" .. i
@@ -1103,6 +1099,11 @@ function DebugView:_load_breakpoints()
                 },
             }
         end
+    end
+
+    -- Plain file breakpoints render last, after data breakpoints.
+    for _, item in ipairs(plain_src) do
+        items[#items + 1] = item
     end
 
     self._tree:set_children(_roots.breakpoints, items)
